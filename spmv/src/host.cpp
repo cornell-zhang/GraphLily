@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
     // Generate random sparse matrix
     unsigned int num_rows = NUM_ROWS;
     unsigned int num_cols = NUM_COLS;
-    unsigned int nnz_per_row = num_cols * 0.05; // 0.05 is the sparsity
+    unsigned int nnz_per_row = num_cols * 0.5; // 0.05 is the sparsity
 
     std::vector<int, aligned_allocator<int>> indptr(num_rows + 1);
     std::vector<int, aligned_allocator<int>> indices(num_rows * nnz_per_row);
@@ -147,7 +147,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    unsigned int num_times = 128;
+    unsigned int num_times = 4096;
     if (xcl::is_emulation()) {
         num_times = 1;
     }
@@ -253,9 +253,9 @@ int main(int argc, char *argv[]) {
 
     // Invoking the kernel
     OCL_CHECK(err, err = q.enqueueTask(the_kernel));
-    std::cout << "after enqueueTask" << std::endl;
+    // std::cout << "after enqueueTask" << std::endl;
     q.finish();
-    std::cout << "after finish" << std::endl;
+    // std::cout << "after finish" << std::endl;
 
     auto kernel_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> kernel_time = std::chrono::duration<double>(kernel_end - kernel_start);

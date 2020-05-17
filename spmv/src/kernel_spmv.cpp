@@ -69,10 +69,11 @@ void kernel_spmv(
     // Running the same kernel num_times for performance measurement
     for (int count = 0; count < num_times; count++) {
 
-        loop_1:
+        loop_row_iterate:
         for (int row_idx = 0; row_idx < NUM_ROWS; row_idx+=NUM_PE_TOTAL) {
 
             // Reset tmp_out to 0
+            loop_reset_tmp_out:
             for (int PE_id = 0; PE_id < NUM_PE_TOTAL; PE_id++) {
                 #pragma HLS UNROLL
                 #pragma HLS LOOP_TRIPCOUNT min=NUM_PE_TOTAL max=NUM_PE_TOTAL
@@ -82,15 +83,14 @@ void kernel_spmv(
             int start = indptr_bram[row_idx/NUM_PE_TOTAL];
             int end = indptr_bram[row_idx/NUM_PE_TOTAL + 1];
 
-            loop_2:
-            for (int i = start; i < end; i++) {
+            loop_dot_product:
+            for (int i = 0; i < end - start; i++) {
                 #pragma HLS PIPELINE II=1
-                v_data_t tmp_indices_0 = indices_hbm_0[i];
-                v_data_t tmp_vals_0 = vals_hbm_1[i];
-                v_data_t tmp_indices_1 = indices_hbm_2[i];
-                v_data_t tmp_vals_1 = vals_hbm_3[i];
+                v_data_t tmp_indices_0 = indices_hbm_0[i + start];
+                v_data_t tmp_vals_0 = vals_hbm_1[i + start];
+                v_data_t tmp_indices_1 = indices_hbm_2[i + start];
+                v_data_t tmp_vals_1 = vals_hbm_3[i + start];
 
-                loop_3:
                 for (int PE_id = 0; PE_id < NUM_PE_TOTAL; PE_id++) {
                     #pragma HLS UNROLL
                     #pragma HLS LOOP_TRIPCOUNT min=NUM_PE_TOTAL max=NUM_PE_TOTAL
@@ -105,6 +105,7 @@ void kernel_spmv(
                 }
             }
 
+            loop_write_to_out_bram:
             for (int PE_id = 0; PE_id < NUM_PE_TOTAL; PE_id++) {
                 #pragma HLS UNROLL
                 #pragma HLS LOOP_TRIPCOUNT min=NUM_PE_TOTAL max=NUM_PE_TOTAL
@@ -114,6 +115,7 @@ void kernel_spmv(
     }
 
     // Copy result back to global memory (DDR)
+    loop_write_to_out_ddr:
     for (int i = 0; i < NUM_ROWS; i++) {
         #pragma HLS PIPELINE II=1
         out_ddr[i] = out_bram[i];
