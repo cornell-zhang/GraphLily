@@ -3,9 +3,11 @@ SpMV
 
 This is an SpMV design.
 
-v1: fixed sparse matrix size (number of columns = 2048); no dataflow
-v2: fixed sparse matrix size (number of columns = 2048); dataflow optimization
-v3: arbitrary sparse matrix size; dataflow optimization
+`v1`: fixed sparse matrix size (number of columns = 2048); no dataflow
+
+`v2:` fixed sparse matrix size (number of columns = 2048); dataflow optimization
+
+`v3`: arbitrary sparse matrix size; dataflow optimization
 
 Compile-time constants are defined in .h file
 
