@@ -28,8 +28,11 @@ help::
 	$(ECHO) "      By default, HOST_ARCH=x86. HOST_ARCH and SYSROOT is required for SoC shells"
 	$(ECHO) ""
 
-KERNEL_NAME = kernel_spmv
-HOST_NAME = host
+VERSION = v1
+
+KERNEL_NAME = kernel_spmv_$(VERSION)
+HOST_NAME = host_$(VERSION)
+
 DEVICE = /opt/xilinx/platforms/xilinx_u280_xdma_201920_1/xilinx_u280_xdma_201920_1.xpfm
 
 # Points to top directory of Git repository
@@ -44,8 +47,8 @@ SYSROOT :=
 include ./utils.mk
 
 XSA := $(call device2xsa, $(DEVICE))
-TEMP_DIR := ./_x.$(TARGET).$(XSA)
-BUILD_DIR := ./build_dir.$(TARGET).$(XSA)
+TEMP_DIR := ./_x.$(VERSION).$(TARGET).$(XSA)
+BUILD_DIR := ./build_dir.$(VERSION).$(TARGET).$(XSA)
 
 VPP := v++
 SDCARD := sd_card

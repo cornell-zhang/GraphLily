@@ -1,14 +1,9 @@
-/*******************************************************************************
-Description:
-    This is the design of SpMV.
+#include "kernel_spmv_v1.h"
 
-*******************************************************************************/
-
-#include "kernel_spmv.h"
 
 extern "C" {
 
-void kernel_spmv(
+void kernel_spmv_v1(
     const data_t *vector_ddr,           // The dense vector stored in DDR
     const data_t *indptr_ddr,           // Read-only indptr stored in DDR
     const v_data_t *indices_hbm_0,      // Read-only indices stored in HBM channel 0

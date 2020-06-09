@@ -7,7 +7,7 @@
 
 #include "xcl2.hpp"
 
-#include "kernel_spmv.h"
+#include "kernel_spmv_v2.h"
 
 // HBM channels
 #define MAX_HBM_CHANNEL_COUNT 32
@@ -50,7 +50,9 @@ int main(int argc, char *argv[]) {
     // Generate random sparse matrix
     unsigned int num_rows = NUM_ROWS;
     unsigned int num_cols = NUM_COLS;
-    unsigned int nnz_per_row = num_cols * 0.5; // 0.05 is the sparsity
+    // unsigned int nnz_per_row = num_cols * 0.5; // 0.05 is the sparsity
+    unsigned int nnz_per_row = 512;
+    unsigned int nnz_total = nnz_per_row * num_rows;
 
     std::vector<int, aligned_allocator<int>> indptr(num_rows + 1);
     std::vector<int, aligned_allocator<int>> indices(num_rows * nnz_per_row);
@@ -111,9 +113,9 @@ int main(int argc, char *argv[]) {
     auto fileBuf = xcl::read_binary_file(binaryFile);
     cl::Program::Binaries bins{{fileBuf.data(), fileBuf.size()}};
 
-    std::string kernel_name = "kernel_spmv";
+    std::string kernel_name = "kernel_spmv_v2";
     /*
-    std::string kernel_name_full = kernel_name + ":{" + "kernel_spmv_" + "1" + "}";
+    std::string kernel_name_full = kernel_name + ":{" + "kernel_spmv_v2_" + "1" + "}";
     */
     cl_int err;
     cl::CommandQueue q;
@@ -237,7 +239,8 @@ int main(int argc, char *argv[]) {
     OCL_CHECK(err, err = the_kernel.setArg(4, indices_hbm_2_buf));
     OCL_CHECK(err, err = the_kernel.setArg(5, vals_hbm_3_buf));
     OCL_CHECK(err, err = the_kernel.setArg(6, kernel_results_buf));
-    OCL_CHECK(err, err = the_kernel.setArg(7, num_times));
+    OCL_CHECK(err, err = the_kernel.setArg(7, nnz_total));
+    OCL_CHECK(err, err = the_kernel.setArg(8, num_times));
 
     // Copy input data to Device Global Memory
     OCL_CHECK(err, err = q.enqueueMigrateMemObjects({vector_ddr_buf,

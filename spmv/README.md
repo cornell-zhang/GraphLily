@@ -1,18 +1,15 @@
 SpMV
 ====
 
-This is an SpMV design. TODO: add details.
+This is an SpMV design.
 
-##  DESIGN FILES
-Application code is located in the src directory. A listing of all the files is shown below.
+v1: fixed sparse matrix size (number of columns = 2048); no dataflow
+v2: fixed sparse matrix size (number of columns = 2048); dataflow optimization
+v3: arbitrary sparse matrix size; dataflow optimization
 
-```
-src/host.cpp
-src/kernel_spmv.cpp
-src/kernel_spmv.h
-```
+Compile-time constants are defined in .h file
 
-##  COMMAND LINE ARGUMENTS
+## COMMAND LINE ARGUMENTS
 Once the environment has been configured, the application can be executed by
 ```
 ./host <kernel_spmv XCLBIN>
