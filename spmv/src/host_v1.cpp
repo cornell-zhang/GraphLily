@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
     unsigned int num_rows = NUM_ROWS;
     unsigned int num_cols = NUM_COLS;
     // unsigned int nnz_per_row = num_cols * 0.5; // 0.05 is the sparsity
-    unsigned int nnz_per_row = 512;
+    unsigned int nnz_per_row = 8;
 
     std::vector<int, aligned_allocator<int>> indptr(num_rows + 1);
     std::vector<int, aligned_allocator<int>> indices(num_rows * nnz_per_row);

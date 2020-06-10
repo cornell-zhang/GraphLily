@@ -12,6 +12,9 @@ help::
 	$(ECHO) "  make cleanall"
 	$(ECHO) "      Command to remove all the generated files."
 	$(ECHO) ""
+	$(ECHO) "  make exe"
+	$(ECHO) "      Compile the host."
+	$(ECHO) ""
 	$(ECHO)  "  make test TARGET=<sw_emu/hw_emu/hw> DEVICE=<FPGA platform>"
 	$(ECHO)  "     Command to run the application. This is same as 'check' target but does not have any makefile dependency."
 	$(ECHO)  ""
@@ -79,7 +82,7 @@ ifneq ($(TARGET), hw)
 endif
 
 # Adding config files to linker
-LDCLFLAGS += --config $(KERNEL_NAME).ini
+LDCLFLAGS += --config src/$(KERNEL_NAME).ini
 EXECUTABLE = $(HOST_NAME)
 CMD_ARGS = $(BUILD_DIR)/$(KERNEL_NAME).xclbin
 EMCONFIG_DIR = $(TEMP_DIR)
