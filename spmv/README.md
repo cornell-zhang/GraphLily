@@ -11,6 +11,8 @@ This is an SpMV design.
 
 Compile-time constants are defined in .h file
 
+Pipeline rewind is not useful.
+
 ## COMMAND LINE ARGUMENTS
 Once the environment has been configured, the application can be executed by
 ```
