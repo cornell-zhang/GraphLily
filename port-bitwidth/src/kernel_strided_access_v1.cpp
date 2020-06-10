@@ -1,9 +1,9 @@
-#include "kernel_sequential_access_v1.h"
+#include "kernel_strided_access_v1.h"
 
 
 extern "C" {
 
-void kernel_sequential_access_v1(
+void kernel_strided_access_v1(
     const v_data_t *in0,               // Read-only input in HBM channel 0
     v_data_t *out,                     // Out in HBM channel 1
     const unsigned int num_times       // Running the same kernel num_times for performance measurement
@@ -26,7 +26,7 @@ void kernel_sequential_access_v1(
     for (int count = 0; count < num_times; count++) {
 
         loop_x:
-        for (int i = 0; i < IN_SIZE / VDATA_SIZE; i++) {
+        for (int i = 0; i < IN_SIZE / VDATA_SIZE; i+=STRIDE) {
             #pragma HLS PIPELINE II=1
             tmpIn0 = in0[i];
             for (int k = 0; k < VDATA_SIZE; k++) {

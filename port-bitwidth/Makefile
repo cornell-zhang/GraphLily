@@ -33,7 +33,7 @@ help::
 
 VERSION = v1
 
-KERNEL_NAME = kernel_sequential_access_$(VERSION)
+KERNEL_NAME = kernel_strided_access_$(VERSION)
 HOST_NAME = host_$(VERSION)
 
 DEVICE = /opt/xilinx/platforms/xilinx_u280_xdma_201920_1/xilinx_u280_xdma_201920_1.xpfm

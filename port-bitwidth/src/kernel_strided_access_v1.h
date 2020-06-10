@@ -1,4 +1,6 @@
-const unsigned int VDATA_SIZE = 32;
+const unsigned int VDATA_SIZE = 8;
+
+const unsigned int STRIDE = 2;
 
 const unsigned int IN_SIZE = 1 * 1024 * 1024;
 

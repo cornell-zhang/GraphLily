@@ -7,7 +7,7 @@
 
 #include "xcl2.hpp"
 
-#include "kernel_sequential_access_v2.h"
+#include "kernel_strided_access_v2.h"
 
 // HBM channels
 #define MAX_HBM_CHANNEL_COUNT 32
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
     // Compute reference_results
     std::vector<int, aligned_allocator<int>> reference_results(IN_SIZE);
     std::fill(reference_results.begin(), reference_results.end(), 0);
-    for (size_t i = 0; i < IN_SIZE / VDATA_SIZE; i++) {
+    for (size_t i = 0; i < IN_SIZE / VDATA_SIZE; i+=STRIDE) {
         for (size_t j = 0; j < VDATA_SIZE; j++) {
             reference_results[i*VDATA_SIZE + j] = in0[i*VDATA_SIZE + j] + 1;
         }
@@ -69,8 +69,8 @@ int main(int argc, char *argv[]) {
     auto fileBuf = xcl::read_binary_file(binaryFile);
     cl::Program::Binaries bins{{fileBuf.data(), fileBuf.size()}};
 
-    std::string kernel_name = "kernel_sequential_access_v2";
-    std::string kernel_name_full = kernel_name + ":{" + "kernel_sequential_access_v2_" + "1" + "}";
+    std::string kernel_name = "kernel_strided_access_v2";
+    std::string kernel_name_full = kernel_name + ":{" + "kernel_strided_access_v2_" + "1" + "}";
 
     cl_int err;
     cl::CommandQueue q;
@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
     q.finish();
 
     // Calculate the throughput
-    double throughput = num_times * (IN_SIZE * sizeof(data_t));
+    double throughput = num_times * (IN_SIZE / STRIDE * sizeof(data_t));
     throughput /= 1000;               // to KB
     throughput /= 1000;               // to MB
     throughput /= 1000;               // to GB
