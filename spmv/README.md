@@ -13,7 +13,11 @@ Compile-time constants are defined in .h file
 
 Pipeline rewind is not useful.
 
-## COMMAND LINE ARGUMENTS
+## TODO
+1. Optimize the loading of the dense vector. Broadcast write?
+
+
+## Command Line Arguments
 Once the environment has been configured, the application can be executed by
 ```
 ./host <kernel_spmv XCLBIN>
