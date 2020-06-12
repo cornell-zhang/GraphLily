@@ -21,5 +21,6 @@ lib/
 *_REMOTE_*
 *.swp
 *_x.*
+*build/
 *build_dir.*
 *.run/
