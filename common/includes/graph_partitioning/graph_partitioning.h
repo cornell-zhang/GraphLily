@@ -26,9 +26,9 @@ void util_convert_csr_to_dds(const uint32_t num_rows,
                              const uint32_t *adj_indices,
                              const uint32_t *adj_indptr,
                              const uint32_t num_col_partitions,
-                             std::vector<std::vector<data_type> > &partitioned_adj_data,
-                             std::vector<std::vector<uint32_t> > &partitioned_adj_indices,
-                             std::vector<std::vector<uint32_t> > &partitioned_adj_indptr)
+                             std::vector<data_type> partitioned_adj_data[],
+                             std::vector<uint32_t> partitioned_adj_indices[],
+                             std::vector<uint32_t> partitioned_adj_indptr[])
 {
     uint32_t num_cols_per_partition = (num_cols + num_col_partitions - 1) / num_col_partitions;
 

@@ -32,9 +32,9 @@ void test_util_convert_csr_to_dds() {
     //      [0, 0, 9, 0, 0]]
 
     uint32_t num_col_partitions = 2;
-    std::vector<std::vector<float> > partitioned_adj_data(num_col_partitions);
-    std::vector<std::vector<uint32_t> > partitioned_adj_indices(num_col_partitions);
-    std::vector<std::vector<uint32_t> > partitioned_adj_indptr(num_col_partitions);
+    std::vector<float> partitioned_adj_data[num_col_partitions];
+    std::vector<uint32_t> partitioned_adj_indices[num_col_partitions];
+    std::vector<uint32_t> partitioned_adj_indptr[num_col_partitions];
 
     util_convert_csr_to_dds<float>(num_rows,
                                    num_cols,
