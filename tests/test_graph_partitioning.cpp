@@ -64,6 +64,49 @@ void test_util_convert_csr_to_dds() {
 }
 
 
+void test_util_reorder_rows_ascending_nnz() {
+    std::vector<float> adj_data = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+    std::vector<uint32_t> adj_indices = {0, 1, 2, 3, 0, 2, 1, 3, 2};
+    std::vector<uint32_t> adj_indptr = {0, 4, 6, 7, 8, 9};
+
+    // The sparse matrix is:
+    //     [[1, 2, 3, 4, 0],
+    //      [5, 0, 6, 0, 0],
+    //      [0, 7, 0, 0, 0],
+    //      [0, 0, 0, 8, 0],
+    //      [0, 0, 9, 0, 0]]
+
+    std::vector<float> reordered_adj_data;
+    std::vector<uint32_t> reordered_adj_indices;
+    std::vector<uint32_t> reordered_adj_indptr;
+
+    util_reorder_rows_ascending_nnz<float>(adj_data,
+                                           adj_indices,
+                                           adj_indptr,
+                                           reordered_adj_data,
+                                           reordered_adj_indices,
+                                           reordered_adj_indptr);
+
+    // After reordering, the sparse matrix is:
+    //     [[0, 7, 0, 0, 0],
+    //      [0, 0, 0, 8, 0],
+    //      [0, 0, 9, 0, 0],
+    //      [5, 0, 6, 0, 0],
+    //      [1, 2, 3, 4, 0]]
+
+    std::vector<float> reference_reordered_adj_data = {7, 8, 9, 5, 6, 1, 2, 3, 4};
+    std::vector<uint32_t> reference_reordered_adj_indices = {1, 3, 2, 0, 2, 0, 1, 2, 3};
+    std::vector<uint32_t> reference_reordered_adj_indptr = {0, 1, 2, 3, 5, 9};
+
+    check_vector_equal<float>(reordered_adj_data, reference_reordered_adj_data);
+    check_vector_equal<uint32_t>(reordered_adj_indices, reference_reordered_adj_indices);
+    check_vector_equal<uint32_t>(reordered_adj_indptr, reference_reordered_adj_indptr);
+
+    std::cout << "Test passed" << std::endl;
+}
+
+
 int main(int argc, char *argv[]) {
     test_util_convert_csr_to_dds();
+    test_util_reorder_rows_ascending_nnz();
 }
