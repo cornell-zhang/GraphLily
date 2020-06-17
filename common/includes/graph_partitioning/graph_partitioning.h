@@ -15,24 +15,24 @@
  * \param adj_data The non-zero data (CSR).
  * \param adj_indices The column indices (CSR).
  * \param adj_indptr The index pointers (CSR).
- * \param num_col_partitions Number of partitions along the column dimension.
+ * \param num_cols_per_partition The number of columns per partition, determined by the vector buffer length.
  *
  * \param partitioned_adj_data The partitioned non-zero data.
  * \param partitioned_adj_indices The partitioned column indices.
  * \param partitioned_adj_indptr The partitioned index pointers.
  */
 template<typename data_type>
-void util_convert_csr_to_dds(const uint32_t num_rows,
-                             const uint32_t num_cols,
+void util_convert_csr_to_dds(uint32_t num_rows,
+                             uint32_t num_cols,
                              const data_type *adj_data,
                              const uint32_t *adj_indices,
                              const uint32_t *adj_indptr,
-                             const uint32_t num_col_partitions,
+                             uint32_t num_cols_per_partition,
                              std::vector<data_type> partitioned_adj_data[],
                              std::vector<uint32_t> partitioned_adj_indices[],
                              std::vector<uint32_t> partitioned_adj_indptr[])
 {
-    uint32_t num_cols_per_partition = (num_cols + num_col_partitions - 1) / num_col_partitions;
+    uint32_t num_col_partitions = (num_cols + num_cols_per_partition - 1) / num_cols_per_partition;
 
     // The first element in indptr is 0
     for (uint32_t partition_idx = 0; partition_idx < num_col_partitions; partition_idx++) {
@@ -110,9 +110,194 @@ void util_reorder_rows_ascending_nnz(std::vector<data_type> const &adj_data,
 }
 
 
-void util_pack_rows();
+/*!
+ * \brief Pack the rows.
+ *
+ * \param adj_data The non-zero data (CSR).
+ * \param adj_indices The column indices (CSR).
+ * \param adj_indptr The index pointers (CSR).
+ * \param num_PEs_per_hbm_channel The number of rows to pack together.
+ *
+ * \param packed_adj_data The packed non-zero data.
+ * \param packed_adj_indices The packed column indices.
+ * \param packed_adj_indptr The packed index pointers.
+ */
+template<typename data_type, typename packed_data_type, typename packed_index_type>
+void util_pack_rows(std::vector<data_type> const &adj_data,
+                    std::vector<uint32_t> const &adj_indices,
+                    std::vector<uint32_t> const &adj_indptr,
+                    uint32_t num_hbm_channels,
+                    uint32_t num_PEs_per_hbm_channel,
+                    std::vector<packed_data_type> packed_adj_data[],
+                    std::vector<packed_index_type> packed_adj_indices[],
+                    std::vector<packed_index_type> packed_adj_indptr[])
+{
+    uint32_t num_rows = adj_indptr.size() - 1;
+    uint32_t num_packs = (num_rows + num_hbm_channels*num_PEs_per_hbm_channel - 1)
+                         / (num_hbm_channels*num_PEs_per_hbm_channel);
+    std::vector<uint32_t> nnz_each_row(num_rows);
+    for (size_t i = 0; i < num_rows; i++) {
+        nnz_each_row[i] = adj_indptr[i + 1] - adj_indptr[i];
+    }
+
+    // Handle indptr
+    packed_index_type tmp_indptr[num_hbm_channels];
+    for (size_t c = 0; c < num_hbm_channels; c++) {
+        for (size_t j = 0; j < num_PEs_per_hbm_channel; j++) {tmp_indptr[c].data[j] = 0;}
+        packed_adj_indptr[c].push_back(tmp_indptr[c]);
+    }
+    for (size_t i = 0; i < num_packs; i++) {
+        for (size_t c = 0; c < num_hbm_channels; c++) {
+            for (size_t j = 0; j < num_PEs_per_hbm_channel; j++) {
+                size_t row_idx = i*num_hbm_channels*num_PEs_per_hbm_channel + c*num_PEs_per_hbm_channel + j;
+                if (row_idx < num_rows) {
+                    tmp_indptr[c].data[j] = tmp_indptr[c].data[j] + nnz_each_row[row_idx];
+                }
+            }
+            packed_adj_indptr[c].push_back(tmp_indptr[c]);
+        }
+    }
+
+    // Handle data and indices
+    for (size_t c = 0; c < num_hbm_channels; c++) {
+        uint32_t max_nnz = 0;
+        for (uint32_t i = 0; i < num_PEs_per_hbm_channel; i++) {
+            if (max_nnz < packed_adj_indptr[c].back().data[i]) {
+                max_nnz = packed_adj_indptr[c].back().data[i];
+            }
+        }
+        packed_adj_data[c].resize(max_nnz);
+        packed_adj_indices[c].resize(max_nnz);
+        for (size_t j = 0; j < num_PEs_per_hbm_channel; j++) {
+            uint32_t nnz_count = 0;
+            for (size_t i = 0; i < num_packs; i++) {
+                size_t row_idx = i*num_hbm_channels*num_PEs_per_hbm_channel + c*num_PEs_per_hbm_channel + j;
+                if (row_idx >= num_rows) {
+                    continue;
+                }
+                for (uint32_t k = adj_indptr[row_idx]; k < adj_indptr[row_idx + 1]; k++) {
+                    data_type val = adj_data[k];
+                    uint32_t col_idx = adj_indices[k];
+                    packed_adj_data[c][nnz_count].data[j] = val;
+                    packed_adj_indices[c][nnz_count].data[j] = col_idx;
+                    nnz_count++;
+                }
+            }
+        }
+    }
+}
 
 
-void util_prepare_spmv_adj();
+/*!
+ * \brief Formatter for the sparse matrix used in SpMV.
+ * It does column partitioning and row packing.
+ *
+ * \tparam data_type The data type of non-zero values of the sparse matrix.
+ * \tparam num_PEs_per_hbm_channel The number of PEs per HBM channel.
+ * \tparam packed_data_type The data type of non-zero values of the packed sparse matrix.
+ * \tparam packed_index_type The data type of indices of the packed sparse matrix.
+ */
+template<typename data_type, uint32_t num_PEs_per_hbm_channel, typename packed_data_type, typename packed_index_type>
+class SpMVDataFormatter {
+private:
+    /*! \brief The number of rows of the original sparse matrix */
+    uint32_t num_rows_;
+    /*! \brief The number of columns of the original sparse matrix */
+    uint32_t num_cols_;
+    /*! \brief The non-zero data (CSR) of the original sparse matrix */
+    const data_type *adj_data_;
+    /*! \brief The column indices (CSR) of the original sparse matrix */
+    const uint32_t *adj_indices_;
+    /*! \brief The index pointers (CSR) of the original sparse matrix */
+    const uint32_t *adj_indptr_;
+    /*! \brief The number of partitions along the column dimension */
+    uint32_t num_col_partitions_;
+    /*! \brief The number of HBM channels */
+    uint32_t num_hbm_channels_;
+
+public:
+    std::vector<std::vector<packed_data_type> > formatted_adj_data;
+    std::vector<std::vector<packed_index_type> > formatted_adj_indices;
+    std::vector<std::vector<packed_index_type> > formatted_adj_indptr;
+
+public:
+    /*! \brief Constructor from a scipy sparse npz file */
+    SpMVDataFormatter(std::string csr_npz_path);
+
+    /*! \brief Constructor from raw data of a sparse matrix */
+    SpMVDataFormatter(uint32_t num_rows, uint32_t num_cols,
+                      const data_type *adj_data, const uint32_t *adj_indices, const uint32_t *adj_indptr) {
+        this->num_rows_ = num_rows;
+        this->num_cols_ = num_cols;
+        this->adj_data_ = adj_data;
+        this->adj_indices_ = adj_indices;
+        this->adj_indptr_ = adj_indptr;
+    }
+
+    /*!
+     * \brief Format the sparse matrix by performing column partitioning and row packing.
+     * \param vector_buffer_len The vector buffer length, which determines the number of column partitions.
+     * \param num_hbm_channels The number of HBM channels.
+     */
+    void format(uint32_t vector_buffer_len,  uint32_t num_hbm_channels) {
+        this->num_hbm_channels_ = num_hbm_channels;
+        this->num_col_partitions_ = (this->num_cols_ + vector_buffer_len - 1) / vector_buffer_len;
+        this->formatted_adj_data.resize(this->num_col_partitions_ * num_hbm_channels);
+        this->formatted_adj_indices.resize(this->num_col_partitions_ * num_hbm_channels);
+        this->formatted_adj_indptr.resize(this->num_col_partitions_ * num_hbm_channels);
+        std::vector<data_type> partitioned_adj_data[this->num_col_partitions_];
+        std::vector<uint32_t> partitioned_adj_indices[this->num_col_partitions_];
+        std::vector<uint32_t> partitioned_adj_indptr[this->num_col_partitions_];
+        util_convert_csr_to_dds<data_type>(this->num_rows_,
+                                           this->num_cols_,
+                                           this->adj_data_,
+                                           this->adj_indices_,
+                                           this->adj_indptr_,
+                                           vector_buffer_len,
+                                           partitioned_adj_data,
+                                           partitioned_adj_indices,
+                                           partitioned_adj_indptr);
+        for (size_t i = 0; i < this->num_col_partitions_; i++) {
+            util_pack_rows<data_type, packed_data_type, packed_index_type>(partitioned_adj_data[i],
+                                                                           partitioned_adj_indices[i],
+                                                                           partitioned_adj_indptr[i],
+                                                                           num_hbm_channels,
+                                                                           num_PEs_per_hbm_channel,
+                                                                           &(this->formatted_adj_data[i*num_hbm_channels]),
+                                                                           &(this->formatted_adj_indices[i*num_hbm_channels]),
+                                                                           &(this->formatted_adj_indptr[i*num_hbm_channels]));
+        }
+    }
+
+    /*!
+     * \brief Get the non-zero data of a specific partition for a specific HBM channel.
+     * \param col_partition_idx The partition index.
+     * \param hbm_channel_idx The HBM channel index.
+     * \return The non-zero data.
+     */
+    std::vector<packed_data_type> get_packed_data(uint32_t col_partition_idx, uint32_t hbm_channel_idx) {
+        return this->formatted_adj_data[col_partition_idx*this->num_hbm_channels_ + hbm_channel_idx];
+    }
+
+    /*!
+     * \brief Get the column indices of a specific partition for a specific HBM channel.
+     * \param col_partition_idx The partition index.
+     * \param hbm_channel_idx The HBM channel index.
+     * \return The column indices.
+     */
+    std::vector<packed_index_type> get_packed_indices(uint32_t col_partition_idx, uint32_t hbm_channel_idx) {
+        return this->formatted_adj_indices[col_partition_idx*this->num_hbm_channels_ + hbm_channel_idx];
+    }
+
+    /*!
+     * \brief Get the index pointers of a specific partition for a specific HBM channel.
+     * \param col_partition_idx The partition index.
+     * \param hbm_channel_idx The HBM channel index.
+     * \return The index pointers.
+     */
+    std::vector<packed_index_type> get_packed_indptr(uint32_t col_partition_idx, uint32_t hbm_channel_idx) {
+        return this->formatted_adj_indptr[col_partition_idx*this->num_hbm_channels_ + hbm_channel_idx];
+    }
+};
 
 #endif
