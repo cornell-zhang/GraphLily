@@ -31,7 +31,7 @@ help::
 	$(ECHO) "      By default, HOST_ARCH=x86. HOST_ARCH and SYSROOT is required for SoC shells"
 	$(ECHO) ""
 
-VERSION = v1
+VERSION = v3
 
 KERNEL_NAME = kernel_spmv_$(VERSION)
 HOST_NAME = host_$(VERSION)
@@ -59,11 +59,13 @@ SDCARD := sd_card
 # Include Libraries
 include $(ABS_COMMON_REPO)/common/includes/opencl/opencl.mk
 include $(ABS_COMMON_REPO)/common/includes/xcl2/xcl2.mk
+include $(ABS_COMMON_REPO)/common/includes/graph_partitioning/graph_partitioning.mk
 CXXFLAGS += $(xcl2_CXXFLAGS)
 LDFLAGS += $(xcl2_LDFLAGS)
 HOST_SRCS += $(xcl2_SRCS)
 CXXFLAGS += $(opencl_CXXFLAGS) -Wall -O0 -g -std=c++11
 LDFLAGS += $(opencl_LDFLAGS)
+CXXFLAGS += $(graph_partitioning_CXXFLAGS)
 
 HOST_SRCS += src/$(HOST_NAME).cpp
 
