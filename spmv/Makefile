@@ -66,6 +66,7 @@ HOST_SRCS += $(xcl2_SRCS)
 CXXFLAGS += $(opencl_CXXFLAGS) -Wall -O0 -g -std=c++11
 LDFLAGS += $(opencl_LDFLAGS)
 CXXFLAGS += $(graph_partitioning_CXXFLAGS)
+LDFLAGS += $(graph_partitioning_LDFLAGS)
 
 HOST_SRCS += src/$(HOST_NAME).cpp
 

@@ -6,6 +6,8 @@
 #include <numeric>
 #include <algorithm>
 
+#include "cnpy.h"
+
 
 /*!
  * \brief Doing src vertex partitioning (column dimension) by converting csr to dds (dense-dense-sparse).
@@ -44,7 +46,7 @@ void util_convert_csr_to_dds(uint32_t num_rows,
         for (uint32_t j = adj_indptr[i]; j < adj_indptr[i + 1]; j++) {
             data_type val = adj_data[j];
             uint32_t col_idx = adj_indices[j];
-            unsigned partition_idx = col_idx / num_cols_per_partition;
+            uint32_t partition_idx = col_idx / num_cols_per_partition;
             partitioned_adj_data[partition_idx].push_back(val);
             partitioned_adj_indices[partition_idx].push_back(col_idx - partition_idx*num_cols_per_partition);
         }
@@ -193,7 +195,7 @@ void util_pad_marker_end_of_row(std::vector<data_type> &adj_data,
                                 std::vector<uint32_t> &adj_indices,
                                 std::vector<uint32_t> &adj_indptr,
                                 data_type val_marker,
-                                unsigned int idx_marker)
+                                uint32_t idx_marker)
 {
     uint32_t num_rows = adj_indptr.size() - 1;
     for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
@@ -223,24 +225,23 @@ private:
     /*! \brief The number of columns of the original sparse matrix */
     uint32_t num_cols_;
     /*! \brief The non-zero data (CSR) of the original sparse matrix */
-    const data_type *adj_data_;
+    std::vector<data_type> adj_data_;
     /*! \brief The column indices (CSR) of the original sparse matrix */
-    const uint32_t *adj_indices_;
+    std::vector<uint32_t> adj_indices_;
     /*! \brief The index pointers (CSR) of the original sparse matrix */
-    const uint32_t *adj_indptr_;
+    std::vector<uint32_t> adj_indptr_;
     /*! \brief The number of partitions along the column dimension */
     uint32_t num_col_partitions_;
     /*! \brief The number of HBM channels */
     uint32_t num_hbm_channels_;
 
-public:
     std::vector<std::vector<packed_data_type> > formatted_adj_data;
     std::vector<std::vector<packed_index_type> > formatted_adj_indices;
     std::vector<std::vector<packed_index_type> > formatted_adj_indptr;
 
 private:
     void _format(uint32_t vector_buffer_len,  uint32_t num_hbm_channels,
-                 bool pad_marker_end_of_row, data_type val_marker, unsigned int idx_marker) {
+                 bool pad_marker_end_of_row, data_type val_marker, uint32_t idx_marker) {
         this->num_hbm_channels_ = num_hbm_channels;
         this->num_col_partitions_ = (this->num_cols_ + vector_buffer_len - 1) / vector_buffer_len;
         this->formatted_adj_data.resize(this->num_col_partitions_ * num_hbm_channels);
@@ -251,9 +252,9 @@ private:
         std::vector<uint32_t> partitioned_adj_indptr[this->num_col_partitions_];
         util_convert_csr_to_dds<data_type>(this->num_rows_,
                                            this->num_cols_,
-                                           this->adj_data_,
-                                           this->adj_indices_,
-                                           this->adj_indptr_,
+                                           this->adj_data_.data(),
+                                           this->adj_indices_.data(),
+                                           this->adj_indptr_.data(),
                                            vector_buffer_len,
                                            partitioned_adj_data,
                                            partitioned_adj_indices,
@@ -279,11 +280,30 @@ private:
 
 public:
     /*! \brief Constructor from a scipy sparse npz file */
-    SpMVDataFormatter(std::string csr_npz_path);
+    SpMVDataFormatter(std::string csr_npz_path) {
+        cnpy::npz_t npz = cnpy::npz_load(csr_npz_path);
+        cnpy::NpyArray npy_shape = npz["shape"];
+        uint32_t num_rows = npy_shape.data<uint32_t>()[0];
+        uint32_t num_cols = npy_shape.data<uint32_t>()[2];
+        this->num_rows_ = num_rows;
+        this->num_cols_ = num_cols;
+        cnpy::NpyArray npy_data = npz["data"];
+        uint32_t nnz = npy_data.shape[0];
+        cnpy::NpyArray npy_indices = npz["indices"];
+        cnpy::NpyArray npy_indptr = npz["indptr"];
+        this->adj_data_.insert(this->adj_data_.begin(), &npy_data.data<data_type>()[0],
+            &npy_data.data<data_type>()[nnz]);
+        this->adj_indices_.insert(this->adj_indices_.begin(), &npy_indices.data<uint32_t>()[0],
+            &npy_indices.data<uint32_t>()[nnz]);
+        this->adj_indptr_.insert(this->adj_indptr_.begin(), &npy_indptr.data<uint32_t>()[0],
+            &npy_indptr.data<uint32_t>()[num_rows + 1]);
+    }
 
     /*! \brief Constructor from raw data of a sparse matrix */
     SpMVDataFormatter(uint32_t num_rows, uint32_t num_cols,
-                      const data_type *adj_data, const uint32_t *adj_indices, const uint32_t *adj_indptr) {
+                      std::vector<data_type> const &adj_data,
+                      std::vector<uint32_t> const &adj_indices,
+                      std::vector<uint32_t> const &adj_indptr) {
         this->num_rows_ = num_rows;
         this->num_cols_ = num_cols;
         this->adj_data_ = adj_data;
@@ -309,8 +329,48 @@ public:
      * \param idx_marker The marker to be padded into adj_indices to denote the end of a row.
      */
     void format_pad_marker_end_of_row(uint32_t vector_buffer_len,  uint32_t num_hbm_channels,
-                                      data_type val_marker, unsigned int idx_marker) {
+                                      data_type val_marker, uint32_t idx_marker) {
         this->_format(vector_buffer_len, num_hbm_channels, true, val_marker, val_marker);
+    }
+
+    /*!
+     * \brief Get the number of rows.
+     * \return The number of rows.
+     */
+    uint32_t get_num_rows() {
+        return this->num_rows_;
+    }
+
+    /*!
+     * \brief Get the number of columns.
+     * \return The number of columns.
+     */
+    uint32_t get_num_cols() {
+        return this->num_cols_;
+    }
+
+    /*!
+     * \brief Get the non-zero data.
+     * \return The non-zero data.
+     */
+    const std::vector<data_type> get_data() {
+        return this->adj_data_;
+    }
+
+    /*!
+     * \brief Get the column indices.
+     * \return The column indices.
+     */
+    const std::vector<uint32_t> get_indices() {
+        return this->adj_indices_;
+    }
+
+    /*!
+     * \brief Get the index pointers.
+     * \return The index pointers.
+     */
+    const std::vector<uint32_t> get_indptr() {
+        return this->adj_indptr_;
     }
 
     /*!

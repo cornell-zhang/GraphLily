@@ -220,7 +220,7 @@ void test_spmv_data_formatter_no_pad_marker() {
     } packed_index_type;
 
     SpMVDataFormatter<float, num_PEs_per_hbm_channel, packed_data_type, packed_index_type>
-        formatter(num_rows, num_cols, adj_data.data(), adj_indices.data(), adj_indptr.data());
+        formatter(num_rows, num_cols, adj_data, adj_indices, adj_indptr);
     formatter.format(vector_buffer_len, num_hbm_channels);
 
     // The two partitions are the same
@@ -305,7 +305,7 @@ void test_spmv_data_formatter_pad_marker() {
     unsigned int idx_marker = std::numeric_limits<unsigned int>::max();
 
     SpMVDataFormatter<float, num_PEs_per_hbm_channel, packed_data_type, packed_index_type>
-        formatter(num_rows, num_cols, adj_data.data(), adj_indices.data(), adj_indptr.data());
+        formatter(num_rows, num_cols, adj_data, adj_indices, adj_indptr);
     formatter.format_pad_marker_end_of_row(vector_buffer_len, num_hbm_channels, val_marker, idx_marker);
 
     std::vector<packed_data_type> reference_packed_adj_data_channel_1 =

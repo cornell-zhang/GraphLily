@@ -49,26 +49,26 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Generate random sparse matrix
-    unsigned int num_rows = 10000;
-    unsigned int num_cols = 10000;
-    unsigned int nnz_per_row = 100;
-
-    std::vector<unsigned int, aligned_allocator<unsigned int>> indptr(num_rows + 1);
-    std::vector<unsigned int, aligned_allocator<unsigned int>> indices(num_rows * nnz_per_row);
-    std::vector<data_t, aligned_allocator<data_t>> vals(num_rows * nnz_per_row);
-
-    for (size_t i = 0; i < num_rows+1; i++)
-        indptr[i] = i * nnz_per_row;
-    for (size_t i = 0; i < num_rows; i++)
-        for (size_t j = 0; j < nnz_per_row; j++)
-            indices[i*nnz_per_row + j] = j * num_cols / nnz_per_row;
-    std::generate(vals.begin(), vals.end(), [&](){return std::rand() % 256;});
-
-    // Data formatter
+    // Data loading and formatting
     SpMVDataFormatter<data_t, NUM_PE_PER_HBM_CHANNEL, packed_data_t, packed_index_t>
-        formatter(num_rows, num_cols, vals.data(), indices.data(), indptr.data());
+        formatter("/home/yh457/data/sparse_matrix_graph/uniform_100K_100_csr_int32.npz");
+
+    std::cout << "Finished loading data" << std::endl;
+
+    unsigned int num_rows = formatter.get_num_rows();
+    unsigned int num_cols = formatter.get_num_cols();
+    std::vector<unsigned int> indptr = formatter.get_indptr();
+    std::vector<unsigned int> indices = formatter.get_indices();
+    std::vector<data_t> vals = formatter.get_data();
+    unsigned int nnz = indptr[num_rows];
+
+    std::cout << "num_rows: " << num_rows << std::endl;
+    std::cout << "num_cols: " << num_cols << std::endl;
+    std::cout << "nnz: " << nnz << std::endl;
+
     formatter.format_pad_marker_end_of_row(VECTOR_BUFFER_LEN, NUM_HBM_CHANNEL, VAL_MARKER, IDX_MARKER);
+
+    std::cout << "Finished formatting data" << std::endl;
 
     unsigned int num_col_partitions = (num_cols + VECTOR_BUFFER_LEN - 1) / VECTOR_BUFFER_LEN;
 
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    std::cout << "Finished data loading and formatting" << std::endl;
+    std::cout << "Finished computing reference results" << std::endl;
 
     // Find the OpenCL binary file
     std::string binaryFile = argv[1];
@@ -162,7 +162,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    unsigned int num_times = 10;
+    unsigned int num_times = 100;
     if (xcl::is_emulation()) {
         num_times = 2;
     }
@@ -280,7 +280,6 @@ int main(int argc, char *argv[]) {
                                                      channel_1_indices_buf,
                                                      channel_1_vals_buf}, 0 /* 0 means from host*/));
     q.finish();
-    std::cout << "after enqueueMigrateMemObjects" << std::endl;
 
     auto kernel_start = std::chrono::high_resolution_clock::now();
 
@@ -298,8 +297,8 @@ int main(int argc, char *argv[]) {
     q.finish();
 
     // Calculate the throughput
-    double throughput = num_times * (num_rows*(nnz_per_row+1)*sizeof(data_t) // vals
-                                     + num_rows*(nnz_per_row+1)*sizeof(unsigned int)); // indices
+    double throughput = num_times * (nnz * sizeof(data_t) // vals
+                                     + nnz * sizeof(unsigned int)); // indices
     throughput /= 1000;               // to KB
     throughput /= 1000;               // to MB
     throughput /= 1000;               // to GB
