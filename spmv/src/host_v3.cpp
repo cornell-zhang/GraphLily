@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
 
     // Data loading and formatting
     SpMVDataFormatter<data_t, NUM_PE_PER_HBM_CHANNEL, packed_data_t, packed_index_t>
-        formatter("/home/yh457/data/sparse_matrix_graph/uniform_100K_100_csr_int32.npz");
+        formatter("/work/shared/users/phd/yh457/data/sparse_matrix_graph/uniform_10K_100_csr_int32.npz");
 
     std::cout << "Finished loading data" << std::endl;
 
@@ -303,7 +303,10 @@ int main(int argc, char *argv[]) {
     throughput /= 1000;               // to MB
     throughput /= 1000;               // to GB
     throughput /= kernel_time_in_sec; // to GB/s
-    std::cout << "THROUGHPUT = " << throughput << " GB/s" << std::endl;
+    std::cout << "Memory THROUGHPUT = " << throughput << " GB/s" << std::endl;
+
+    std::cout << "Compute THROUGHPUT = " << throughput / (sizeof(data_t) + sizeof(unsigned int))
+              << " GOPS" << std::endl;
 
     bool match = verify(reference_results, kernel_results, num_rows);
     std::cout << (match ? "TEST PASSED" : "TEST FAILED") << std::endl;
