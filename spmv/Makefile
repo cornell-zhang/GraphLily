@@ -31,7 +31,7 @@ help::
 	$(ECHO) "      By default, HOST_ARCH=x86. HOST_ARCH and SYSROOT is required for SoC shells"
 	$(ECHO) ""
 
-VERSION = v3
+VERSION = v4
 
 KERNEL_NAME = kernel_spmv_$(VERSION)
 HOST_NAME = host_$(VERSION)

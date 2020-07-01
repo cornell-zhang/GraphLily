@@ -330,7 +330,7 @@ public:
      */
     void format_pad_marker_end_of_row(uint32_t vector_buffer_len,  uint32_t num_hbm_channels,
                                       data_type val_marker, uint32_t idx_marker) {
-        this->_format(vector_buffer_len, num_hbm_channels, true, val_marker, val_marker);
+        this->_format(vector_buffer_len, num_hbm_channels, true, val_marker, idx_marker);
     }
 
     /*!

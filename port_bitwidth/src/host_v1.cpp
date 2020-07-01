@@ -22,8 +22,8 @@ const int channels[MAX_HBM_CHANNEL_COUNT] = {
     CHANNEL_NAME(30), CHANNEL_NAME(31)};
 
 // Function for verifying results
-bool verify(std::vector<int, aligned_allocator<int>> &reference_results,
-            std::vector<int, aligned_allocator<int>> &kernel_results,
+bool verify(std::vector<data_t, aligned_allocator<data_t>> &reference_results,
+            std::vector<data_t, aligned_allocator<data_t>> &kernel_results,
             unsigned int size) {
     bool check = true;
     for (size_t i = 0; i < size; i++) {
@@ -48,15 +48,15 @@ int main(int argc, char *argv[]) {
     }
 
     // Generate random input vectors
-    std::vector<int, aligned_allocator<int>> in0(IN_SIZE);
+    std::vector<data_t, aligned_allocator<data_t>> in0(IN_SIZE);
     std::generate(in0.begin(), in0.end(), [&](){return std::rand() % 256;});
 
     // Initialize kernel_results to zero
-    std::vector<int, aligned_allocator<int>> kernel_results(IN_SIZE);
+    std::vector<data_t, aligned_allocator<data_t>> kernel_results(IN_SIZE);
     std::fill(kernel_results.begin(), kernel_results.end(), 0);
 
     // Compute reference_results
-    std::vector<int, aligned_allocator<int>> reference_results(IN_SIZE);
+    std::vector<data_t, aligned_allocator<data_t>> reference_results(IN_SIZE);
     std::fill(reference_results.begin(), reference_results.end(), 0);
     for (size_t i = 0; i < IN_SIZE / VDATA_SIZE; i+=STRIDE) {
         for (size_t j = 0; j < VDATA_SIZE; j++) {

@@ -1,3 +1,5 @@
+#include "ap_fixed.h"
+
 const unsigned int VDATA_SIZE = 16;
 const unsigned int NUM_PE_PER_HBM_CHANNEL = VDATA_SIZE;
 const unsigned int NUM_HBM_CHANNEL = 2;
@@ -6,7 +8,7 @@ const unsigned int NUM_PE_TOTAL = NUM_PE_PER_HBM_CHANNEL*NUM_HBM_CHANNEL;
 const unsigned int MAX_NUM_ROWS = 100 * 1000;
 const unsigned int VECTOR_BUFFER_LEN = 10 * 1000;
 
-typedef int data_t;
+typedef ap_ufixed<32, 1> data_t;
 
 typedef struct packed_data_type {
     data_t data[VDATA_SIZE];

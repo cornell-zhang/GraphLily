@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
         int start = indptr[row_idx];
         int end = indptr[row_idx + 1];
         for (int i = start; i < end; i++) {
-            data_t index = indices[i];
+            unsigned int index = indices[i];
             data_t val = vals[i];
             reference_results[row_idx] += val * vector_ddr[index];
         }
