@@ -1,5 +1,6 @@
 #include "kernel_spmv_v4.h"
 #include <hls_stream.h>
+#include <assert.h>
 
 
 static void read_data_one_channel(const packed_index_t *indices,
@@ -11,6 +12,7 @@ static void read_data_one_channel(const packed_index_t *indices,
     packed_index_t tmp;
     tmp.data[0] = size;
     indices_stream << tmp;
+
     // Burst read
     loop_read_data_one_channel:
     for (int i = 0; i < size; i++) {
@@ -20,7 +22,7 @@ static void read_data_one_channel(const packed_index_t *indices,
 }
 
 
-static void read_vector(const data_t *vector,
+static void read_vector(const packed_data_t *vector,
                         data_t channel_0_vector_one_partition_bram[NUM_PE_PER_HBM_CHANNEL][VECTOR_BUFFER_LEN],
                         data_t channel_1_vector_one_partition_bram[NUM_PE_PER_HBM_CHANNEL][VECTOR_BUFFER_LEN],
                         unsigned int num_cols,
@@ -29,16 +31,21 @@ static void read_vector(const data_t *vector,
     unsigned int size = VECTOR_BUFFER_LEN;
     if (partition_idx == (num_col_partitions - 1))
         size = num_cols - (num_col_partitions - 1) * VECTOR_BUFFER_LEN;
-    // Burst read
+    assert (size % VDATA_SIZE == 0);
+    unsigned int vsize = size / VDATA_SIZE;
+    packed_data_t tmp;
+
     loop_read_vector:
-    data_t tmp;
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < vsize; i++) {
         #pragma HLS PIPELINE II=1
-        tmp = vector[partition_idx * VECTOR_BUFFER_LEN + i];
+        tmp = vector[partition_idx * VECTOR_BUFFER_LEN / VDATA_SIZE + i];
         for (int j = 0; j < NUM_PE_PER_HBM_CHANNEL; j++) {
             #pragma HLS UNROLL
-            channel_0_vector_one_partition_bram[j][i] = tmp;
-            channel_1_vector_one_partition_bram[j][i] = tmp;
+            for (int k = 0; k < VDATA_SIZE; k++) {
+                #pragma HLS UNROLL
+                channel_0_vector_one_partition_bram[j][i * VDATA_SIZE + k] = tmp.data[k];
+                channel_1_vector_one_partition_bram[j][i * VDATA_SIZE + k] = tmp.data[k];
+            }
         }
     }
 }
@@ -91,13 +98,16 @@ static void write_out_bram(hls::stream<data_t> channel_0_out_stream[NUM_PE_PER_H
     for (int row_idx = 0; row_idx < num_rows; row_idx+=NUM_PE_TOTAL) {
         #pragma HLS PIPELINE II=1
 
-        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
+        for (int PE_idx = 0; PE_idx < NUM_PE_TOTAL; PE_idx++) {
             #pragma HLS UNROLL
 
-            if ((row_idx + NUM_PE_PER_HBM_CHANNEL + PE_idx) < num_rows)
-                out_bram[row_idx + NUM_PE_PER_HBM_CHANNEL + PE_idx] += channel_1_out_stream[PE_idx].read();
-            if ((row_idx + PE_idx) < num_rows)
-                out_bram[row_idx + PE_idx] += channel_0_out_stream[PE_idx].read();
+            if ((row_idx + PE_idx) < num_rows) {
+                if (PE_idx < NUM_PE_PER_HBM_CHANNEL) {
+                    out_bram[row_idx + PE_idx] += channel_0_out_stream[PE_idx].read();
+                } else {
+                    out_bram[row_idx + PE_idx] += channel_1_out_stream[PE_idx - NUM_PE_PER_HBM_CHANNEL].read();
+                }
+            }
         }
     }
 }
@@ -106,12 +116,12 @@ static void write_out_bram(hls::stream<data_t> channel_0_out_stream[NUM_PE_PER_H
 extern "C" {
 
 void kernel_spmv_v4(
-    const data_t *vector,                            // The dense vector
+    const packed_data_t *vector,                     // The dense vector
     const unsigned int *channel_0_partition_indptr,  // Indptr of the partitions (the first channel)
     const packed_index_t *channel_0_indices,         // Indices (the first channel)
     const unsigned int *channel_1_partition_indptr,  // Indptr of the partitions (the second channel)
     const packed_index_t *channel_1_indices,         // Indices (the second channel)
-    data_t *out,                                     // Output of the SpMV kernel
+    packed_data_t *out,                              // Output of the SpMV kernel
     unsigned int num_rows,                           // Number of rows of the sparse matrix
     unsigned int num_cols,                           // Number of columns of the sparse matrix
     unsigned int num_times                           // Running the kernel num_times for performance measurement
@@ -135,14 +145,18 @@ void kernel_spmv_v4(
 #pragma HLS INTERFACE s_axilite port=num_times bundle=control
 #pragma HLS INTERFACE s_axilite port=return    bundle=control
 
+#pragma HLS DATA_PACK variable=vector
 #pragma HLS DATA_PACK variable=channel_0_indices
 #pragma HLS DATA_PACK variable=channel_1_indices
+#pragma HLS DATA_PACK variable=out
 
     data_t channel_0_vector_one_partition_bram[NUM_PE_PER_HBM_CHANNEL][VECTOR_BUFFER_LEN];
     #pragma HLS ARRAY_PARTITION variable=channel_0_vector_one_partition_bram complete dim=1
+    #pragma HLS ARRAY_PARTITION variable=channel_0_vector_one_partition_bram cyclic factor=NUM_PE_PER_HBM_CHANNEL dim=2
 
     data_t channel_1_vector_one_partition_bram[NUM_PE_PER_HBM_CHANNEL][VECTOR_BUFFER_LEN];
     #pragma HLS ARRAY_PARTITION variable=channel_1_vector_one_partition_bram complete dim=1
+    #pragma HLS ARRAY_PARTITION variable=channel_1_vector_one_partition_bram cyclic factor=NUM_PE_PER_HBM_CHANNEL dim=2
 
     data_t out_bram[MAX_NUM_ROWS];
     #pragma HLS ARRAY_PARTITION variable=out_bram cyclic factor=NUM_PE_TOTAL
@@ -158,19 +172,18 @@ void kernel_spmv_v4(
     hls::stream<data_t> channel_0_out_stream[NUM_PE_PER_HBM_CHANNEL];
     hls::stream<data_t> channel_1_out_stream[NUM_PE_PER_HBM_CHANNEL];
     /* Depth is set to the same for all the streams in one array */
-    #pragma HLS STREAM variable=channel_0_out_stream depth=512
-    #pragma HLS STREAM variable=channel_1_out_stream depth=512
+    #pragma HLS STREAM variable=channel_0_out_stream depth=32
+    #pragma HLS STREAM variable=channel_1_out_stream depth=32
 
     unsigned int num_col_partitions = (num_cols + VECTOR_BUFFER_LEN - 1) / VECTOR_BUFFER_LEN;
 
     // Running the same kernel num_times for performance measurement
     for (int count = 0; count < num_times; count++) {
 
-        // Initialize out_bram to 0
         loop_initialize_out_bram:
-        for (int PE_idx = 0; PE_idx < NUM_PE_TOTAL; PE_idx++) {
-            #pragma HLS UNROLL
-            for (int row_idx = 0; row_idx < num_rows; row_idx+=NUM_PE_TOTAL) {
+        for (int row_idx = 0; row_idx < num_rows; row_idx+=NUM_PE_TOTAL) {
+            for (int PE_idx = 0; PE_idx < NUM_PE_TOTAL; PE_idx++) {
+                #pragma HLS UNROLL
                 out_bram[row_idx + PE_idx] = 0;
             }
         }
@@ -207,11 +220,18 @@ void kernel_spmv_v4(
         }
     }
 
-    // Copy result back to global memory (DDR)
+    assert (num_rows % VDATA_SIZE == 0);
+    unsigned int vsize = num_rows / VDATA_SIZE;
+    packed_data_t tmp;
+
     loop_write_to_out_ddr:
-    for (int i = 0; i < num_rows; i++) {
+    for (int i = 0; i < vsize; i++) {
         #pragma HLS PIPELINE II=1
-        out[i] = out_bram[i];
+        for (int k = 0; k < VDATA_SIZE; k++) {
+            #pragma HLS UNROLL
+            tmp.data[k] = out_bram[i * VDATA_SIZE + k];
+        }
+        out[i] = tmp;
     }
 }
 

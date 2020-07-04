@@ -183,7 +183,7 @@ int main(int argc, char *argv[]) {
 
     channel_0_partition_indptr_ext.obj = channel_0_partition_indptr.data();
     channel_0_partition_indptr_ext.param = 0;
-    channel_0_partition_indptr_ext.flags = channels[2];
+    channel_0_partition_indptr_ext.flags = channels[3];
 
     channel_0_indices_ext.obj = channel_0_indices.data();
     channel_0_indices_ext.param = 0;
@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
 
     channel_1_partition_indptr_ext.obj = channel_1_partition_indptr.data();
     channel_1_partition_indptr_ext.param = 0;
-    channel_1_partition_indptr_ext.flags = channels[2];
+    channel_1_partition_indptr_ext.flags = channels[4];
 
     channel_1_indices_ext.obj = channel_1_indices.data();
     channel_1_indices_ext.param = 0;
@@ -199,7 +199,7 @@ int main(int argc, char *argv[]) {
 
     kernel_results_ext.obj = kernel_results.data();
     kernel_results_ext.param = 0;
-    kernel_results_ext.flags = channels[2];
+    kernel_results_ext.flags = channels[5];
 
     // Allocate memory on the FPGA
     OCL_CHECK(err, vector_buf = cl::Buffer(context,

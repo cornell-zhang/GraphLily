@@ -9,7 +9,7 @@ This is an SpMV design.
 
 `v3`: column partitioning to support arbitrary number of columns; dataflow optimization
 
-`v4`: data type is ap_ufixed<32, 1>; column partitioning to support arbitrary number of columns; dataflow optimization
+`v4`: data type is ap_ufixed<32, 1>; improve the efficiency of HLS stream; column partitioning to support arbitrary number of columns; dataflow optimization
 
 Compile-time constants are defined in .h file
 
