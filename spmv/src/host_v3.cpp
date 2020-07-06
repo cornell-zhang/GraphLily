@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
 
     // Data loading and formatting
     SpMVDataFormatter<data_t, NUM_PE_PER_HBM_CHANNEL, packed_data_t, packed_index_t>
-        formatter("/work/shared/users/phd/yh457/data/sparse_matrix_graph/uniform_10K_10_csr_int32.npz");
+        formatter("/work/shared/common/research/graphblas/data/sparse_matrix_graph/uniform_10K_10_csr_int32.npz");
 
     std::cout << "Finished loading data" << std::endl;
 

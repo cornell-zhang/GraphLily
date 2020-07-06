@@ -53,9 +53,13 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    typedef struct packed_float_type {
+        float data[VDATA_SIZE];
+    } packed_float_t;
+
     // Data loading and formatting
-    SpMVDataFormatter<data_t, NUM_PE_PER_HBM_CHANNEL, packed_data_t, packed_index_t>
-        formatter("/work/shared/users/phd/yh457/data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz");
+    SpMVDataFormatter<float, NUM_PE_PER_HBM_CHANNEL, packed_float_t, packed_index_t>
+        formatter("/work/shared/common/research/graphblas/data/sparse_matrix_graph/uniform_100K_1000_csr_float32.npz");
 
     std::cout << "Finished loading data" << std::endl;
 
@@ -267,6 +271,7 @@ int main(int argc, char *argv[]) {
     q.finish();
 
     // Calculate the throughput
+    // TODO: do we want to count the padded marker?
     double throughput = num_times * (nnz * sizeof(unsigned int)); // indices
     throughput /= 1000;               // to KB
     throughput /= 1000;               // to MB

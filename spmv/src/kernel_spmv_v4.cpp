@@ -172,8 +172,8 @@ void kernel_spmv_v4(
     hls::stream<data_t> channel_0_out_stream[NUM_PE_PER_HBM_CHANNEL];
     hls::stream<data_t> channel_1_out_stream[NUM_PE_PER_HBM_CHANNEL];
     /* Depth is set to the same for all the streams in one array */
-    #pragma HLS STREAM variable=channel_0_out_stream depth=32
-    #pragma HLS STREAM variable=channel_1_out_stream depth=32
+    #pragma HLS STREAM variable=channel_0_out_stream depth=512
+    #pragma HLS STREAM variable=channel_1_out_stream depth=512
 
     unsigned int num_col_partitions = (num_cols + VECTOR_BUFFER_LEN - 1) / VECTOR_BUFFER_LEN;
 
