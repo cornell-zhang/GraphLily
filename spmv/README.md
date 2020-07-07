@@ -18,9 +18,9 @@ Pipeline rewind is not useful.
 ## TODO
 1. BRAM has two read ports. Two PEs share one replica of the vector?
 
-2. Implement row partitioning to fully support arbitrary matrix sizes.
+2. Implement row partitioning to fully support arbitrary matrix sizes; handle cases when the dimension does not divide VDATA_SIZE.
 
-3. The multiple streams should be independent, but they are not, causing deadlock when the depth is not large enough.
+3. Improve the efficiency of array of HLS streams; improve the frequency.
 
 ## Command Line Arguments
 Once the environment has been configured, the application can be executed by

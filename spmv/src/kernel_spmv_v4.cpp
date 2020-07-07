@@ -90,27 +90,39 @@ static void compute_spmv_one_channel(hls::stream<packed_index_t> &indices_stream
 }
 
 
-static void write_out_bram(hls::stream<data_t> channel_0_out_stream[NUM_PE_PER_HBM_CHANNEL],
-                           hls::stream<data_t> channel_1_out_stream[NUM_PE_PER_HBM_CHANNEL],
-                           data_t out_bram[MAX_NUM_ROWS],
-                           const unsigned int num_rows) {
-    loop_write_out_bram:
+static void write_out_bram_one_PE(hls::stream<data_t> &s,
+                                  data_t out_bram_one_PE[MAX_NUM_ROWS/NUM_PE_TOTAL + 1],
+                                  unsigned int PE_idx,
+                                  unsigned int num_rows) {
+    loop_write_out_bram_one_PE:
     for (int row_idx = 0; row_idx < num_rows; row_idx+=NUM_PE_TOTAL) {
         #pragma HLS PIPELINE II=1
-
-        for (int PE_idx = 0; PE_idx < NUM_PE_TOTAL; PE_idx++) {
-            #pragma HLS UNROLL
-
-            if ((row_idx + PE_idx) < num_rows) {
-                if (PE_idx < NUM_PE_PER_HBM_CHANNEL) {
-                    out_bram[row_idx + PE_idx] += channel_0_out_stream[PE_idx].read();
-                } else {
-                    out_bram[row_idx + PE_idx] += channel_1_out_stream[PE_idx - NUM_PE_PER_HBM_CHANNEL].read();
-                }
-            }
+        if ((row_idx + PE_idx) < num_rows) {
+            out_bram_one_PE[row_idx/NUM_PE_TOTAL] += s.read();
         }
     }
 }
+
+
+#define WRITE_OUT_BRAM_ONE_CHANNEL(streams, brams, channel_idx, num_rows) { \
+    unsigned int start_PE_idx = channel_idx * NUM_PE_PER_HBM_CHANNEL; \
+    write_out_bram_one_PE(streams[0], brams[start_PE_idx + 0], start_PE_idx + 0, num_rows); \
+    write_out_bram_one_PE(streams[1], brams[start_PE_idx + 1], start_PE_idx + 1, num_rows); \
+    write_out_bram_one_PE(streams[2], brams[start_PE_idx + 2], start_PE_idx + 2, num_rows); \
+    write_out_bram_one_PE(streams[3], brams[start_PE_idx + 3], start_PE_idx + 3, num_rows); \
+    write_out_bram_one_PE(streams[4], brams[start_PE_idx + 4], start_PE_idx + 4, num_rows); \
+    write_out_bram_one_PE(streams[5], brams[start_PE_idx + 5], start_PE_idx + 5, num_rows); \
+    write_out_bram_one_PE(streams[6], brams[start_PE_idx + 6], start_PE_idx + 6, num_rows); \
+    write_out_bram_one_PE(streams[7], brams[start_PE_idx + 7], start_PE_idx + 7, num_rows); \
+    write_out_bram_one_PE(streams[8], brams[start_PE_idx + 8], start_PE_idx + 8, num_rows); \
+    write_out_bram_one_PE(streams[9], brams[start_PE_idx + 9], start_PE_idx + 9, num_rows); \
+    write_out_bram_one_PE(streams[10], brams[start_PE_idx + 10], start_PE_idx + 10, num_rows); \
+    write_out_bram_one_PE(streams[11], brams[start_PE_idx + 11], start_PE_idx + 11, num_rows); \
+    write_out_bram_one_PE(streams[12], brams[start_PE_idx + 12], start_PE_idx + 12, num_rows); \
+    write_out_bram_one_PE(streams[13], brams[start_PE_idx + 13], start_PE_idx + 13, num_rows); \
+    write_out_bram_one_PE(streams[14], brams[start_PE_idx + 14], start_PE_idx + 14, num_rows); \
+    write_out_bram_one_PE(streams[15], brams[start_PE_idx + 15], start_PE_idx + 15, num_rows); \
+} \
 
 
 extern "C" {
@@ -158,10 +170,9 @@ void kernel_spmv_v4(
     #pragma HLS ARRAY_PARTITION variable=channel_1_vector_one_partition_bram complete dim=1
     #pragma HLS ARRAY_PARTITION variable=channel_1_vector_one_partition_bram cyclic factor=NUM_PE_PER_HBM_CHANNEL dim=2
 
-    data_t out_bram[MAX_NUM_ROWS];
-    #pragma HLS ARRAY_PARTITION variable=out_bram cyclic factor=NUM_PE_TOTAL
+    data_t out_bram[NUM_PE_TOTAL][MAX_NUM_ROWS/NUM_PE_TOTAL + 1];
+    #pragma HLS ARRAY_PARTITION variable=out_bram complete dim=1
     // #pragma HLS RESOURCE variable=out_bram core=XPM_MEMORY uram
-    // TODO: bank conflicts when writing out_stream to out_bram?
 
     hls::stream<packed_index_t> channel_0_indices_stream;
     #pragma HLS STREAM variable=channel_0_indices_stream depth=512
@@ -172,8 +183,8 @@ void kernel_spmv_v4(
     hls::stream<data_t> channel_0_out_stream[NUM_PE_PER_HBM_CHANNEL];
     hls::stream<data_t> channel_1_out_stream[NUM_PE_PER_HBM_CHANNEL];
     /* Depth is set to the same for all the streams in one array */
-    #pragma HLS STREAM variable=channel_0_out_stream depth=512
-    #pragma HLS STREAM variable=channel_1_out_stream depth=512
+    #pragma HLS STREAM variable=channel_0_out_stream depth=32
+    #pragma HLS STREAM variable=channel_1_out_stream depth=32
 
     unsigned int num_col_partitions = (num_cols + VECTOR_BUFFER_LEN - 1) / VECTOR_BUFFER_LEN;
 
@@ -184,7 +195,7 @@ void kernel_spmv_v4(
         for (int row_idx = 0; row_idx < num_rows; row_idx+=NUM_PE_TOTAL) {
             for (int PE_idx = 0; PE_idx < NUM_PE_TOTAL; PE_idx++) {
                 #pragma HLS UNROLL
-                out_bram[row_idx + PE_idx] = 0;
+                out_bram[PE_idx][row_idx/NUM_PE_TOTAL] = 0;
             }
         }
 
@@ -213,10 +224,8 @@ void kernel_spmv_v4(
                                      channel_1_vector_one_partition_bram,
                                      channel_1_out_stream,
                                      1);
-            write_out_bram(channel_0_out_stream,
-                           channel_1_out_stream,
-                           out_bram,
-                           num_rows);
+            WRITE_OUT_BRAM_ONE_CHANNEL(channel_0_out_stream, out_bram, 0, num_rows)
+            WRITE_OUT_BRAM_ONE_CHANNEL(channel_1_out_stream, out_bram, 1, num_rows)
         }
     }
 
@@ -229,7 +238,7 @@ void kernel_spmv_v4(
         #pragma HLS PIPELINE II=1
         for (int k = 0; k < VDATA_SIZE; k++) {
             #pragma HLS UNROLL
-            tmp.data[k] = out_bram[i * VDATA_SIZE + k];
+            tmp.data[k] = out_bram[i % NUM_HBM_CHANNEL * VDATA_SIZE + k][i / NUM_HBM_CHANNEL];
         }
         out[i] = tmp;
     }

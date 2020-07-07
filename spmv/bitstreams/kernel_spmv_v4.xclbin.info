@@ -11,7 +11,7 @@ xclbin Information
    Kernels:                kernel_spmv_v4
    Signature:              
    Content:                Bitstream
-   UUID (xclbin):          d66a7978-063c-456a-aea1-65053e2b3ada
+   UUID (xclbin):          7c33a6c4-cffe-4127-8f34-3686257c2094
    Sections:               BITSTREAM, MEM_TOPOLOGY, IP_LAYOUT, CONNECTIVITY, 
                            CLOCK_FREQ_TOPOLOGY, BUILD_METADATA, 
                            EMBEDDED_METADATA, SYSTEM_METADATA
@@ -42,7 +42,7 @@ Clocks
    Name:      DATA_CLK
    Index:     1
    Type:      DATA
-   Frequency: 132 MHz
+   Frequency: 159 MHz
 
    Name:      KERNEL_CLK
    Index:     2
