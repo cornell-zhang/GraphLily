@@ -11,7 +11,7 @@ xclbin Information
    Kernels:                kernel_spmv_v4
    Signature:              
    Content:                Bitstream
-   UUID (xclbin):          7c33a6c4-cffe-4127-8f34-3686257c2094
+   UUID (xclbin):          4c7085c2-2379-4a99-b899-3c7291088c74
    Sections:               BITSTREAM, MEM_TOPOLOGY, IP_LAYOUT, CONNECTIVITY, 
                            CLOCK_FREQ_TOPOLOGY, BUILD_METADATA, 
                            EMBEDDED_METADATA, SYSTEM_METADATA
@@ -42,7 +42,7 @@ Clocks
    Name:      DATA_CLK
    Index:     1
    Type:      DATA
-   Frequency: 159 MHz
+   Frequency: 154 MHz
 
    Name:      KERNEL_CLK
    Index:     2
@@ -68,30 +68,30 @@ Memory Configuration
    Name:         HBM[2]
    Index:        2
    Type:         MEM_DRAM
-   Base Address: 0x20000000
-   Address Size: 0x10000000
-   Bank Used:    Yes
+   Base Address: 0x0
+   Address Size: 0x0
+   Bank Used:    No
 
    Name:         HBM[3]
    Index:        3
    Type:         MEM_DRAM
-   Base Address: 0x30000000
-   Address Size: 0x10000000
-   Bank Used:    Yes
+   Base Address: 0x0
+   Address Size: 0x0
+   Bank Used:    No
 
    Name:         HBM[4]
    Index:        4
    Type:         MEM_DRAM
-   Base Address: 0x40000000
-   Address Size: 0x10000000
-   Bank Used:    Yes
+   Base Address: 0x0
+   Address Size: 0x0
+   Bank Used:    No
 
    Name:         HBM[5]
    Index:        5
    Type:         MEM_DRAM
-   Base Address: 0x50000000
-   Address Size: 0x10000000
-   Bank Used:    Yes
+   Base Address: 0x0
+   Address Size: 0x0
+   Bank Used:    No
 
    Name:         HBM[6]
    Index:        6
@@ -280,14 +280,14 @@ Memory Configuration
    Type:         MEM_DRAM
    Base Address: 0x4000000000
    Address Size: 0x400000000
-   Bank Used:    No
+   Bank Used:    Yes
 
    Name:         DDR[1]
    Index:        33
    Type:         MEM_DRAM
    Base Address: 0x8000000000
    Address Size: 0x400000000
-   Bank Used:    No
+   Bank Used:    Yes
 
    Name:         PLRAM[0]
    Index:        34
@@ -388,12 +388,12 @@ Instance:        kernel_spmv_v4_1
    Argument:          vector
    Register Offset:   0x10
    Port:              M_AXI_GMEM2
-   Memory:            HBM[2] (MEM_DRAM)
+   Memory:            DDR[0] (MEM_DRAM)
 
    Argument:          channel_0_partition_indptr
    Register Offset:   0x1C
    Port:              M_AXI_GMEM3
-   Memory:            HBM[3] (MEM_DRAM)
+   Memory:            DDR[0] (MEM_DRAM)
 
    Argument:          channel_0_indices
    Register Offset:   0x28
@@ -403,7 +403,7 @@ Instance:        kernel_spmv_v4_1
    Argument:          channel_1_partition_indptr
    Register Offset:   0x34
    Port:              M_AXI_GMEM4
-   Memory:            HBM[4] (MEM_DRAM)
+   Memory:            DDR[0] (MEM_DRAM)
 
    Argument:          channel_1_indices
    Register Offset:   0x40
@@ -413,7 +413,7 @@ Instance:        kernel_spmv_v4_1
    Argument:          out
    Register Offset:   0x4C
    Port:              M_AXI_GMEM5
-   Memory:            HBM[5] (MEM_DRAM)
+   Memory:            DDR[1] (MEM_DRAM)
 
    Argument:          num_rows
    Register Offset:   0x58

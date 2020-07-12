@@ -53,13 +53,11 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    typedef struct packed_float_type {
-        float data[VDATA_SIZE];
-    } packed_float_t;
+    using packed_data_t = struct {data_t data[VDATA_SIZE];};
 
     // Data loading and formatting
-    SpMVDataFormatter<float, NUM_PE_PER_HBM_CHANNEL, packed_float_t, packed_index_t>
-        formatter("/work/shared/common/research/graphblas/data/sparse_matrix_graph/uniform_100K_1000_csr_float32.npz");
+    SpMVDataFormatter<data_t, NUM_PE_PER_HBM_CHANNEL, packed_data_t, packed_index_t>
+        formatter("/work/shared/common/research/graphblas/data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz");
 
     std::cout << "Finished loading data" << std::endl;
 
@@ -162,7 +160,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    unsigned int num_times = 100;
+    unsigned int num_times = 1;
     if (xcl::is_emulation()) {
         num_times = 2;
     }
@@ -183,11 +181,11 @@ int main(int argc, char *argv[]) {
 
     vector_ext.obj = vector.data();
     vector_ext.param = 0;
-    vector_ext.flags = channels[2];
+    vector_ext.flags = 0;
 
     channel_0_partition_indptr_ext.obj = channel_0_partition_indptr.data();
     channel_0_partition_indptr_ext.param = 0;
-    channel_0_partition_indptr_ext.flags = channels[3];
+    channel_0_partition_indptr_ext.flags = 0;
 
     channel_0_indices_ext.obj = channel_0_indices.data();
     channel_0_indices_ext.param = 0;
@@ -195,7 +193,7 @@ int main(int argc, char *argv[]) {
 
     channel_1_partition_indptr_ext.obj = channel_1_partition_indptr.data();
     channel_1_partition_indptr_ext.param = 0;
-    channel_1_partition_indptr_ext.flags = channels[4];
+    channel_1_partition_indptr_ext.flags = 0;
 
     channel_1_indices_ext.obj = channel_1_indices.data();
     channel_1_indices_ext.param = 0;
@@ -203,7 +201,7 @@ int main(int argc, char *argv[]) {
 
     kernel_results_ext.obj = kernel_results.data();
     kernel_results_ext.param = 0;
-    kernel_results_ext.flags = channels[5];
+    kernel_results_ext.flags = 0;
 
     // Allocate memory on the FPGA
     OCL_CHECK(err, vector_buf = cl::Buffer(context,
