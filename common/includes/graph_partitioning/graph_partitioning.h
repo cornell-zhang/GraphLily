@@ -230,6 +230,8 @@ private:
     std::vector<uint32_t> adj_indices_;
     /*! \brief The index pointers (CSR) of the original sparse matrix */
     std::vector<uint32_t> adj_indptr_;
+    /*! \brief Adj data using float data type */
+    std::vector<float> adj_data_float_;
     /*! \brief The number of partitions along the column dimension */
     uint32_t num_col_partitions_;
     /*! \brief The number of HBM channels */
@@ -279,9 +281,14 @@ private:
     }
 
 public:
-    /*! \brief Constructor from a scipy sparse npz file */
-    SpMVDataFormatter(std::string csr_npz_path) {
-        cnpy::npz_t npz = cnpy::npz_load(csr_npz_path);
+    /*!
+     * \brief Constructor from a scipy sparse npz file.
+     *        The sparse matrix should have float data type.
+     *        Data type conversion, if required, is handled internally.
+     * \param csr_float_npz_path The file path.
+     */
+    SpMVDataFormatter(std::string csr_float_npz_path) {
+        cnpy::npz_t npz = cnpy::npz_load(csr_float_npz_path);
         cnpy::NpyArray npy_shape = npz["shape"];
         uint32_t num_rows = npy_shape.data<uint32_t>()[0];
         uint32_t num_cols = npy_shape.data<uint32_t>()[2];
@@ -291,8 +298,11 @@ public:
         uint32_t nnz = npy_data.shape[0];
         cnpy::NpyArray npy_indices = npz["indices"];
         cnpy::NpyArray npy_indptr = npz["indptr"];
-        this->adj_data_.insert(this->adj_data_.begin(), &npy_data.data<data_type>()[0],
-            &npy_data.data<data_type>()[nnz]);
+        this->adj_data_float_.insert(this->adj_data_float_.begin(), &npy_data.data<float>()[0],
+            &npy_data.data<float>()[nnz]);
+        // TODO: does ap_int make formatting slower than float?
+        std::copy(this->adj_data_float_.begin(), this->adj_data_float_.end(),
+            std::back_inserter(this->adj_data_));
         this->adj_indices_.insert(this->adj_indices_.begin(), &npy_indices.data<uint32_t>()[0],
             &npy_indices.data<uint32_t>()[nnz]);
         this->adj_indptr_.insert(this->adj_indptr_.begin(), &npy_indptr.data<uint32_t>()[0],
@@ -355,6 +365,14 @@ public:
      */
     const std::vector<data_type> get_data() {
         return this->adj_data_;
+    }
+
+    /*!
+     * \brief Get the non-zero data using float data type.
+     * \return The non-zero data using float data type.
+     */
+    const std::vector<float> get_data_float() {
+        return this->adj_data_float_;
     }
 
     /*!
