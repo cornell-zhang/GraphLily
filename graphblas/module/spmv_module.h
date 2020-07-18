@@ -104,20 +104,10 @@ public:
         this->_load_and_format_data(csr_float_npz_path);
     }
 
-    /*!
-     * \brief Override the generate_kernel_header method.
-     */
     void generate_kernel_header() override;
 
-    /*!
-     * \brief Override the send_data_to_FPGA method.
-     */
     void send_data_to_FPGA() override;
 
-    /*!
-     * \brief Override the set_up_runtime method.
-     * \param xclbin_file_path The xclbin file path.
-     */
     void set_up_runtime(std::string xclbin_file_path) override;
 
     using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;

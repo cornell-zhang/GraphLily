@@ -36,17 +36,17 @@ public:
     /*!
      * \brief Link the kernel cpp file to the build directory.
      */
-    void link_kernel_code();
+    virtual void link_kernel_code();
 
     /*!
      * \brief Generate the Makefile.
      */
-    void generate_makefile();
+    virtual void generate_makefile();
 
     /*!
      * \brief Synthesize the xclbin file. This takes a long time.
      */
-    void synthesize_xclbin();
+    virtual void synthesize_xclbin();
 
     /*!
      * \brief Send the formatted data to FPGA.
