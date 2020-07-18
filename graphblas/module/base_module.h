@@ -22,6 +22,13 @@ protected:
     cl::CommandQueue command_queue_;
 
 public:
+    BaseModule(std::string kernel_name) {
+        this->kernel_name_ = kernel_name;
+        this->makefile_body_ = graphblas::add_kernel_to_makefile(this->kernel_name_);
+        this->device_ = graphblas::find_device();
+        this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
+    }
+
     /*!
      * \brief Generate the kernel header file.
      */

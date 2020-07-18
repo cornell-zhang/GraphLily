@@ -98,14 +98,10 @@ public:
                SemiRingType semiring,
                uint32_t num_channels,
                uint32_t vector_buffer_len,
-               std::string kernel_name) {
+               std::string kernel_name) : BaseModule<SpMVModule<matrix_data_t, vector_data_t>>(kernel_name) {
         this->_check_data_type();
         this->_get_kernel_config(semiring, num_channels, vector_buffer_len);
-        this->kernel_name_ = kernel_name;
-        this->makefile_body_ = graphblas::add_kernel_to_makefile(this->kernel_name_);
         this->_load_and_format_data(csr_float_npz_path);
-        this->device_ = graphblas::find_device();
-        this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
     }
 
     /*!
