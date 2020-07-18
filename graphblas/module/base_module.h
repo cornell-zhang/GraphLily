@@ -7,7 +7,6 @@
 namespace graphblas {
 namespace module {
 
-template<typename T>
 class BaseModule {
 protected:
     /*! \brief The kernel name */
@@ -32,9 +31,7 @@ public:
     /*!
      * \brief Generate the kernel header file.
      */
-    void generate_kernel_header() {
-        static_cast<T*>(this)->generate_kernel_header_impl();
-    }
+    virtual void generate_kernel_header() = 0;
 
     /*!
      * \brief Link the kernel cpp file to the build directory.
@@ -54,22 +51,17 @@ public:
     /*!
      * \brief Send the formatted data to FPGA.
      */
-    void send_data_to_FPGA() {
-        static_cast<T*>(this)->send_data_to_FPGA_impl();
-    }
+    virtual void send_data_to_FPGA() = 0;
 
     /*!
      * \brief Load the xclbin file and set up runtime.
      * \param xclbin_file_path The xclbin file path.
      */
-    void set_up_runtime(std::string xclbin_file_path) {
-        static_cast<T*>(this)->set_up_runtime_impl(xclbin_file_path);
-    };
+    virtual void set_up_runtime(std::string xclbin_file_path) = 0;
 };
 
 
-template <typename T>
-void BaseModule<T>::link_kernel_code() {
+void BaseModule::link_kernel_code() {
     std::string command = "ln -s " + graphblas::root_path + "/hw/" + this->kernel_name_ + ".cpp" + " "
                           + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     std::cout << command << std::endl;
@@ -81,8 +73,7 @@ void BaseModule<T>::link_kernel_code() {
 }
 
 
-template <typename T>
-void BaseModule<T>::generate_makefile() {
+void BaseModule::generate_makefile() {
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
@@ -94,14 +85,13 @@ void BaseModule<T>::generate_makefile() {
 }
 
 
-template <typename T>
-void BaseModule<T>::synthesize_xclbin() {
+void BaseModule::synthesize_xclbin() {
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    static_cast<T*>(this)->generate_kernel_header();
-    static_cast<T*>(this)->link_kernel_code();
-    static_cast<T*>(this)->generate_makefile();
+    this->generate_kernel_header();
+    this->link_kernel_code();
+    this->generate_makefile();
     command = "cd " + graphblas::proj_folder_name + "; " + "make build";
     std::cout << command << std::endl;
     system(command.c_str());

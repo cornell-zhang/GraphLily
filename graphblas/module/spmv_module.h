@@ -17,7 +17,7 @@ namespace graphblas {
 namespace module {
 
 template<typename matrix_data_t, typename vector_data_t>
-class SpMVModule : public BaseModule<SpMVModule<matrix_data_t, vector_data_t>> {
+class SpMVModule : public BaseModule {
 private:
     /*! \brief The number of rows of the original sparse matrix */
     uint32_t num_rows_;
@@ -98,27 +98,27 @@ public:
                SemiRingType semiring,
                uint32_t num_channels,
                uint32_t vector_buffer_len,
-               std::string kernel_name) : BaseModule<SpMVModule<matrix_data_t, vector_data_t>>(kernel_name) {
+               std::string kernel_name) : BaseModule(kernel_name) {
         this->_check_data_type();
         this->_get_kernel_config(semiring, num_channels, vector_buffer_len);
         this->_load_and_format_data(csr_float_npz_path);
     }
 
     /*!
-     * \brief Implementation of the generate_kernel_header method.
+     * \brief Override the generate_kernel_header method.
      */
-    void generate_kernel_header_impl();
+    void generate_kernel_header() override;
 
     /*!
-     * \brief Implementation of the send_data_to_FPGA method.
+     * \brief Override the send_data_to_FPGA method.
      */
-    void send_data_to_FPGA_impl();
+    void send_data_to_FPGA() override;
 
     /*!
-     * \brief Implementation of the set_up_runtime method.
+     * \brief Override the set_up_runtime method.
      * \param xclbin_file_path The xclbin file path.
      */
-    void set_up_runtime_impl(std::string xclbin_file_path);
+    void set_up_runtime(std::string xclbin_file_path) override;
 
     using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
     /*!
@@ -258,7 +258,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::_load_and_format_data(std::string
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header_impl() {
+void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
@@ -293,7 +293,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header_impl() {
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA_impl() {
+void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA() {
     cl_int err;
     // Handle channel_partition_indptr and channel_indices
     cl_mem_ext_ptr_t channel_partition_indptr_ext[this->num_channels_];
@@ -346,7 +346,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA_impl() {
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::set_up_runtime_impl(std::string xclbin_file_path) {
+void SpMVModule<matrix_data_t, vector_data_t>::set_up_runtime(std::string xclbin_file_path) {
     // Load xclbin
     cl_int err;
     auto file_buf = xcl::read_binary_file(xclbin_file_path);
