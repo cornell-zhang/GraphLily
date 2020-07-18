@@ -3,19 +3,21 @@
 
 #include <cstdint>
 #include <vector>
-#include <type_traits>
+#include <fstream>
+#include <chrono>
 
 #include "xcl2.hpp"
 #include "graph_partitioning.h"
 
-#include "../base.h"
+#include "../global.h"
+#include "./base_module.h"
 
 
 namespace graphblas {
 namespace module {
 
 template<typename matrix_data_t, typename vector_data_t>
-class SpMVModule {
+class SpMVModule : public BaseModule<SpMVModule<matrix_data_t, vector_data_t>> {
 private:
     /*! \brief The number of rows of the original sparse matrix */
     uint32_t num_rows_;
@@ -57,11 +59,9 @@ private:
     /*! \brief The kernel results */
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results_;
 
-    // OpenCL runtime
-    cl::Device device_;
-    cl::Context context_;
-    cl::Kernel kernel_;
-    cl::CommandQueue command_queue_;
+    // String representation of the data type
+    std::string matrix_data_t_str_;
+    std::string vector_data_t_str_;
 
     // Device buffers
     std::vector<cl::Buffer> channel_partition_indptr_buf_;
@@ -93,33 +93,36 @@ private:
      */
     void _load_and_format_data(std::string csr_float_npz_path);
 
-    /*!
-     * \brief Send the formatted sparse matrix to FPGA.
-     */
-    void _send_data_to_FPGA();
-
-    /*!
-     * \brief Load the xclbin file and set up runtime.
-     * \param xclbin_file_path The xclbin file path.
-     * \param kernel_name The kernel name.
-     */
-    void _set_up_runtime(std::string xclbin_file_path, std::string kernel_name);
-
 public:
     SpMVModule(std::string csr_float_npz_path,
                SemiRingType semiring,
                uint32_t num_channels,
                uint32_t vector_buffer_len,
-               std::string xclbin_file_path,
                std::string kernel_name) {
         this->_check_data_type();
         this->_get_kernel_config(semiring, num_channels, vector_buffer_len);
+        this->kernel_name_ = kernel_name;
+        this->makefile_body_ = graphblas::add_kernel_to_makefile(this->kernel_name_);
         this->_load_and_format_data(csr_float_npz_path);
         this->device_ = graphblas::find_device();
         this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
-        this->_send_data_to_FPGA();
-        this->_set_up_runtime(xclbin_file_path, kernel_name);
     }
+
+    /*!
+     * \brief Implementation of the generate_kernel_header method.
+     */
+    void generate_kernel_header_impl();
+
+    /*!
+     * \brief Implementation of the send_data_to_FPGA method.
+     */
+    void send_data_to_FPGA_impl();
+
+    /*!
+     * \brief Implementation of the set_up_runtime method.
+     * \param xclbin_file_path The xclbin file path.
+     */
+    void set_up_runtime_impl(std::string xclbin_file_path);
 
     using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
     /*!
@@ -196,6 +199,8 @@ void SpMVModule<matrix_data_t, vector_data_t>::_check_data_type() {
     if (!std::is_same<matrix_data_t, bool>::value) {
         assert((std::is_same<matrix_data_t, vector_data_t>::value));
     }
+    this->matrix_data_t_str_ = graphblas::dtype_to_str<matrix_data_t>();
+    this->vector_data_t_str_ = graphblas::dtype_to_str<vector_data_t>();
 }
 
 
@@ -257,7 +262,42 @@ void SpMVModule<matrix_data_t, vector_data_t>::_load_and_format_data(std::string
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::_send_data_to_FPGA() {
+void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header_impl() {
+    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::cout << command << std::endl;
+    system(command.c_str());
+    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
+    // Kernel configuration
+    header << "const unsigned int VECTOR_PACK_SIZE = " << graphblas::pack_size << ";" << std::endl;
+    header << "const unsigned int NUM_PE_PER_HBM_CHANNEL = VECTOR_PACK_SIZE" << ";" << std::endl;
+    header << "const unsigned int NUM_HBM_CHANNEL = " <<  this->num_channels_ << ";" << std::endl;
+    header << "const unsigned int NUM_PE_TOTAL = NUM_PE_PER_HBM_CHANNEL*NUM_HBM_CHANNEL" << ";" << std::endl;
+    header << "const unsigned int MAX_NUM_ROWS = " << "100*1000" << ";" << std::endl;
+    header << "const unsigned int VECTOR_BUFFER_LEN = " << this->vector_buffer_len_ << ";" << std::endl;
+    // Data types
+    header << "typedef " << this->vector_data_t_str_ << " VECTOR_T;" << std::endl;
+    header << "typedef struct {VECTOR_T data[VECTOR_PACK_SIZE];}" << " PACKED_VECTOR_T;" << std::endl;
+    header << "typedef struct {unsigned int data[VECTOR_PACK_SIZE];}" << " PACKED_INDEX_T;" << std::endl;
+    // End-of-row marker
+    header << "#define IDX_MARKER 0xffffffff" << std::endl;
+    // Semiring
+    switch (this->semiring_) {
+        case graphblas::kMulAdd:
+            header << "#define MulAddSemiring" << std::endl;
+            break;
+        case graphblas::kLogicalAndOr:
+            header << "#define LogicalAndOrSemiring" << std::endl;
+            break;
+        default:
+            std::cerr << "Invalid semiring" << std::endl;
+            break;
+    }
+    header.close();
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA_impl() {
     cl_int err;
     // Handle channel_partition_indptr and channel_indices
     cl_mem_ext_ptr_t channel_partition_indptr_ext[this->num_channels_];
@@ -310,8 +350,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::_send_data_to_FPGA() {
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::_set_up_runtime(std::string xclbin_file_path,
-                                                               std::string kernel_name) {
+void SpMVModule<matrix_data_t, vector_data_t>::set_up_runtime_impl(std::string xclbin_file_path) {
     // Load xclbin
     cl_int err;
     auto file_buf = xcl::read_binary_file(xclbin_file_path);
@@ -322,7 +361,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::_set_up_runtime(std::string xclbi
     } else {
         std::cout << "Successfully programmed device with xclbin file\n";
     }
-    OCL_CHECK(err, this->kernel_ = cl::Kernel(program, kernel_name.c_str(), &err));
+    OCL_CHECK(err, this->kernel_ = cl::Kernel(program, this->kernel_name_.c_str(), &err));
     // Set arguments
     size_t arg_idx = 1; // the first argument (arg_idx = 0) is the dense vector
     for (size_t c = 0; c < this->num_channels_; c++) {
