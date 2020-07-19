@@ -27,8 +27,6 @@ private:
     std::vector<index_t> indptr_;
     /*! \brief The column indices (CSR) of the original sparse matrix */
     std::vector<index_t> indices_;
-    /*! \brief The non-zero values (CSR) of the original sparse matrix */
-    std::vector<vector_data_t> vals_;
     /*! \brief Vals using float data type */
     std::vector<float> vals_float_;
     /*! \brief The number of non-zeros of the original sparse matrix */
@@ -62,6 +60,11 @@ private:
     // String representation of the data type
     std::string matrix_data_t_str_;
     std::string vector_data_t_str_;
+
+    // Use float to work around the issue with std::vector<bool>
+    using matrix_data_t_internal_ = typename std::conditional<std::is_same<matrix_data_t, bool>::value,
+                                                              float,
+                                                              matrix_data_t>::type;
 
     // Device buffers
     std::vector<cl::Buffer> channel_partition_indptr_buf_;
@@ -108,34 +111,13 @@ public:
 
     void send_data_to_FPGA() override;
 
-    void set_up_runtime(std::string xclbin_file_path) override;
-
     using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
     /*!
      * \brief Run the module.
      * \param vector The input vector.
      * \return The kernel results.
      */
-    aligned_vector_t run(aligned_vector_t &vector) {
-        cl_mem_ext_ptr_t vector_ext;
-        vector_ext.obj = vector.data();
-        vector_ext.param = 0;
-        vector_ext.flags = 0;
-        cl_int err;
-        OCL_CHECK(err, this->vector_buf_ = cl::Buffer(this->context_,
-                  CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                  sizeof(vector_data_t) * this->num_cols_,
-                  &vector_ext,
-                  &err));
-        OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf_));
-        OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf_}, 0));
-        OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
-        this->command_queue_.finish();
-        OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->kernel_results_buf_},
-            CL_MIGRATE_MEM_OBJECT_HOST));
-        this->command_queue_.finish();
-        return this->kernel_results_;
-    }
+    aligned_vector_t run(aligned_vector_t &vector);
 
     using aligned_float_t = std::vector<float, aligned_allocator<float>>;
     /*!
@@ -143,35 +125,7 @@ public:
      * \param vector The input vector.
      * \return The reference results.
      */
-    aligned_float_t compute_reference_results(aligned_float_t &vector) {
-        aligned_float_t reference_results(this->num_rows_);
-        std::fill(reference_results.begin(), reference_results.end(), 0);
-        if (this->graph_is_weighed_) {
-            for (size_t row_idx = 0; row_idx < this->num_rows_; row_idx++) {
-                index_t start = this->indptr_[row_idx];
-                index_t end = this->indptr_[row_idx + 1];
-                for (size_t i = start; i < end; i++) {
-                    index_t index = this->indices_[i];
-                    reference_results[row_idx] += this->vals_float_[i] * vector[index];
-                }
-            }
-        } else {
-            for (size_t row_idx = 0; row_idx < this->num_rows_; row_idx++) {
-                index_t start = this->indptr_[row_idx];
-                index_t end = this->indptr_[row_idx + 1];
-                for (size_t i = start; i < end; i++) {
-                    index_t index = this->indices_[i];
-                    reference_results[row_idx] += vector[index];
-                }
-            }
-        }
-        return reference_results;
-    }
-
-    // float measure_average_time(uint32_t num_runs) {
-
-    // }
-
+    aligned_float_t compute_reference_results(aligned_float_t &vector);
 };
 
 
@@ -202,18 +156,19 @@ void SpMVModule<matrix_data_t, vector_data_t>::_get_kernel_config(SemiRingType s
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::_load_and_format_data(std::string csr_float_npz_path) {
-    SpMVDataFormatter<vector_data_t, graphblas::pack_size, packed_data_t, graphblas::packed_index_t>
+    SpMVDataFormatter<matrix_data_t_internal_, graphblas::pack_size, packed_data_t, graphblas::packed_index_t>
         formatter(csr_float_npz_path);
     this->num_rows_ = formatter.get_num_rows();
     this->num_cols_ = formatter.get_num_cols();
     this->indptr_ = formatter.get_indptr();
     this->indices_ = formatter.get_indices();
-    this->vals_ = formatter.get_data();
-    this->vals_float_ = formatter.get_data_float();
     this->nnz_ = this->indptr_[this->num_rows_];
     this->num_col_partitions_ = (this->num_cols_ + this->vector_buffer_len_ - 1)
         / this->vector_buffer_len_;
-    matrix_data_t val_marker = 0;
+    if (this->graph_is_weighed_) {
+        this->vals_float_ = formatter.get_data_float();
+    }
+    matrix_data_t_internal_ val_marker = 0;
     formatter.format_pad_marker_end_of_row(this->vector_buffer_len_,
                                            this->num_channels_,
                                            val_marker,
@@ -332,22 +287,6 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA() {
         sizeof(vector_data_t) * this->num_rows_,
         &kernel_results_ext,
         &err));
-}
-
-
-template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::set_up_runtime(std::string xclbin_file_path) {
-    // Load xclbin
-    cl_int err;
-    auto file_buf = xcl::read_binary_file(xclbin_file_path);
-    cl::Program::Binaries binaries{{file_buf.data(), file_buf.size()}};
-    cl::Program program(this->context_, {this->device_}, binaries, NULL, &err);
-    if (err != CL_SUCCESS) {
-        std::cout << "Failed to program device with xclbin file\n";
-    } else {
-        std::cout << "Successfully programmed device with xclbin file\n";
-    }
-    OCL_CHECK(err, this->kernel_ = cl::Kernel(program, this->kernel_name_.c_str(), &err));
     // Set arguments
     size_t arg_idx = 1; // the first argument (arg_idx = 0) is the dense vector
     for (size_t c = 0; c < this->num_channels_; c++) {
@@ -362,17 +301,75 @@ void SpMVModule<matrix_data_t, vector_data_t>::set_up_runtime(std::string xclbin
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_cols_));
     uint32_t num_times = 1;
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx, num_times));
-    // Create command queue
-    OCL_CHECK(err, this->command_queue_ = cl::CommandQueue(this->context_,
-                                                           this->device_,
-                                                           CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_PROFILING_ENABLE,
-                                                           &err));
     // Copy data to device global memory
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->channel_partition_indptr_buf_[0],
                                                                         this->channel_indices_buf_[0],
                                                                         this->channel_partition_indptr_buf_[1],
                                                                         this->channel_indices_buf_[1]}, 0 /* 0 means from host*/));
     this->command_queue_.finish();
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+typename SpMVModule<matrix_data_t, vector_data_t>::aligned_vector_t
+SpMVModule<matrix_data_t, vector_data_t>::run(aligned_vector_t &vector) {
+    cl_mem_ext_ptr_t vector_ext;
+    vector_ext.obj = vector.data();
+    vector_ext.param = 0;
+    vector_ext.flags = 0;
+    cl_int err;
+    OCL_CHECK(err, this->vector_buf_ = cl::Buffer(this->context_,
+                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+                sizeof(vector_data_t) * this->num_cols_,
+                &vector_ext,
+                &err));
+    OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf_));
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf_}, 0));
+    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
+    this->command_queue_.finish();
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->kernel_results_buf_},
+        CL_MIGRATE_MEM_OBJECT_HOST));
+    this->command_queue_.finish();
+    return this->kernel_results_;
+}
+
+
+#define SPMV(stmt)                                             { \
+for (size_t row_idx = 0; row_idx < this->num_rows_; row_idx++) { \
+    index_t start = this->indptr_[row_idx];                      \
+    index_t end = this->indptr_[row_idx + 1];                    \
+    for (size_t i = start; i < end; i++) {                       \
+        index_t index = this->indices_[i];                       \
+        stmt;                                                    \
+    }                                                            \
+}                                                              } \
+
+template<typename matrix_data_t, typename vector_data_t>
+typename SpMVModule<matrix_data_t, vector_data_t>::aligned_float_t
+SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_float_t &vector) {
+    aligned_float_t reference_results(this->num_rows_);
+    std::fill(reference_results.begin(), reference_results.end(), 0);
+    switch (this->semiring_) {
+        case graphblas::kMulAdd:
+            if (this->graph_is_weighed_) {
+                SPMV(reference_results[row_idx] += this->vals_float_[i] * vector[index]);
+            } else {
+                SPMV(reference_results[row_idx] += vector[index]);
+            }
+            break;
+        case graphblas::kLogicalAndOr:
+            if (this->graph_is_weighed_) {
+                SPMV(reference_results[row_idx] = reference_results[row_idx] ||
+                        (this->vals_float_[i] && vector[index]));
+            } else {
+                SPMV(reference_results[row_idx] = reference_results[row_idx] || vector[index]);
+            }
+            break;
+        default:
+            std::cerr << "Invalid semiring" << std::endl;
+            break;
+    }
+    return reference_results;
 }
 
 } // namespace module

@@ -13,6 +13,8 @@ protected:
     std::string kernel_name_;
     /*! \brief The makefile body */
     std::string makefile_body_;
+    /*! \brief The target; can be sw_emu, hw_emu, hw */
+    std::string target_;
 
     // OpenCL runtime
     cl::Device device_;
@@ -24,8 +26,14 @@ public:
     BaseModule(std::string kernel_name) {
         this->kernel_name_ = kernel_name;
         this->makefile_body_ = graphblas::add_kernel_to_makefile(this->kernel_name_);
-        this->device_ = graphblas::find_device();
-        this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
+    }
+
+    /*!
+     * \brief Set the target.
+     */
+    void set_target(std::string target) {
+        assert(target == "sw_emu" || target == "hw_emu" || target == "hw");
+        this->target_ = target;
     }
 
     /*!
@@ -44,20 +52,20 @@ public:
     virtual void generate_makefile();
 
     /*!
-     * \brief Synthesize the xclbin file. This takes a long time.
+     * \brief Compile the kernel according to this->target_.
      */
-    virtual void synthesize_xclbin();
-
-    /*!
-     * \brief Send the formatted data to FPGA.
-     */
-    virtual void send_data_to_FPGA() = 0;
+    virtual void compile();
 
     /*!
      * \brief Load the xclbin file and set up runtime.
      * \param xclbin_file_path The xclbin file path.
      */
-    virtual void set_up_runtime(std::string xclbin_file_path) = 0;
+    void set_up_runtime(std::string xclbin_file_path);
+
+    /*!
+     * \brief Send the formatted data to FPGA.
+     */
+    virtual void send_data_to_FPGA() = 0;
 };
 
 
@@ -78,6 +86,7 @@ void BaseModule::generate_makefile() {
     std::cout << command << std::endl;
     system(command.c_str());
     std::ofstream makefile(graphblas::proj_folder_name + "/makefile");
+    makefile << "TARGET := " << this->target_ << "\n" << std::endl;
     makefile << graphblas::makefile_prologue << std::endl;
     makefile << this->makefile_body_ << std::endl;
     makefile << graphblas::makefile_epilogue << std::endl;
@@ -85,7 +94,7 @@ void BaseModule::generate_makefile() {
 }
 
 
-void BaseModule::synthesize_xclbin() {
+void BaseModule::compile() {
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
@@ -95,6 +104,37 @@ void BaseModule::synthesize_xclbin() {
     command = "cd " + graphblas::proj_folder_name + "; " + "make build";
     std::cout << command << std::endl;
     system(command.c_str());
+    if (this->target_ == "sw_emu" || this->target_ == "hw_emu") {
+        command = "cp " + graphblas::proj_folder_name + "/emconfig.json " + ".";
+        std::cout << command << std::endl;
+        system(command.c_str());
+    }
+}
+
+
+void BaseModule::set_up_runtime(std::string xclbin_file_path) {
+    cl_int err;
+    // Set this->device_ and this->context_
+    if (this->target_ == "sw_emu" || this->target_ == "hw_emu") {
+        setenv("XCL_EMULATION_MODE", this->target_.c_str(), true);
+    }
+    this->device_ = graphblas::find_device();
+    this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
+    // Set this->kernel_
+    auto file_buf = xcl::read_binary_file(xclbin_file_path);
+    cl::Program::Binaries binaries{{file_buf.data(), file_buf.size()}};
+    cl::Program program(this->context_, {this->device_}, binaries, NULL, &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "Failed to program device with xclbin file\n";
+    } else {
+        std::cout << "Successfully programmed device with xclbin file\n";
+    }
+    OCL_CHECK(err, this->kernel_ = cl::Kernel(program, this->kernel_name_.c_str(), &err));
+    // Set this->command_queue_
+    OCL_CHECK(err, this->command_queue_ = cl::CommandQueue(this->context_,
+                                                           this->device_,
+                                                           CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_PROFILING_ENABLE,
+                                                           &err));
 }
 
 } // namespace module

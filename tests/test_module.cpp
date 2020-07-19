@@ -4,7 +4,7 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 #include "ap_fixed.h"
-#include "graphblas/base.h"
+#include "graphblas/global.h"
 #include "graphblas/module/spmv_module.h"
 
 
@@ -31,29 +31,29 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 void test_spmv_module() {
-    std::string common_path = "/work/shared/common/research/graphblas/";
-    std::string csr_float_npz_path = common_path + "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
-    std::string xclbin_file_path = common_path + "bitstreams/spmv/spmv_bool_ufixed.32.1_MulAdd.xclbin";
-    std::string kernel_name = "kernel_spmv_v4";
-
-    graphblas::SemiRingType semiring = graphblas::kMulAdd;
+    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+                                     "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
+    graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
     uint32_t num_channels = 2;
     uint32_t vector_buffer_len = 10000;
+    std::string kernel_name = "kernel_spmv";
     using matrix_data_t = bool;
-    using vector_data_t = ap_ufixed<32,1>;
+    using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
     graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module(csr_float_npz_path, semiring,
                                                                        num_channels, vector_buffer_len,
-                                                                       xclbin_file_path, kernel_name);
+                                                                       kernel_name);
+    std::string target = "sw_emu";
+    module.set_target(target);
+    module.compile();
+    module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.send_data_to_FPGA();
     uint32_t num_cols = 10000;
     std::vector<float, aligned_allocator<float>> vector_float(num_cols);
-    std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % num_cols) / num_cols / num_cols;});
+    std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % 2);});
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector(vector_float.begin(), vector_float.end());
 
-    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results =
-        module.run(vector);
-    std::vector<float, aligned_allocator<float>> reference_results =
-        module.compute_reference_results(vector_float);
-
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results = module.run(vector);
+    std::vector<float, aligned_allocator<float>> reference_results = module.compute_reference_results(vector_float);
     verify<vector_data_t>(reference_results, kernel_results);
     std::cout << "Test passed" << std::endl;
 }

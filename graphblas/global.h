@@ -35,7 +35,7 @@ cl::Device find_device() {
             return device;
         }
     }
-    std::cout << "Failed to find "  << device_name << " , exit!\n";
+    std::cout << "Failed to find "  << device_name << ", exit!\n";
     exit(EXIT_FAILURE);
 }
 
@@ -90,7 +90,6 @@ const std::string makefile_prologue =
     "COMMON_REPO = $(GRAPHBLAS_ROOT_PATH)\n"
     "\n"
     "DEVICE = /opt/xilinx/platforms/" + device_name + "/" + device_name + ".xpfm\n"
-    "TARGET := hw\n"
     "\n"
     "TEMP_DIR := ./_x.$(TARGET)\n"
     "BUILD_DIR := ./build_dir.$(TARGET)\n"
@@ -100,7 +99,11 @@ const std::string makefile_prologue =
     "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --save-temps \n"
     "\n"
     "FUSED_KERNEL = $(BUILD_DIR)/fused.xclbin\n"
-    "build: $(FUSED_KERNEL)\n";
+    "\n"
+    "emconfig.json:\n"
+    "\temconfigutil --platform $(DEVICE)\n"
+    "\n"
+    "build: $(FUSED_KERNEL) emconfig.json\n";
 
 const std::string makefile_epilogue =
     "$(FUSED_KERNEL): $(KERNEL_OBJS)\n"
@@ -114,7 +117,7 @@ std::string add_kernel_to_makefile(std::string kernel_name) {
     makefile_body += "\n";
     makefile_body += ("$(TEMP_DIR)/" + kernel_name + ".xo: " + kernel_name + ".cpp" + "\n");
     makefile_body += ("\tmkdir -p $(TEMP_DIR)\n");
-    makefile_body += ("\t$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k " + kernel_name + " -o'$@' '$<'\n");
+    makefile_body += ("\t$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k " + kernel_name + " -I'$(<D)' -o'$@' '$<'\n");
     return makefile_body;
 }
 
