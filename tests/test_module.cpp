@@ -39,27 +39,68 @@ void test_spmv_module() {
     std::string kernel_name = "kernel_spmv";
     using matrix_data_t = bool;
     using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
-    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module(csr_float_npz_path, semiring,
-                                                                       num_channels, vector_buffer_len,
-                                                                       kernel_name);
     std::string target = "sw_emu";
-    module.set_target(target);
-    module.compile();
-    module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-    module.send_data_to_FPGA();
     uint32_t num_cols = 10000;
     std::vector<float, aligned_allocator<float>> vector_float(num_cols);
     std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % 2);});
-    std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector(vector_float.begin(), vector_float.end());
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector(vector_float.begin(),
+                                                                        vector_float.end());
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results;
+    std::vector<float, aligned_allocator<float>> reference_results;
 
-    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results = module.run(vector);
-    std::vector<float, aligned_allocator<float>> reference_results = module.compute_reference_results(vector_float);
+    /*----------------------------- No mask -------------------------------*/
+    {
+    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module1(csr_float_npz_path, semiring,
+                                                                        num_channels, vector_buffer_len,
+                                                                        kernel_name);
+    module1.set_target(target);
+    module1.set_mask_type(graphblas::kNoMask);
+    module1.compile();
+    module1.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module1.send_data_to_FPGA();
+
+    kernel_results = module1.run(vector);
+    reference_results = module1.compute_reference_results(vector_float);
     verify<vector_data_t>(reference_results, kernel_results);
-    std::cout << "Test passed" << std::endl;
+
+    std::cout << "SpMV test with no mask passed" << std::endl;
+
+    // Clean the build folder
+    std::string command = "rm -rf ./" + graphblas::proj_folder_name;
+    std::cout << command << std::endl;
+    system(command.c_str());
+    }
+
+    /*----------------------------- Use mask -------------------------------*/
+    {
+    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module2(csr_float_npz_path, semiring,
+                                                                        num_channels, vector_buffer_len,
+                                                                        kernel_name);
+    module2.set_target(target);
+    module2.set_mask_type(graphblas::kMaskWriteToZero);
+    module2.compile();
+    module2.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module2.send_data_to_FPGA();
+
+    std::vector<float, aligned_allocator<float>> mask_float(num_cols);
+    std::generate(mask_float.begin(), mask_float.end(), [&](){return float(rand() % 2);});
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask(mask_float.begin(), mask_float.end());
+
+    kernel_results = module2.run(vector, mask);
+    reference_results = module2.compute_reference_results(vector_float, mask_float);
+    verify<vector_data_t>(reference_results, kernel_results);
+
+    std::cout << "SpMV test with mask passed" << std::endl;
+    }
 }
 
 
 int main(int argc, char *argv[]) {
+    // Clean the build folder
+    std::string command = "rm -rf ./" + graphblas::proj_folder_name;
+    std::cout << command << std::endl;
+    system(command.c_str());
+
     test_spmv_module();
 }
 

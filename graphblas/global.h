@@ -79,6 +79,13 @@ enum SemiRingType {
     kPlusMin = 2,
 };
 
+// Mask type
+enum MaskType {
+    kNoMask = 0,
+    kMaskWriteToZero = 1,
+    kMaskWriteToOne = 2,
+};
+
 // Index type and packed index type
 typedef uint32_t index_t;
 const uint32_t idx_marker = 0xffffffff;

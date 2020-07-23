@@ -142,6 +142,9 @@ void kernel_spmv(
     const PACKED_INDEX_T *channel_0_indices,         // Indices (the first channel)
     const unsigned int *channel_1_partition_indptr,  // Indptr of the partitions (the second channel)
     const PACKED_INDEX_T *channel_1_indices,         // Indices (the second channel)
+#if defined(USE_MASK)
+    const PACKED_VECTOR_T *mask,                     // Tha mask
+#endif
     PACKED_VECTOR_T *out,                            // Output of the SpMV kernel
     unsigned int num_rows,                           // Number of rows of the sparse matrix
     unsigned int num_cols,                           // Number of columns of the sparse matrix
@@ -153,6 +156,9 @@ void kernel_spmv(
 #pragma HLS INTERFACE m_axi port=channel_0_partition_indptr offset=slave bundle=gmem3
 #pragma HLS INTERFACE m_axi port=channel_1_partition_indptr offset=slave bundle=gmem4
 #pragma HLS INTERFACE m_axi port=out                        offset=slave bundle=gmem5
+#if defined(USE_MASK)
+#pragma HLS INTERFACE m_axi port=mask                       offset=slave bundle=gmem6
+#endif
 
 #pragma HLS INTERFACE s_axilite port=channel_0_indices          bundle=control
 #pragma HLS INTERFACE s_axilite port=channel_1_indices          bundle=control
@@ -160,6 +166,9 @@ void kernel_spmv(
 #pragma HLS INTERFACE s_axilite port=channel_0_partition_indptr bundle=control
 #pragma HLS INTERFACE s_axilite port=channel_1_partition_indptr bundle=control
 #pragma HLS INTERFACE s_axilite port=out                        bundle=control
+#if defined(USE_MASK)
+#pragma HLS INTERFACE s_axilite port=mask                       bundle=control
+#endif
 
 #pragma HLS INTERFACE s_axilite port=num_rows  bundle=control
 #pragma HLS INTERFACE s_axilite port=num_cols  bundle=control
@@ -170,6 +179,9 @@ void kernel_spmv(
 #pragma HLS DATA_PACK variable=channel_0_indices
 #pragma HLS DATA_PACK variable=channel_1_indices
 #pragma HLS DATA_PACK variable=out
+#if defined(USE_MASK)
+#pragma HLS DATA_PACK variable=mask
+#endif
 
     VECTOR_T channel_0_vector_one_partition_bram[NUM_PE_PER_HBM_CHANNEL][VECTOR_BUFFER_LEN];
     #pragma HLS ARRAY_PARTITION variable=channel_0_vector_one_partition_bram complete dim=1
@@ -240,16 +252,39 @@ void kernel_spmv(
 
     assert (num_rows % VECTOR_PACK_SIZE == 0);
     unsigned int vsize = num_rows / VECTOR_PACK_SIZE;
-    PACKED_VECTOR_T tmp;
+    PACKED_VECTOR_T tmp_out;
+#if defined(USE_MASK)
+    PACKED_VECTOR_T tmp_mask;
+#endif
 
     loop_write_to_out_ddr:
     for (int i = 0; i < vsize; i++) {
         #pragma HLS PIPELINE II=1
+#if defined(USE_MASK)
+        tmp_mask = mask[i];
+#endif
         for (int k = 0; k < VECTOR_PACK_SIZE; k++) {
             #pragma HLS UNROLL
-            tmp.data[k] = out_bram[i % NUM_HBM_CHANNEL * VECTOR_PACK_SIZE + k][i / NUM_HBM_CHANNEL];
+#if not defined(USE_MASK)
+            tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL * VECTOR_PACK_SIZE + k][i / NUM_HBM_CHANNEL];
+#elif defined(MASK_WRITE_TO_ZERO)
+            if (tmp_mask.data[k] == 0) {
+                tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL * VECTOR_PACK_SIZE + k][i / NUM_HBM_CHANNEL];
+            } else {
+                tmp_out.data[k] = 0;
+            }
+#elif defined(MASK_WRITE_TO_ONE)
+            if (tmp_mask.data[k] == 0) {
+                tmp_out.data[k] = 0;
+            } else {
+                tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL * VECTOR_PACK_SIZE + k][i / NUM_HBM_CHANNEL];
+            }
+#else
+            std::cout << "Invalid mask type" << std::endl;
+            exit(EXIT_FAILURE);
+#endif
         }
-        out[i] = tmp;
+        out[i] = tmp_out;
     }
 }
 

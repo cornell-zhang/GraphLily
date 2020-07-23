@@ -34,6 +34,10 @@ private:
 
     /*! \brief Whether the graph is weighted */
     bool graph_is_weighed_;
+    /*! \brief Whether the kernel uses mask */
+    bool use_mask_;
+    /*! \brief The mask type */
+    graphblas::MaskType mask_type_;
     /*! \brief The semiring */
     SemiRingType semiring_;
     /*! \brief The number of channels of the kernel */
@@ -54,6 +58,10 @@ private:
     std::vector<std::vector<packed_data_t, aligned_allocator<packed_index_t>>> channel_vals_;
     /*! \brief The dense vector */
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector_;
+    /*! \brief The mask */
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask_;
+    /*! \brief The argument index of mask to be used in setArg */
+    uint32_t arg_idx_mask_;
     /*! \brief The kernel results */
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results_;
 
@@ -71,6 +79,7 @@ private:
     std::vector<cl::Buffer> channel_indices_buf_;
     std::vector<cl::Buffer> channel_vals_buf_;
     cl::Buffer vector_buf_;
+    cl::Buffer mask_buf_;
     cl::Buffer kernel_results_buf_;
 
 private:
@@ -81,7 +90,7 @@ private:
     void _check_data_type();
 
     /*!
-     * \brief Get the kernel Configuration.
+     * \brief Get the kernel configuration.
      * \param semiring The semiring.
      * \param num_channels The number of channels.
      * \param vector_buffer_len The length of vector buffer.
@@ -107,7 +116,22 @@ public:
         this->_load_and_format_data(csr_float_npz_path);
     }
 
+    /*!
+     * \brief Set the mask type.
+     * \param mask_type The mask type.
+     */
+    void set_mask_type(graphblas::MaskType mask_type) {
+        if (mask_type == graphblas::kNoMask) {
+            this->use_mask_ = false;
+        } else {
+            this->use_mask_ = true;
+            this->mask_type_ = mask_type;
+        }
+    }
+
     void generate_kernel_header() override;
+
+    void link_kernel_code() override;
 
     void send_data_to_FPGA() override;
 
@@ -119,6 +143,14 @@ public:
      */
     aligned_vector_t run(aligned_vector_t &vector);
 
+    /*!
+     * \brief Run the module.
+     * \param vector The input vector.
+     * \param mask The mask.
+     * \return The kernel results.
+     */
+    aligned_vector_t run(aligned_vector_t &vector, aligned_vector_t &mask);
+
     using aligned_float_t = std::vector<float, aligned_allocator<float>>;
     /*!
      * \brief Compute reference results.
@@ -126,6 +158,14 @@ public:
      * \return The reference results.
      */
     aligned_float_t compute_reference_results(aligned_float_t &vector);
+
+    /*!
+     * \brief Compute reference results.
+     * \param vector The input vector.
+     * \param mask The mask.
+     * \return The reference results.
+     */
+    aligned_float_t compute_reference_results(aligned_float_t &vector, aligned_float_t &mask);
 };
 
 
@@ -233,7 +273,40 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
             std::cerr << "Invalid semiring" << std::endl;
             break;
     }
+    // Mask
+    if (this->use_mask_) {
+        header << "#define USE_MASK" << std::endl;
+        switch (this->mask_type_) {
+            case graphblas::kMaskWriteToZero:
+                header << "#define MASK_WRITE_TO_ZERO" << std::endl;
+                break;
+            case graphblas::kMaskWriteToOne:
+                header << "#define MASK_WRITE_TO_ONE" << std::endl;
+                break;
+            default:
+                std::cerr << "Invalid mask type" << std::endl;
+                break;
+        }
+    }
     header.close();
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+void SpMVModule<matrix_data_t, vector_data_t>::link_kernel_code() {
+    std::string command = "ln -s " + graphblas::root_path + "/hw/" + this->kernel_name_ + ".cpp" + " "
+                          + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
+    std::cout << command << std::endl;
+    system(command.c_str());
+    if (this->use_mask_) {
+        command = "ln -s " + graphblas::root_path + "/hw/" + this->kernel_name_ + "_use_mask" + ".ini" + " "
+                + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
+    } else {
+        command = "ln -s " + graphblas::root_path + "/hw/" + this->kernel_name_ + ".ini" + " "
+                + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
+    }
+    std::cout << command << std::endl;
+    system(command.c_str());
 }
 
 
@@ -296,6 +369,10 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA() {
             OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_vals_buf_[c]));
         }
     }
+    if (this->use_mask_) {
+        this->arg_idx_mask_ = arg_idx; // mask is right before kernel_results
+        arg_idx++;
+    }
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->kernel_results_buf_));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_rows_));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_cols_));
@@ -313,11 +390,11 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA() {
 template<typename matrix_data_t, typename vector_data_t>
 typename SpMVModule<matrix_data_t, vector_data_t>::aligned_vector_t
 SpMVModule<matrix_data_t, vector_data_t>::run(aligned_vector_t &vector) {
+    cl_int err;
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = vector.data();
     vector_ext.param = 0;
     vector_ext.flags = 0;
-    cl_int err;
     OCL_CHECK(err, this->vector_buf_ = cl::Buffer(this->context_,
                 CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(vector_data_t) * this->num_cols_,
@@ -325,6 +402,40 @@ SpMVModule<matrix_data_t, vector_data_t>::run(aligned_vector_t &vector) {
                 &err));
     OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf_));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf_}, 0));
+    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
+    this->command_queue_.finish();
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->kernel_results_buf_},
+        CL_MIGRATE_MEM_OBJECT_HOST));
+    this->command_queue_.finish();
+    return this->kernel_results_;
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+typename SpMVModule<matrix_data_t, vector_data_t>::aligned_vector_t
+SpMVModule<matrix_data_t, vector_data_t>::run(aligned_vector_t &vector, aligned_vector_t &mask) {
+    cl_int err;
+    cl_mem_ext_ptr_t vector_ext;
+    vector_ext.obj = vector.data();
+    vector_ext.param = 0;
+    vector_ext.flags = 0;
+    OCL_CHECK(err, this->vector_buf_ = cl::Buffer(this->context_,
+                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+                sizeof(vector_data_t) * this->num_cols_,
+                &vector_ext,
+                &err));
+    OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf_));
+    cl_mem_ext_ptr_t mask_ext;
+    mask_ext.obj = mask.data();
+    mask_ext.param = 0;
+    mask_ext.flags = 0;
+    OCL_CHECK(err, this->mask_buf_ = cl::Buffer(this->context_,
+                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+                sizeof(vector_data_t) * this->num_rows_,
+                &mask_ext,
+                &err));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->arg_idx_mask_, this->mask_buf_));
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf_, this->mask_buf_}, 0));
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->kernel_results_buf_},
@@ -371,6 +482,29 @@ SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_floa
     }
     return reference_results;
 }
+
+
+template<typename matrix_data_t, typename vector_data_t>
+typename SpMVModule<matrix_data_t, vector_data_t>::aligned_float_t
+SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_float_t &vector,
+                                                                    aligned_float_t &mask) {
+    aligned_float_t reference_results = this->compute_reference_results(vector);
+    if (this->mask_type_ == graphblas::kMaskWriteToZero) {
+        for (size_t i = 0; i < this->num_rows_; i++) {
+            if (mask[i] != 0) {
+                reference_results[i] = 0;
+            }
+        }
+    } else {
+        for (size_t i = 0; i < this->num_rows_; i++) {
+            if (mask[i] == 0) {
+                reference_results[i] = 0;
+            }
+        }
+    }
+    return reference_results;
+}
+
 
 } // namespace module
 } // namespace graphblas
