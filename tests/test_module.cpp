@@ -6,6 +6,14 @@
 #include "ap_fixed.h"
 #include "graphblas/global.h"
 #include "graphblas/module/spmv_module.h"
+#include "graphblas/module/assign_vector_dense_module.h"
+
+
+void clean_proj_folder() {
+    std::string command = "rm -rf ./" + graphblas::proj_folder_name;
+    std::cout << command << std::endl;
+    system(command.c_str());
+}
 
 
 template <typename data_t>
@@ -64,12 +72,9 @@ void test_spmv_module() {
     verify<vector_data_t>(reference_results, kernel_results);
 
     std::cout << "SpMV test with no mask passed" << std::endl;
-
-    // Clean the build folder
-    std::string command = "rm -rf ./" + graphblas::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
     }
+
+    clean_proj_folder();
 
     /*----------------------------- Use mask -------------------------------*/
     {
@@ -95,13 +100,44 @@ void test_spmv_module() {
 }
 
 
-int main(int argc, char *argv[]) {
-    // Clean the build folder
-    std::string command = "rm -rf ./" + graphblas::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
+void test_assign_vector_dense_module() {
+    using vector_data_t = unsigned int;
+    std::string kernel_name = "kernel_assign_vector_dense";
+    graphblas::module::AssignVectorDenseModule<vector_data_t> module(kernel_name);
 
+    uint32_t length = 128;
+    vector_data_t val = 23;
+    float val_float = float(val);
+
+    std::vector<float, aligned_allocator<float>> mask_float(length);
+    std::generate(mask_float.begin(), mask_float.end(), [&](){return float(rand() % 2);});
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask(mask_float.begin(), mask_float.end());
+
+    std::vector<float, aligned_allocator<float>> reference_inout(length);
+    std::generate(reference_inout.begin(), reference_inout.end(), [&](){return float(rand() % 128);});
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_inout(reference_inout.begin(),
+                                                                              reference_inout.end());
+
+    std::string target = "sw_emu";
+    module.set_target(target);
+    module.set_mask_type(graphblas::kMaskWriteToOne);
+    module.compile();
+    module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+
+    module.run(mask, kernel_inout, length, val);
+    module.compute_reference_results(mask_float, reference_inout, length, val_float);
+    verify<vector_data_t>(reference_inout, kernel_inout);
+
+    std::cout << "AssignVectorDenseModule test passed" << std::endl;
+}
+
+
+int main(int argc, char *argv[]) {
+    clean_proj_folder();
     test_spmv_module();
+
+    clean_proj_folder();
+    test_assign_vector_dense_module();
 }
 
 #pragma GCC diagnostic pop
