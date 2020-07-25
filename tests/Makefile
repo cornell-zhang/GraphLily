@@ -33,7 +33,13 @@ test_module: test_module.cpp $(xcl2_SRCS)
 	mv test_module $(BUILD_DIR)/
 	cd $(BUILD_DIR); ./test_module
 
-all: test_graph_partitioning test_module
+test_app: test_app.cpp $(xcl2_SRCS)
+	g++ $(CXXFLAGS) test_app.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
+	mkdir -p $(BUILD_DIR)
+	mv test_app $(BUILD_DIR)/
+	cd $(BUILD_DIR); ./test_app
+
+all: test_graph_partitioning test_module test_app
 
 clean:
 	rm -rf $(BUILD_DIR)

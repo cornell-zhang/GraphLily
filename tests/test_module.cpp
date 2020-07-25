@@ -4,7 +4,6 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 #include "ap_fixed.h"
-#include "graphblas/global.h"
 #include "graphblas/module/spmv_module.h"
 #include "graphblas/module/assign_vector_dense_module.h"
 
@@ -44,7 +43,6 @@ void test_spmv_module() {
     graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
     uint32_t num_channels = 2;
     uint32_t vector_buffer_len = 10000;
-    std::string kernel_name = "kernel_spmv";
     using matrix_data_t = bool;
     using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
     std::string target = "sw_emu";
@@ -59,8 +57,7 @@ void test_spmv_module() {
     /*----------------------------- No mask -------------------------------*/
     {
     graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module1(csr_float_npz_path, semiring,
-                                                                        num_channels, vector_buffer_len,
-                                                                        kernel_name);
+                                                                        num_channels, vector_buffer_len);
     module1.set_target(target);
     module1.set_mask_type(graphblas::kNoMask);
     module1.compile();
@@ -79,8 +76,7 @@ void test_spmv_module() {
     /*----------------------------- Use mask -------------------------------*/
     {
     graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module2(csr_float_npz_path, semiring,
-                                                                        num_channels, vector_buffer_len,
-                                                                        kernel_name);
+                                                                        num_channels, vector_buffer_len);
     module2.set_target(target);
     module2.set_mask_type(graphblas::kMaskWriteToZero);
     module2.compile();
@@ -102,8 +98,7 @@ void test_spmv_module() {
 
 void test_assign_vector_dense_module() {
     using vector_data_t = unsigned int;
-    std::string kernel_name = "kernel_assign_vector_dense";
-    graphblas::module::AssignVectorDenseModule<vector_data_t> module(kernel_name);
+    graphblas::module::AssignVectorDenseModule<vector_data_t> module;
 
     uint32_t length = 128;
     vector_data_t val = 23;
