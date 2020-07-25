@@ -109,8 +109,7 @@ public:
     SpMVModule(std::string csr_float_npz_path,
                SemiRingType semiring,
                uint32_t num_channels,
-               uint32_t vector_buffer_len,
-               std::string kernel_name) : BaseModule(kernel_name) {
+               uint32_t vector_buffer_len) : BaseModule("kernel_spmv") {
         this->_check_data_type();
         this->_get_kernel_config(semiring, num_channels, vector_buffer_len);
         this->_load_and_format_data(csr_float_npz_path);
@@ -127,6 +126,22 @@ public:
             this->use_mask_ = true;
             this->mask_type_ = mask_type;
         }
+    }
+
+    /*!
+     * \brief Get the number of rows.
+     * \return The number of rows.
+     */
+    uint32_t get_num_rows() {
+        return this->num_rows_;
+    }
+
+    /*!
+     * \brief Get the number of columns.
+     * \return The number of columns.
+     */
+    uint32_t get_num_cols() {
+        return this->num_cols_;
     }
 
     void generate_kernel_header() override;
@@ -151,13 +166,12 @@ public:
      */
     aligned_vector_t run(aligned_vector_t &vector, aligned_vector_t &mask);
 
-    using aligned_float_t = std::vector<float, aligned_allocator<float>>;
     /*!
      * \brief Compute reference results.
      * \param vector The input vector.
      * \return The reference results.
      */
-    aligned_float_t compute_reference_results(aligned_float_t &vector);
+    graphblas::aligned_float_t compute_reference_results(graphblas::aligned_float_t &vector);
 
     /*!
      * \brief Compute reference results.
@@ -165,7 +179,8 @@ public:
      * \param mask The mask.
      * \return The reference results.
      */
-    aligned_float_t compute_reference_results(aligned_float_t &vector, aligned_float_t &mask);
+    graphblas::aligned_float_t compute_reference_results(graphblas::aligned_float_t &vector,
+                                                         graphblas::aligned_float_t &mask);
 };
 
 
@@ -456,7 +471,7 @@ for (size_t row_idx = 0; row_idx < this->num_rows_; row_idx++) { \
 }                                                              } \
 
 template<typename matrix_data_t, typename vector_data_t>
-typename SpMVModule<matrix_data_t, vector_data_t>::aligned_float_t
+graphblas::aligned_float_t
 SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_float_t &vector) {
     aligned_float_t reference_results(this->num_rows_);
     std::fill(reference_results.begin(), reference_results.end(), 0);
@@ -485,10 +500,10 @@ SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_floa
 
 
 template<typename matrix_data_t, typename vector_data_t>
-typename SpMVModule<matrix_data_t, vector_data_t>::aligned_float_t
-SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_float_t &vector,
-                                                                    aligned_float_t &mask) {
-    aligned_float_t reference_results = this->compute_reference_results(vector);
+graphblas::aligned_float_t
+SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(graphblas::aligned_float_t &vector,
+                                                                    graphblas::aligned_float_t &mask) {
+    graphblas::aligned_float_t reference_results = this->compute_reference_results(vector);
     if (this->mask_type_ == graphblas::kMaskWriteToZero) {
         for (size_t i = 0; i < this->num_rows_; i++) {
             if (mask[i] != 0) {

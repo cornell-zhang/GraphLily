@@ -1,10 +1,11 @@
-#ifndef __GRAPHBLAS_BASE_H
-#define __GRAPHBLAS_BASE_H
+#ifndef __GRAPHBLAS_GLOBAL_H
+#define __GRAPHBLAS_GLOBAL_H
 
 #include <string>
 #include <cstdlib>
 #include <type_traits>
 
+#include "ap_fixed.h"
 #include "xcl2.hpp"
 
 
@@ -92,6 +93,9 @@ const uint32_t idx_marker = 0xffffffff;
 const uint32_t pack_size = 16;
 using packed_index_t = struct {index_t data[pack_size];};
 
+// Aligned float vector
+using aligned_float_t = std::vector<float, aligned_allocator<float>>;
+
 // Makefile for synthesizing xclbin
 const std::string makefile_prologue =
     "COMMON_REPO = $(GRAPHBLAS_ROOT_PATH)\n"
@@ -110,7 +114,8 @@ const std::string makefile_prologue =
     "emconfig.json:\n"
     "\temconfigutil --platform $(DEVICE)\n"
     "\n"
-    "build: $(FUSED_KERNEL) emconfig.json\n";
+    "build: $(FUSED_KERNEL) emconfig.json\n"
+    "\n";
 
 const std::string makefile_epilogue =
     "$(FUSED_KERNEL): $(KERNEL_OBJS)\n"
@@ -125,6 +130,7 @@ std::string add_kernel_to_makefile(std::string kernel_name) {
     makefile_body += ("$(TEMP_DIR)/" + kernel_name + ".xo: " + kernel_name + ".cpp" + "\n");
     makefile_body += ("\tmkdir -p $(TEMP_DIR)\n");
     makefile_body += ("\t$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k " + kernel_name + " -I'$(<D)' -o'$@' '$<'\n");
+    makefile_body += "\n";
     return makefile_body;
 }
 
@@ -133,4 +139,4 @@ const std::string proj_folder_name = "proj";
 
 } // namespace graphblas
 
-#endif // __GRAPHBLAS_BASE_H
+#endif // __GRAPHBLAS_GLOBAL_H

@@ -7,6 +7,44 @@
 namespace graphblas {
 namespace module {
 
+template <typename T>
+void _set_target_impl(T* t, std::string target) {
+    assert(target == "sw_emu" || target == "hw_emu" || target == "hw");
+    t->target_ = target;
+}
+
+
+template <typename T>
+void _generate_makefile_impl(T* t) {
+    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::cout << command << std::endl;
+    system(command.c_str());
+    std::ofstream makefile(graphblas::proj_folder_name + "/makefile");
+    makefile << "TARGET := " << t->target_ << "\n" << std::endl;
+    makefile << graphblas::makefile_prologue << t->makefile_body_ << graphblas::makefile_epilogue;
+    makefile.close();
+}
+
+
+template <typename T>
+void _compile_impl(T* t) {
+    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::cout << command << std::endl;
+    system(command.c_str());
+    t->generate_kernel_header();
+    t->link_kernel_code();
+    t->generate_makefile();
+    command = "cd " + graphblas::proj_folder_name + "; " + "make build";
+    std::cout << command << std::endl;
+    system(command.c_str());
+    if (t->target_ == "sw_emu" || t->target_ == "hw_emu") {
+        command = "cp " + graphblas::proj_folder_name + "/emconfig.json " + ".";
+        std::cout << command << std::endl;
+        system(command.c_str());
+    }
+}
+
+
 class BaseModule {
 protected:
     /*! \brief The kernel name */
@@ -22,6 +60,11 @@ protected:
     cl::Kernel kernel_;
     cl::CommandQueue command_queue_;
 
+private:
+    template <typename T> friend void _set_target_impl(T* t, std::string target);
+    template <typename T> friend void _generate_makefile_impl(T* t);
+    template <typename T> friend void _compile_impl(T* t);
+
 public:
     BaseModule(std::string kernel_name) {
         this->kernel_name_ = kernel_name;
@@ -29,11 +72,46 @@ public:
     }
 
     /*!
+     * \brief Get the kernel name.
+     * \return The kernel name.
+     */
+    std::string get_kernel_name() {
+        return this->kernel_name_;
+    }
+
+    /*!
+     * \brief Set the device.
+     */
+    void set_device(cl::Device device) {
+        this->device_ = device;
+    }
+
+    /*!
+     * \brief Set the context.
+     */
+    void set_context(cl::Context context) {
+        this->context_ = context;
+    }
+
+    /*!
+     * \brief Set the kernel.
+     */
+    void set_kernel(cl::Kernel kernel) {
+        this->kernel_ = kernel;
+    }
+
+    /*!
+     * \brief Set the command queue.
+     */
+    void set_command_queue(cl::CommandQueue command_queue) {
+        this->command_queue_ = command_queue;
+    }
+
+    /*!
      * \brief Set the target.
      */
     void set_target(std::string target) {
-        assert(target == "sw_emu" || target == "hw_emu" || target == "hw");
-        this->target_ = target;
+        _set_target_impl<BaseModule>(this, target);
     }
 
     /*!
@@ -42,19 +120,23 @@ public:
     virtual void generate_kernel_header() = 0;
 
     /*!
-     * \brief Link the kernel cpp file to the build directory.
+     * \brief Link the kernel cpp file to the proj directory.
      */
     virtual void link_kernel_code();
 
     /*!
      * \brief Generate the Makefile.
      */
-    virtual void generate_makefile();
+    virtual void generate_makefile() {
+        _generate_makefile_impl<BaseModule>(this);
+    }
 
     /*!
      * \brief Compile the kernel according to this->target_.
      */
-    virtual void compile();
+    virtual void compile() {
+         _compile_impl<BaseModule>(this);
+    }
 
     /*!
      * \brief Load the xclbin file and set up runtime.
@@ -78,37 +160,6 @@ void BaseModule::link_kernel_code() {
               + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
     std::cout << command << std::endl;
     system(command.c_str());
-}
-
-
-void BaseModule::generate_makefile() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream makefile(graphblas::proj_folder_name + "/makefile");
-    makefile << "TARGET := " << this->target_ << "\n" << std::endl;
-    makefile << graphblas::makefile_prologue << std::endl;
-    makefile << this->makefile_body_ << std::endl;
-    makefile << graphblas::makefile_epilogue << std::endl;
-    makefile.close();
-}
-
-
-void BaseModule::compile() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    this->generate_kernel_header();
-    this->link_kernel_code();
-    this->generate_makefile();
-    command = "cd " + graphblas::proj_folder_name + "; " + "make build";
-    std::cout << command << std::endl;
-    system(command.c_str());
-    if (this->target_ == "sw_emu" || this->target_ == "hw_emu") {
-        command = "cp " + graphblas::proj_folder_name + "/emconfig.json " + ".";
-        std::cout << command << std::endl;
-        system(command.c_str());
-    }
 }
 
 

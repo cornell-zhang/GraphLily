@@ -30,7 +30,7 @@ private:
     cl::Buffer inout_buf_;
 
 public:
-    AssignVectorDenseModule(std::string kernel_name) : BaseModule(kernel_name) {
+    AssignVectorDenseModule() : BaseModule("kernel_assign_vector_dense") {
         this->vector_data_t_str_ = graphblas::dtype_to_str<vector_data_t>();
     }
 
@@ -59,9 +59,9 @@ public:
      * \param length The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
-    void run(aligned_vector_t &mask, aligned_vector_t &inout, uint32_t length, vector_data_t val);
+    void run(aligned_vector_t &mask, aligned_vector_t &inout,
+             uint32_t length, vector_data_t val);
 
-    using aligned_float_t = std::vector<float, aligned_allocator<float>>;
     /*!
      * \brief Compute reference results.
      * \param mask The mask vector.
@@ -69,7 +69,8 @@ public:
      * \param length The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
-    void compute_reference_results(aligned_float_t &mask, aligned_float_t &inout, uint32_t length, float val);
+    void compute_reference_results(graphblas::aligned_float_t &mask, graphblas::aligned_float_t &inout,
+                                   uint32_t length, float val);
 };
 
 
@@ -137,8 +138,8 @@ void AssignVectorDenseModule<vector_data_t>::run(aligned_vector_t &mask,
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::compute_reference_results(aligned_float_t &mask,
-                                                                       aligned_float_t &inout,
+void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphblas::aligned_float_t &mask,
+                                                                       graphblas::aligned_float_t &inout,
                                                                        uint32_t length,
                                                                        float val) {
     if (this->mask_type_ == graphblas::kMaskWriteToZero) {
