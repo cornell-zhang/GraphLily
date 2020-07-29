@@ -26,6 +26,8 @@ const int channels[MAX_HBM_CHANNEL_COUNT] = {
     CHANNEL_NAME(25), CHANNEL_NAME(26), CHANNEL_NAME(27), CHANNEL_NAME(28), CHANNEL_NAME(29),
     CHANNEL_NAME(30), CHANNEL_NAME(31)};
 
+const int ddr[2] = {CHANNEL_NAME(32),  CHANNEL_NAME(33)};
+
 // Function for verifying results
 bool verify(std::vector<float, aligned_allocator<float>> &reference_results,
             std::vector<data_t, aligned_allocator<data_t>> &kernel_results,
@@ -181,11 +183,11 @@ int main(int argc, char *argv[]) {
 
     vector_ext.obj = vector.data();
     vector_ext.param = 0;
-    vector_ext.flags = 0;
+    vector_ext.flags = ddr[0];
 
     channel_0_partition_indptr_ext.obj = channel_0_partition_indptr.data();
     channel_0_partition_indptr_ext.param = 0;
-    channel_0_partition_indptr_ext.flags = 0;
+    channel_0_partition_indptr_ext.flags = ddr[0];
 
     channel_0_indices_ext.obj = channel_0_indices.data();
     channel_0_indices_ext.param = 0;
@@ -193,7 +195,7 @@ int main(int argc, char *argv[]) {
 
     channel_1_partition_indptr_ext.obj = channel_1_partition_indptr.data();
     channel_1_partition_indptr_ext.param = 0;
-    channel_1_partition_indptr_ext.flags = 0;
+    channel_1_partition_indptr_ext.flags = ddr[0];
 
     channel_1_indices_ext.obj = channel_1_indices.data();
     channel_1_indices_ext.param = 0;
@@ -201,7 +203,7 @@ int main(int argc, char *argv[]) {
 
     kernel_results_ext.obj = kernel_results.data();
     kernel_results_ext.param = 0;
-    kernel_results_ext.flags = 0;
+    kernel_results_ext.flags = ddr[1];
 
     // Allocate memory on the FPGA
     OCL_CHECK(err, vector_buf = cl::Buffer(context,
