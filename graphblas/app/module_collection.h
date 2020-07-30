@@ -91,15 +91,6 @@ public:
      * \param xclbin_file_path The xclbin file path.
      */
     void set_up_runtime(std::string xclbin_file_path);
-
-    /*!
-     * \brief Send the formatted data to FPGA.
-     */
-    void send_data_to_FPGA() {
-        for (size_t i = 0; i < this->num_modules_; i++) {
-            this->modules_[i]->send_data_to_FPGA();
-        }
-    }
 };
 
 

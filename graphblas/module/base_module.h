@@ -115,6 +115,14 @@ public:
     }
 
     /*!
+     * \brief Copy the contents of a buffer into another buffer without going through the host.
+     */
+    void copy_buffer_device_to_device(cl::Buffer src, cl::Buffer dst, size_t bytes) {
+        this->command_queue_.enqueueCopyBuffer(src, dst, 0, 0, bytes);
+        this->command_queue_.finish();
+    }
+
+    /*!
      * \brief Generate the kernel header file.
      */
     virtual void generate_kernel_header() = 0;
@@ -143,11 +151,6 @@ public:
      * \param xclbin_file_path The xclbin file path.
      */
     void set_up_runtime(std::string xclbin_file_path);
-
-    /*!
-     * \brief Send the formatted data to FPGA.
-     */
-    virtual void send_data_to_FPGA() = 0;
 };
 
 

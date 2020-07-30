@@ -52,6 +52,8 @@ const int HBM[MAX_HBM_CHANNEL_COUNT] = {
     CHANNEL_NAME(25), CHANNEL_NAME(26), CHANNEL_NAME(27), CHANNEL_NAME(28), CHANNEL_NAME(29),
     CHANNEL_NAME(30), CHANNEL_NAME(31)};
 
+const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
+
 // Data type
 template<typename dtype>
 std::string dtype_to_str() {

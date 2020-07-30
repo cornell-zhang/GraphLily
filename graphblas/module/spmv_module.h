@@ -56,14 +56,14 @@ private:
     std::vector<std::vector<packed_index_t, aligned_allocator<packed_index_t>>> channel_indices_;
     /*! \brief Vals for each channel */
     std::vector<std::vector<packed_data_t, aligned_allocator<packed_index_t>>> channel_vals_;
-    /*! \brief The dense vector */
+    /*! \brief Internal copy of the dense vector */
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector_;
-    /*! \brief The mask */
+    /*! \brief Internal copy of mask */
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask_;
     /*! \brief The argument index of mask to be used in setArg */
     uint32_t arg_idx_mask_;
     /*! \brief The kernel results */
-    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results_;
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> results_;
 
     // String representation of the data type
     std::string matrix_data_t_str_;
@@ -74,13 +74,14 @@ private:
                                                               float,
                                                               matrix_data_t>::type;
 
+public:
     // Device buffers
-    std::vector<cl::Buffer> channel_partition_indptr_buf_;
-    std::vector<cl::Buffer> channel_indices_buf_;
-    std::vector<cl::Buffer> channel_vals_buf_;
-    cl::Buffer vector_buf_;
-    cl::Buffer mask_buf_;
-    cl::Buffer kernel_results_buf_;
+    std::vector<cl::Buffer> channel_partition_indptr_buf;
+    std::vector<cl::Buffer> channel_indices_buf;
+    std::vector<cl::Buffer> channel_vals_buf;
+    cl::Buffer vector_buf;
+    cl::Buffer mask_buf;
+    cl::Buffer results_buf;
 
 private:
     /*!
@@ -144,43 +145,76 @@ public:
         return this->num_cols_;
     }
 
-    void generate_kernel_header() override;
-
-    void link_kernel_code() override;
-
-    void send_data_to_FPGA() override;
-
     using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+
     /*!
-     * \brief Run the module.
-     * \param vector The input vector.
-     * \return The kernel results.
+     * \brief Send the formatted matrix from host to device.
      */
-    aligned_vector_t run(aligned_vector_t &vector);
+    void send_matrix_host_to_device();
+
+    /*!
+     * \brief Send the dense vector from host to device.
+     */
+    void send_vector_host_to_device(aligned_vector_t &vector);
+
+    /*!
+     * \brief Send the mask from host to device.
+     */
+    void send_mask_host_to_device(aligned_vector_t &mask);
 
     /*!
      * \brief Run the module.
-     * \param vector The input vector.
-     * \param mask The mask.
-     * \return The kernel results.
      */
-    aligned_vector_t run(aligned_vector_t &vector, aligned_vector_t &mask);
+    void run();
+
+    /*!
+     * \brief Send the dense vector from device to host.
+     */
+    aligned_vector_t send_vector_device_to_host() {
+        this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
+        this->command_queue_.finish();
+        return this->vector_;
+    }
+
+    /*!
+     * \brief Send the mask from device to host.
+     * \return The mask.
+     */
+    aligned_vector_t send_mask_device_to_host() {
+        this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
+        this->command_queue_.finish();
+        return this->mask_;
+    }
+
+    /*!
+     * \brief Send the results from device to host.
+     * \return The results.
+     */
+    aligned_vector_t send_results_device_to_host() {
+        this->command_queue_.enqueueMigrateMemObjects({this->results_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
+        this->command_queue_.finish();
+        return this->results_;
+    }
 
     /*!
      * \brief Compute reference results.
-     * \param vector The input vector.
+     * \param vector The dense vector.
      * \return The reference results.
      */
     graphblas::aligned_float_t compute_reference_results(graphblas::aligned_float_t &vector);
 
     /*!
      * \brief Compute reference results.
-     * \param vector The input vector.
+     * \param vector The dense vector.
      * \param mask The mask.
      * \return The reference results.
      */
     graphblas::aligned_float_t compute_reference_results(graphblas::aligned_float_t &vector,
                                                          graphblas::aligned_float_t &mask);
+
+    void generate_kernel_header() override;
+
+    void link_kernel_code() override;
 };
 
 
@@ -252,8 +286,8 @@ void SpMVModule<matrix_data_t, vector_data_t>::_load_and_format_data(std::string
         }
     }
     this->vector_.resize(this->num_cols_);
-    this->kernel_results_.resize(this->num_rows_);
-    std::fill(this->kernel_results_.begin(), this->kernel_results_.end(), 0);
+    this->results_.resize(this->num_rows_);
+    std::fill(this->results_.begin(), this->results_.end(), 0);
 }
 
 
@@ -326,27 +360,27 @@ void SpMVModule<matrix_data_t, vector_data_t>::link_kernel_code() {
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA() {
+void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     cl_int err;
     // Handle channel_partition_indptr and channel_indices
     cl_mem_ext_ptr_t channel_partition_indptr_ext[this->num_channels_];
     cl_mem_ext_ptr_t channel_indices_ext[this->num_channels_];
-    this->channel_partition_indptr_buf_.resize(this->num_channels_);
-    this->channel_indices_buf_.resize(this->num_channels_);
+    this->channel_partition_indptr_buf.resize(this->num_channels_);
+    this->channel_indices_buf.resize(this->num_channels_);
     for (size_t c = 0; c < this->num_channels_; c++) {
         channel_partition_indptr_ext[c].obj = this->channel_partition_indptr_[c].data();
         channel_partition_indptr_ext[c].param = 0;
-        channel_partition_indptr_ext[c].flags = 0;
+        channel_partition_indptr_ext[c].flags = graphblas::DDR[0];
         channel_indices_ext[c].obj = this->channel_indices_[c].data();
         channel_indices_ext[c].param = 0;
         channel_indices_ext[c].flags = graphblas::HBM[c];
-        OCL_CHECK(err, this->channel_partition_indptr_buf_[c] = cl::Buffer(this->context_,
-            CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+        OCL_CHECK(err, this->channel_partition_indptr_buf[c] = cl::Buffer(this->context_,
+            CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
             sizeof(index_t) * (this->num_col_partitions_ + 1),
             &channel_partition_indptr_ext[c],
             &err));
-        OCL_CHECK(err, this->channel_indices_buf_[c] = cl::Buffer(this->context_,
-            CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+        OCL_CHECK(err, this->channel_indices_buf[c] = cl::Buffer(this->context_,
+            CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
             sizeof(graphblas::packed_index_t) * this->channel_indices_[c].size(),
             &channel_indices_ext[c],
             &err));
@@ -358,105 +392,93 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_data_to_FPGA() {
             channel_vals_ext[c].obj = this->channel_vals_[c].data();
             channel_vals_ext[c].param = 0;
             channel_vals_ext[c].flags = graphblas::HBM[this->num_channels_ + c];
-            OCL_CHECK(err, this->channel_vals_buf_[c] = cl::Buffer(this->context_,
-                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+            OCL_CHECK(err, this->channel_vals_buf[c] = cl::Buffer(this->context_,
+                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(packed_data_t) * this->channel_vals_[c].size(),
                 &channel_vals_ext[c],
                 &err));
         }
     }
-    // Handle kernel_results
-    cl_mem_ext_ptr_t kernel_results_ext;
-    kernel_results_ext.obj = this->kernel_results_.data();
-    kernel_results_ext.param = 0;
-    kernel_results_ext.flags = 0;
-    OCL_CHECK(err, this->kernel_results_buf_ = cl::Buffer(this->context_,
-        CL_MEM_WRITE_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+    // Handle results
+    cl_mem_ext_ptr_t results_ext;
+    results_ext.obj = this->results_.data();
+    results_ext.param = 0;
+    results_ext.flags = graphblas::DDR[0];
+    OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
+        CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
         sizeof(vector_data_t) * this->num_rows_,
-        &kernel_results_ext,
+        &results_ext,
         &err));
     // Set arguments
     size_t arg_idx = 1; // the first argument (arg_idx = 0) is the dense vector
     for (size_t c = 0; c < this->num_channels_; c++) {
-        OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_partition_indptr_buf_[c]));
-        OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_indices_buf_[c]));
+        OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_partition_indptr_buf[c]));
+        OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_indices_buf[c]));
         if (this->graph_is_weighed_) {
-            OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_vals_buf_[c]));
+            OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_vals_buf[c]));
         }
     }
     if (this->use_mask_) {
-        this->arg_idx_mask_ = arg_idx; // mask is right before kernel_results
+        this->arg_idx_mask_ = arg_idx; // mask is right before results
         arg_idx++;
     }
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->kernel_results_buf_));
+    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->results_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_rows_));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_cols_));
     uint32_t num_times = 1;
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx, num_times));
-    // Copy data to device global memory
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->channel_partition_indptr_buf_[0],
-                                                                        this->channel_indices_buf_[0],
-                                                                        this->channel_partition_indptr_buf_[1],
-                                                                        this->channel_indices_buf_[1]}, 0 /* 0 means from host*/));
+    // Send data to device
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->channel_partition_indptr_buf[0],
+                                                                        this->channel_indices_buf[0],
+                                                                        this->channel_partition_indptr_buf[1],
+                                                                        this->channel_indices_buf[1]}, 0 /* 0 means from host*/));
     this->command_queue_.finish();
 }
 
 
 template<typename matrix_data_t, typename vector_data_t>
-typename SpMVModule<matrix_data_t, vector_data_t>::aligned_vector_t
-SpMVModule<matrix_data_t, vector_data_t>::run(aligned_vector_t &vector) {
-    cl_int err;
+void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligned_vector_t &vector) {
+    this->vector_.assign(vector.begin(), vector.end());
     cl_mem_ext_ptr_t vector_ext;
-    vector_ext.obj = vector.data();
+    vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = 0;
-    OCL_CHECK(err, this->vector_buf_ = cl::Buffer(this->context_,
-                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+    vector_ext.flags = graphblas::DDR[0];
+    cl_int err;
+    OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
+                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(vector_data_t) * this->num_cols_,
                 &vector_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf_));
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf_}, 0));
-    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
+    OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf));
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
     this->command_queue_.finish();
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->kernel_results_buf_},
-        CL_MIGRATE_MEM_OBJECT_HOST));
-    this->command_queue_.finish();
-    return this->kernel_results_;
 }
 
 
 template<typename matrix_data_t, typename vector_data_t>
-typename SpMVModule<matrix_data_t, vector_data_t>::aligned_vector_t
-SpMVModule<matrix_data_t, vector_data_t>::run(aligned_vector_t &vector, aligned_vector_t &mask) {
-    cl_int err;
-    cl_mem_ext_ptr_t vector_ext;
-    vector_ext.obj = vector.data();
-    vector_ext.param = 0;
-    vector_ext.flags = 0;
-    OCL_CHECK(err, this->vector_buf_ = cl::Buffer(this->context_,
-                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->num_cols_,
-                &vector_ext,
-                &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf_));
+void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_vector_t &mask) {
+    this->mask_.assign(mask.begin(), mask.end());
     cl_mem_ext_ptr_t mask_ext;
-    mask_ext.obj = mask.data();
+    mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = 0;
-    OCL_CHECK(err, this->mask_buf_ = cl::Buffer(this->context_,
-                CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+    mask_ext.flags = graphblas::DDR[0];
+    cl_int err;
+    OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
+                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(vector_data_t) * this->num_rows_,
                 &mask_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->arg_idx_mask_, this->mask_buf_));
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf_, this->mask_buf_}, 0));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->arg_idx_mask_, this->mask_buf));
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
+    this->command_queue_.finish();
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+void SpMVModule<matrix_data_t, vector_data_t>::run() {
+    cl_int err;
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->kernel_results_buf_},
-        CL_MIGRATE_MEM_OBJECT_HOST));
-    this->command_queue_.finish();
-    return this->kernel_results_;
 }
 
 

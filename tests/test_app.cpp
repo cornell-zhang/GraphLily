@@ -40,7 +40,7 @@ void test_bfs() {
     bfs.set_target(target);
     bfs.compile();
     bfs.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-    bfs.send_data_to_FPGA();
+    bfs.send_matrix_host_to_device();
 
     uint32_t source = 0;
     uint32_t num_iterations = 10;

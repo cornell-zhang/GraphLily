@@ -34,29 +34,40 @@ public:
         this->add_module(this->Assign_);
     }
 
+    void send_matrix_host_to_device() {
+        this->SpMV_->send_matrix_host_to_device();
+    }
+
     using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
     aligned_vector_t run(uint32_t source, uint32_t num_iterations) {
         aligned_vector_t input(this->matrix_num_rows_, 0);
-        aligned_vector_t level(this->matrix_num_rows_, 0);
+        aligned_vector_t distance(this->matrix_num_rows_, 0);
         input[source] = 1;
-        level[source] = 1;
+        distance[source] = 1;
+        this->SpMV_->send_vector_host_to_device(input);
+        this->SpMV_->send_mask_host_to_device(distance);
+        this->Assign_->bind_mask_buf(this->SpMV_->vector_buf);
+        this->Assign_->bind_inout_buf(this->SpMV_->mask_buf);
         for (size_t i = 1; i <= num_iterations; i++) {
-            input = this->SpMV_->run(input, level);
-            this->Assign_->run(input, level, this->matrix_num_rows_, i+1);
+            this->SpMV_->run();
+            this->SpMV_->copy_buffer_device_to_device(this->SpMV_->results_buf,
+                                                      this->SpMV_->vector_buf,
+                                                      sizeof(vector_data_t) * this->matrix_num_rows_);
+            this->Assign_->run(this->matrix_num_rows_, i+1);
         }
-        return level;
+        return this->SpMV_->send_mask_device_to_host();
     }
 
     graphblas::aligned_float_t compute_reference_results(uint32_t source, uint32_t num_iterations) {
         graphblas::aligned_float_t input(this->matrix_num_rows_, 0);
-        graphblas::aligned_float_t level(this->matrix_num_rows_, 0);
+        graphblas::aligned_float_t distance(this->matrix_num_rows_, 0);
         input[source] = 1;
-        level[source] = 1;
+        distance[source] = 1;
         for (size_t i = 1; i <= num_iterations; i++) {
-            input = this->SpMV_->compute_reference_results(input, level);
-            this->Assign_->compute_reference_results(input, level, this->matrix_num_rows_, i+1);
+            input = this->SpMV_->compute_reference_results(input, distance);
+            this->Assign_->compute_reference_results(input, distance, this->matrix_num_rows_, i+1);
         }
-        return level;
+        return distance;
     }
 };
 
