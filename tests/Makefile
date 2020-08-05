@@ -17,15 +17,14 @@ include $(COMMON_REPO)/common/includes/opencl/opencl.mk
 CXXFLAGS += $(opencl_CXXFLAGS)
 LDFLAGS += $(opencl_LDFLAGS)
 
-include $(COMMON_REPO)/common/includes/graph_partitioning/graph_partitioning.mk
-CXXFLAGS += $(graph_partitioning_CXXFLAGS)
-LDFLAGS += $(graph_partitioning_LDFLAGS)
+CXXFLAGS += -I/work/shared/common/research/graphblas/software/cnpy
+LDFLAGS += -L/work/shared/common/research/graphblas/software/cnpy/build -lcnpy
 
-test_graph_partitioning: test_graph_partitioning.cpp
-	g++ $(CXXFLAGS) test_graph_partitioning.cpp -o $@ $(LDFLAGS)
+test_io: test_io.cpp
+	g++ $(CXXFLAGS) test_io.cpp -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)
-	mv test_graph_partitioning $(BUILD_DIR)/
-	cd $(BUILD_DIR); ./test_graph_partitioning
+	mv test_io $(BUILD_DIR)/
+	cd $(BUILD_DIR); ./test_io
 
 test_module: test_module.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) test_module.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
@@ -39,7 +38,7 @@ test_app: test_app.cpp $(xcl2_SRCS)
 	mv test_app $(BUILD_DIR)/
 	cd $(BUILD_DIR); ./test_app
 
-all: test_graph_partitioning test_module test_app
+all: test_io test_module test_app
 
 clean:
 	rm -rf $(BUILD_DIR)
