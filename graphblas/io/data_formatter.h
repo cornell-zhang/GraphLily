@@ -322,14 +322,6 @@ public:
     }
 
     /*!
-     * \brief Get the csr matrix.
-     * \return The csr matrix.
-     */
-    uint32_t get_csr_matrix() {
-        return this->csr_matrix_;
-    }
-
-    /*!
      * \brief Get the non-zero data of a specific partition for a specific HBM channel.
      * \param row_partition_idx The row partition index.
      * \param col_partition_idx The column partition index.

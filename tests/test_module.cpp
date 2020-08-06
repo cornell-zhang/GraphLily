@@ -4,6 +4,8 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 #include "ap_fixed.h"
+#include "graphblas/io/data_loader.h"
+#include "graphblas/io/data_formatter.h"
 #include "graphblas/module/spmv_module.h"
 #include "graphblas/module/assign_vector_dense_module.h"
 
@@ -38,16 +40,21 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 void test_spmv_module() {
-    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
-                                     "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
     graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
     uint32_t num_channels = 2;
-    uint32_t vector_buffer_len = 10000;
+    uint32_t out_buffer_len = 1024;
+    uint32_t vector_buffer_len = 2000;
     using matrix_data_t = bool;
     using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
     std::string target = "sw_emu";
-    uint32_t num_cols = 10000;
-    std::vector<float, aligned_allocator<float>> vector_float(num_cols);
+
+    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+                                     "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
+    struct CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
+    graphblas::io::util_round_csr_matrix_dim(csr_matrix,
+                                             num_channels * graphblas::pack_size,
+                                             graphblas::pack_size);
+    std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
     std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % 2);});
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector(vector_float.begin(),
                                                                         vector_float.end());
@@ -56,14 +63,17 @@ void test_spmv_module() {
 
     /*----------------------------- No mask -------------------------------*/
     {
-    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module1(csr_float_npz_path, semiring,
-                                                                        num_channels, vector_buffer_len);
+    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module1(semiring,
+                                                                        num_channels,
+                                                                        out_buffer_len,
+                                                                        vector_buffer_len);
     module1.set_target(target);
     module1.set_mask_type(graphblas::kNoMask);
     module1.compile();
     module1.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-    module1.send_matrix_host_to_device();
 
+    module1.load_and_format_matrix(csr_matrix);
+    module1.send_matrix_host_to_device();
     module1.send_vector_host_to_device(vector);
     module1.run();
     kernel_results = module1.send_results_device_to_host();
@@ -77,15 +87,19 @@ void test_spmv_module() {
 
     /*----------------------------- Use mask -------------------------------*/
     {
-    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module2(csr_float_npz_path, semiring,
-                                                                        num_channels, vector_buffer_len);
+    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> module2(semiring,
+                                                                        num_channels,
+                                                                        out_buffer_len,
+                                                                        vector_buffer_len);
     module2.set_target(target);
     module2.set_mask_type(graphblas::kMaskWriteToZero);
     module2.compile();
     module2.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+
+    module2.load_and_format_matrix(csr_matrix);
     module2.send_matrix_host_to_device();
 
-    std::vector<float, aligned_allocator<float>> mask_float(num_cols);
+    std::vector<float, aligned_allocator<float>> mask_float(csr_matrix.num_cols);
     std::generate(mask_float.begin(), mask_float.end(), [&](){return float(rand() % 2);});
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask(mask_float.begin(), mask_float.end());
 

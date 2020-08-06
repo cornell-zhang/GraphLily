@@ -7,10 +7,14 @@
 #include <chrono>
 
 #include "xcl2.hpp"
-#include "graph_partitioning.h"
 
 #include "../global.h"
+#include "../io/data_loader.h"
+#include "../io/data_formatter.h"
 #include "./base_module.h"
+
+using graphblas::io::CSRMatrix;
+using graphblas::io::SpMVDataFormatter;
 
 
 namespace graphblas {
@@ -19,19 +23,6 @@ namespace module {
 template<typename matrix_data_t, typename vector_data_t>
 class SpMVModule : public BaseModule {
 private:
-    /*! \brief The number of rows of the original sparse matrix */
-    uint32_t num_rows_;
-    /*! \brief The number of columns of the original sparse matrix */
-    uint32_t num_cols_;
-    /*! \brief The index pointers (CSR) of the original sparse matrix */
-    std::vector<index_t> indptr_;
-    /*! \brief The column indices (CSR) of the original sparse matrix */
-    std::vector<index_t> indices_;
-    /*! \brief Vals using float data type */
-    std::vector<float> vals_float_;
-    /*! \brief The number of non-zeros of the original sparse matrix */
-    uint32_t nnz_;
-
     /*! \brief Whether the graph is weighted */
     bool graph_is_weighed_;
     /*! \brief Whether the kernel uses mask */
@@ -42,6 +33,10 @@ private:
     SemiRingType semiring_;
     /*! \brief The number of channels of the kernel */
     uint32_t num_channels_;
+    /*! \brief The length of output buffer of the kernel */
+    uint32_t out_buffer_len_;
+    /*! \brief The number of row partitions */
+    uint32_t num_row_partitions_;
     /*! \brief The length of vector buffer of the kernel */
     uint32_t vector_buffer_len_;
     /*! \brief The number of column partitions */
@@ -74,6 +69,11 @@ private:
                                                               float,
                                                               matrix_data_t>::type;
 
+    /*! \brief The sparse matrix using float data type*/
+    CSRMatrix<float> csr_matrix_float_;
+    /*! \brief The sparse matrix */
+    CSRMatrix<matrix_data_t_internal_> csr_matrix_;
+
 public:
     // Device buffers
     std::vector<cl::Buffer> channel_partition_indptr_buf;
@@ -94,26 +94,21 @@ private:
      * \brief Get the kernel configuration.
      * \param semiring The semiring.
      * \param num_channels The number of channels.
+     * \param out_buffer_len The length of output buffer.
      * \param vector_buffer_len The length of vector buffer.
      */
-    void _get_kernel_config(SemiRingType semiring, uint32_t num_channels, uint32_t vector_buffer_len);
-
-    /*!
-     * \brief Load a sparse matrix from a scipy sparse npz file and format the sparse matrix.
-     *        The sparse matrix should have float data type.
-     *        Data type conversion, if required, is handled internally.
-     * \param csr_float_npz_path The file path.
-     */
-    void _load_and_format_data(std::string csr_float_npz_path);
+    void _get_kernel_config(SemiRingType semiring,
+                            uint32_t num_channels,
+                            uint32_t out_buffer_len,
+                            uint32_t vector_buffer_len);
 
 public:
-    SpMVModule(std::string csr_float_npz_path,
-               SemiRingType semiring,
+    SpMVModule(SemiRingType semiring,
                uint32_t num_channels,
+               uint32_t out_buffer_len,
                uint32_t vector_buffer_len) : BaseModule("kernel_spmv") {
         this->_check_data_type();
-        this->_get_kernel_config(semiring, num_channels, vector_buffer_len);
-        this->_load_and_format_data(csr_float_npz_path);
+        this->_get_kernel_config(semiring, num_channels, out_buffer_len, vector_buffer_len);
     }
 
     /*!
@@ -130,22 +125,38 @@ public:
     }
 
     /*!
-     * \brief Get the number of rows.
+     * \brief Get the number of rows of the sparse matrix.
      * \return The number of rows.
      */
     uint32_t get_num_rows() {
-        return this->num_rows_;
+        return this->csr_matrix_.num_rows;
     }
 
     /*!
-     * \brief Get the number of columns.
+     * \brief Get the number of columns of the sparse matrix.
      * \return The number of columns.
      */
     uint32_t get_num_cols() {
-        return this->num_cols_;
+        return this->csr_matrix_.num_cols;
+    }
+
+    /*!
+     * \brief Get the number of non-zeros of the sparse matrix.
+     * \return The number of non-zeros.
+     */
+    uint32_t get_nnz() {
+        return this->csr_matrix_.adj_indptr[this->csr_matrix_.num_rows];
     }
 
     using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+
+    /*!
+     * \brief Load a csr matrix and format the csr matrix.
+     *        The csr matrix should have float data type.
+     *        Data type conversion, if required, is handled internally.
+     * \param csr_matrix_float The csr matrix using float data type.
+     */
+    void load_and_format_matrix(CSRMatrix<float> const &csr_matrix_float);
 
     /*!
      * \brief Send the formatted matrix from host to device.
@@ -236,58 +247,12 @@ void SpMVModule<matrix_data_t, vector_data_t>::_check_data_type() {
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::_get_kernel_config(SemiRingType semiring,
                                                                   uint32_t num_channels,
+                                                                  uint32_t out_buffer_len,
                                                                   uint32_t vector_buffer_len) {
     this->semiring_ = semiring;
     this->num_channels_ = num_channels;
+    this->out_buffer_len_ = out_buffer_len;
     this->vector_buffer_len_ = vector_buffer_len;
-}
-
-
-template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::_load_and_format_data(std::string csr_float_npz_path) {
-    SpMVDataFormatter<matrix_data_t_internal_, graphblas::pack_size, packed_data_t, graphblas::packed_index_t>
-        formatter(csr_float_npz_path);
-    this->num_rows_ = formatter.get_num_rows();
-    this->num_cols_ = formatter.get_num_cols();
-    this->indptr_ = formatter.get_indptr();
-    this->indices_ = formatter.get_indices();
-    this->nnz_ = this->indptr_[this->num_rows_];
-    this->num_col_partitions_ = (this->num_cols_ + this->vector_buffer_len_ - 1)
-        / this->vector_buffer_len_;
-    if (this->graph_is_weighed_) {
-        this->vals_float_ = formatter.get_data_float();
-    }
-    matrix_data_t_internal_ val_marker = 0;
-    formatter.format_pad_marker_end_of_row(this->vector_buffer_len_,
-                                           this->num_channels_,
-                                           val_marker,
-                                           graphblas::idx_marker);
-    this->channel_indices_.resize(this->num_channels_);
-    this->channel_partition_indptr_.resize(this->num_channels_);
-    for (size_t c = 0; c < this->num_channels_; c++) {
-        this->channel_partition_indptr_[c].resize(this->num_col_partitions_ + 1);
-        this->channel_partition_indptr_[c][0] = 0;
-    }
-    if (this->graph_is_weighed_) {
-        this->channel_vals_.resize(this->num_channels_);
-    }
-    for (size_t c = 0; c < this->num_channels_; c++) {
-        for (size_t i = 0; i < this->num_col_partitions_; i++) {
-            auto indices_partition = formatter.get_packed_indices(i, c);
-            this->channel_partition_indptr_[c][i + 1] =
-                this->channel_partition_indptr_[c][i] + indices_partition.size();
-            this->channel_indices_[c].insert(this->channel_indices_[c].end(),
-                indices_partition.begin(), indices_partition.end());
-            if (this->graph_is_weighed_) {
-                auto vals_partition = formatter.get_packed_data(i, c);
-                this->channel_vals_[c].insert(this->channel_vals_[c].end(),
-                    vals_partition.begin(), vals_partition.end());
-            }
-        }
-    }
-    this->vector_.resize(this->num_cols_);
-    this->results_.resize(this->num_rows_);
-    std::fill(this->results_.begin(), this->results_.end(), 0);
 }
 
 
@@ -302,7 +267,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
     header << "const unsigned int NUM_PE_PER_HBM_CHANNEL = VECTOR_PACK_SIZE" << ";" << std::endl;
     header << "const unsigned int NUM_HBM_CHANNEL = " <<  this->num_channels_ << ";" << std::endl;
     header << "const unsigned int NUM_PE_TOTAL = NUM_PE_PER_HBM_CHANNEL*NUM_HBM_CHANNEL" << ";" << std::endl;
-    header << "const unsigned int MAX_NUM_ROWS = " << "100*1000" << ";" << std::endl;
+    header << "const unsigned int OUT_BUFFER_LEN = " << this->out_buffer_len_ << ";" << std::endl;
     header << "const unsigned int VECTOR_BUFFER_LEN = " << this->vector_buffer_len_ << ";" << std::endl;
     // Data types
     header << "typedef " << this->vector_data_t_str_ << " VECTOR_T;" << std::endl;
@@ -343,19 +308,67 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::link_kernel_code() {
-    std::string command = "ln -s " + graphblas::root_path + "/hw/" + this->kernel_name_ + ".cpp" + " "
-                          + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
+    std::string command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
+                        + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     std::cout << command << std::endl;
     system(command.c_str());
     if (this->use_mask_) {
-        command = "ln -s " + graphblas::root_path + "/hw/" + this->kernel_name_ + "_use_mask" + ".ini" + " "
-                + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
+        command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + "_use_mask" + ".ini"
+                + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
     } else {
-        command = "ln -s " + graphblas::root_path + "/hw/" + this->kernel_name_ + ".ini" + " "
-                + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
+        command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".ini"
+                + " "  + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
     }
     std::cout << command << std::endl;
     system(command.c_str());
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(CSRMatrix<float> const &csr_matrix_float) {
+    this->csr_matrix_float_ = csr_matrix_float;
+    this->csr_matrix_ = graphblas::io::csr_matrix_convert_from_float<matrix_data_t_internal_>(csr_matrix_float);
+    SpMVDataFormatter<matrix_data_t_internal_, graphblas::pack_size, packed_data_t, graphblas::packed_index_t>
+        formatter(this->csr_matrix_);
+    matrix_data_t_internal_ val_marker = 0;
+    formatter.format_pad_marker_end_of_row(this->out_buffer_len_,
+                                           this->vector_buffer_len_,
+                                           this->num_channels_,
+                                           val_marker,
+                                           graphblas::idx_marker);
+    this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buffer_len_ - 1) /
+        this->out_buffer_len_;
+    this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vector_buffer_len_ - 1) /
+        this->vector_buffer_len_;
+    this->channel_indices_.resize(this->num_channels_);
+    this->channel_partition_indptr_.resize(this->num_channels_);
+    for (size_t c = 0; c < this->num_channels_; c++) {
+        this->channel_partition_indptr_[c].resize(this->num_row_partitions_ * this->num_col_partitions_ + 1);
+        this->channel_partition_indptr_[c][0] = 0;
+    }
+    if (this->graph_is_weighed_) {
+        this->channel_vals_.resize(this->num_channels_);
+    }
+    for (size_t c = 0; c < this->num_channels_; c++) {
+        for (size_t j = 0; j < this->num_row_partitions_; j++) {
+            for (size_t i = 0; i < this->num_col_partitions_; i++) {
+                auto indices_partition = formatter.get_packed_indices(j, i, c);
+                this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i + 1] =
+                    this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i]
+                    + indices_partition.size();
+                this->channel_indices_[c].insert(this->channel_indices_[c].end(),
+                    indices_partition.begin(), indices_partition.end());
+                if (this->graph_is_weighed_) {
+                    auto vals_partition = formatter.get_packed_data(j, i, c);
+                    this->channel_vals_[c].insert(this->channel_vals_[c].end(),
+                        vals_partition.begin(), vals_partition.end());
+                }
+            }
+        }
+    }
+    this->vector_.resize(this->csr_matrix_.num_cols);
+    this->results_.resize(this->csr_matrix_.num_rows);
+    std::fill(this->results_.begin(), this->results_.end(), 0);
 }
 
 
@@ -376,7 +389,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
         channel_indices_ext[c].flags = graphblas::HBM[c];
         OCL_CHECK(err, this->channel_partition_indptr_buf[c] = cl::Buffer(this->context_,
             CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-            sizeof(index_t) * (this->num_col_partitions_ + 1),
+            sizeof(index_t) * this->channel_partition_indptr_[c].size(),
             &channel_partition_indptr_ext[c],
             &err));
         OCL_CHECK(err, this->channel_indices_buf[c] = cl::Buffer(this->context_,
@@ -406,7 +419,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     results_ext.flags = graphblas::DDR[0];
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(vector_data_t) * this->num_rows_,
+        sizeof(vector_data_t) * this->csr_matrix_.num_rows,
         &results_ext,
         &err));
     // Set arguments
@@ -423,10 +436,8 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
         arg_idx++;
     }
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->results_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_rows_));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_cols_));
-    uint32_t num_times = 1;
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx, num_times));
+    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_cols));
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->channel_partition_indptr_buf[0],
                                                                         this->channel_indices_buf[0],
@@ -446,7 +457,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
     cl_int err;
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->num_cols_,
+                sizeof(vector_data_t) * this->csr_matrix_.num_cols,
                 &vector_ext,
                 &err));
     OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf));
@@ -465,7 +476,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->num_rows_,
+                sizeof(vector_data_t) * this->csr_matrix_.num_rows,
                 &mask_ext,
                 &err));
     OCL_CHECK(err, err = this->kernel_.setArg(this->arg_idx_mask_, this->mask_buf));
@@ -482,33 +493,33 @@ void SpMVModule<matrix_data_t, vector_data_t>::run() {
 }
 
 
-#define SPMV(stmt)                                             { \
-for (size_t row_idx = 0; row_idx < this->num_rows_; row_idx++) { \
-    index_t start = this->indptr_[row_idx];                      \
-    index_t end = this->indptr_[row_idx + 1];                    \
-    for (size_t i = start; i < end; i++) {                       \
-        index_t index = this->indices_[i];                       \
-        stmt;                                                    \
-    }                                                            \
-}                                                              } \
+#define SPMV(stmt)                                                              { \
+for (size_t row_idx = 0; row_idx < this->csr_matrix_float_.num_rows; row_idx++) { \
+    index_t start = this->csr_matrix_float_.adj_indptr[row_idx];                  \
+    index_t end = this->csr_matrix_float_.adj_indptr[row_idx + 1];                \
+    for (size_t i = start; i < end; i++) {                                        \
+        index_t index = this->csr_matrix_float_.adj_indices[i];                   \
+        stmt;                                                                     \
+    }                                                                             \
+}                                                                               } \
 
 template<typename matrix_data_t, typename vector_data_t>
 graphblas::aligned_float_t
 SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_float_t &vector) {
-    aligned_float_t reference_results(this->num_rows_);
+    aligned_float_t reference_results(this->csr_matrix_.num_rows);
     std::fill(reference_results.begin(), reference_results.end(), 0);
     switch (this->semiring_) {
         case graphblas::kMulAdd:
             if (this->graph_is_weighed_) {
-                SPMV(reference_results[row_idx] += this->vals_float_[i] * vector[index]);
+                SPMV(reference_results[row_idx] += this->csr_matrix_float_.adj_data[i] * vector[index]);
             } else {
                 SPMV(reference_results[row_idx] += vector[index]);
             }
             break;
         case graphblas::kLogicalAndOr:
             if (this->graph_is_weighed_) {
-                SPMV(reference_results[row_idx] = reference_results[row_idx] ||
-                        (this->vals_float_[i] && vector[index]));
+                SPMV(reference_results[row_idx] = reference_results[row_idx]
+                     || (this->csr_matrix_float_.adj_data[i] && vector[index]));
             } else {
                 SPMV(reference_results[row_idx] = reference_results[row_idx] || vector[index]);
             }
@@ -527,13 +538,13 @@ SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(graphblas::a
                                                                     graphblas::aligned_float_t &mask) {
     graphblas::aligned_float_t reference_results = this->compute_reference_results(vector);
     if (this->mask_type_ == graphblas::kMaskWriteToZero) {
-        for (size_t i = 0; i < this->num_rows_; i++) {
+        for (size_t i = 0; i < this->csr_matrix_.num_rows; i++) {
             if (mask[i] != 0) {
                 reference_results[i] = 0;
             }
         }
     } else {
-        for (size_t i = 0; i < this->num_rows_; i++) {
+        for (size_t i = 0; i < this->csr_matrix_.num_rows; i++) {
             if (mask[i] == 0) {
                 reference_results[i] = 0;
             }
