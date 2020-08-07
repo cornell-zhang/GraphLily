@@ -4,6 +4,9 @@
 #include "./module_collection.h"
 #include "../module/spmv_module.h"
 #include "../module/assign_vector_dense_module.h"
+#include "../io/data_loader.h"
+#include "../io/data_formatter.h"
+
 
 namespace graphblas {
 namespace app {
@@ -18,20 +21,38 @@ private:
     // Sparse matrix size
     uint32_t matrix_num_rows_;
     uint32_t matrix_num_cols_;
+    // Kernel configuration
+    static const graphblas::SemiRingType semiring_ = graphblas::kLogicalAndOr;
+    static const uint32_t num_channels_ = 2;
+    static const uint32_t out_buffer_len_ = 1 * 1024 * 1024;
+    static const uint32_t vector_buffer_len_ = 0.25 * 1024 * 1024;
 
 public:
-    BFS(std::string csr_float_npz_path) {
-        this->SpMV_ = new graphblas::module::SpMVModule<matrix_data_t, vector_data_t>(csr_float_npz_path,
-                                                                                    graphblas::kLogicalAndOr,
-                                                                                    2,
-                                                                                    10000);
+    BFS() {
+        this->SpMV_ = new graphblas::module::SpMVModule<matrix_data_t, vector_data_t>(semiring_,
+                                                                                      num_channels_,
+                                                                                      out_buffer_len_,
+                                                                                      vector_buffer_len_);
         this->SpMV_->set_mask_type(graphblas::kMaskWriteToZero);
-        this->matrix_num_rows_ = this->SpMV_->get_num_rows();
-        this->matrix_num_cols_ = this->SpMV_->get_num_cols();
         this->add_module(this->SpMV_);
         this->Assign_ = new graphblas::module::AssignVectorDenseModule<vector_data_t>();
         this->Assign_->set_mask_type(graphblas::kMaskWriteToOne);
         this->add_module(this->Assign_);
+    }
+
+    uint32_t get_nnz() {
+        return this->SpMV_->get_nnz();
+    }
+
+    void load_and_format_matrix(std::string csr_float_npz_path) {
+        struct CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
+        graphblas::io::util_round_csr_matrix_dim(csr_matrix,
+                                                 num_channels_ * graphblas::pack_size,
+                                                 num_channels_ * graphblas::pack_size);
+        this->SpMV_->load_and_format_matrix(csr_matrix);
+        this->matrix_num_rows_ = this->SpMV_->get_num_rows();
+        this->matrix_num_cols_ = this->SpMV_->get_num_cols();
+        assert(this->matrix_num_rows_ == this->matrix_num_cols_);
     }
 
     void send_matrix_host_to_device() {

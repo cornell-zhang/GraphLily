@@ -33,13 +33,15 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 void test_bfs() {
-    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
-                                     "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
-    graphblas::app::BFS bfs(csr_float_npz_path);
+    graphblas::app::BFS bfs;
     std::string target = "sw_emu";
     bfs.set_target(target);
     bfs.compile();
     bfs.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+
+    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+                                     "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
+    bfs.load_and_format_matrix(csr_float_npz_path);
     bfs.send_matrix_host_to_device();
 
     uint32_t source = 0;
