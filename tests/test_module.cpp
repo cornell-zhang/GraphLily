@@ -41,9 +41,9 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 void test_spmv_module() {
     graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
-    uint32_t num_channels = 2;
-    uint32_t out_buffer_len = 1024;
-    uint32_t vector_buffer_len = 2000;
+    uint32_t num_channels = 32;
+    uint32_t out_buffer_len = 2048;
+    uint32_t vector_buffer_len = 2048;
     using matrix_data_t = bool;
     using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
     std::string target = "sw_emu";

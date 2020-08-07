@@ -225,6 +225,8 @@ public:
 
     void generate_kernel_header() override;
 
+    void generate_kernel_ini() override;
+
     void link_kernel_code() override;
 };
 
@@ -307,17 +309,44 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::link_kernel_code() {
-    std::string command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
-                        + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
+void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
+    std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
+    std::ofstream ini(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini");
+    ini << "[connectivity]" << std::endl;
+    // HBM
+    size_t hbm_idx = 0;
+    for (size_t i = 0; i < this->num_channels_; i++) {
+        ini << "sp=kernel_spmv_1.channel_" << hbm_idx << "_indices:HBM[" << hbm_idx << "]" << std::endl;
+        hbm_idx++;
+        if (this->graph_is_weighed_) {
+            ini << "sp=kernel_spmv_1.channel_" << hbm_idx << "_vals:HBM[" << hbm_idx << "]" << std::endl;
+            hbm_idx++;
+        }
+    }
+    // DDR
+    for (size_t i = 0; i < this->num_channels_; i++) {
+        ini << "sp=kernel_spmv_1.channel_" << i << "_partition_indptr:DDR[0]" << std::endl;
+    }
+    ini << "sp=kernel_spmv_1.vector:DDR[0]" << std::endl;
+    ini << "sp=kernel_spmv_1.out:DDR[0]" << std::endl;
     if (this->use_mask_) {
-        command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + "_use_mask" + ".ini"
-                + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
+        ini << "sp=kernel_spmv_1.mask:DDR[0]" << std::endl;
+    }
+    ini.close();
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+void SpMVModule<matrix_data_t, vector_data_t>::link_kernel_code() {
+    std::string command;
+    if (this->graph_is_weighed_) {
+        command = "ln -s " + graphblas::root_path + "/graphblas/hw/kernel_spmv_weighted.cpp"
+                + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     } else {
-        command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".ini"
-                + " "  + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
+        command = "ln -s " + graphblas::root_path + "/graphblas/hw/kernel_spmv_unweighted.cpp"
+                + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     }
     std::cout << command << std::endl;
     system(command.c_str());

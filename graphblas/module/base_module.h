@@ -32,6 +32,7 @@ void _compile_impl(T* t) {
     std::cout << command << std::endl;
     system(command.c_str());
     t->generate_kernel_header();
+    t->generate_kernel_ini();
     t->link_kernel_code();
     t->generate_makefile();
     command = "cd " + graphblas::proj_folder_name + "; " + "make build";
@@ -128,6 +129,11 @@ public:
     virtual void generate_kernel_header() = 0;
 
     /*!
+     * \brief Generate the kernel .ini configuration file.
+     */
+    virtual void generate_kernel_ini() = 0;
+
+    /*!
      * \brief Link the kernel cpp file to the proj directory.
      */
     virtual void link_kernel_code();
@@ -157,10 +163,6 @@ public:
 void BaseModule::link_kernel_code() {
     std::string command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
                         + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
-    std::cout << command << std::endl;
-    system(command.c_str());
-    command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".ini"
-            + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini";
     std::cout << command << std::endl;
     system(command.c_str());
 }

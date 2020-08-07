@@ -118,6 +118,8 @@ public:
                                    uint32_t length, float val);
 
     void generate_kernel_header() override;
+
+    void generate_kernel_ini() override;
 };
 
 
@@ -144,6 +146,19 @@ void AssignVectorDenseModule<vector_data_t>::generate_kernel_header() {
             break;
     }
     header.close();
+}
+
+
+template<typename vector_data_t>
+void AssignVectorDenseModule<vector_data_t>::generate_kernel_ini() {
+    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::cout << command << std::endl;
+    system(command.c_str());
+    std::ofstream ini(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini");
+    ini << "[connectivity]" << std::endl;
+    ini << "sp=kernel_assign_vector_dense_1.mask:DDR[0]" << std::endl;
+    ini << "sp=kernel_assign_vector_dense_1.inout:DDR[0]" << std::endl;
+    ini.close();
 }
 
 
