@@ -161,7 +161,7 @@ public:
 
 
 void BaseModule::link_kernel_code() {
-    std::string command = "ln -s " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
+    std::string command = "cp " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
                         + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     std::cout << command << std::endl;
     system(command.c_str());

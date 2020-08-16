@@ -269,6 +269,9 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
     header << "const unsigned int NUM_PE_PER_HBM_CHANNEL = VECTOR_PACK_SIZE" << ";" << std::endl;
     header << "const unsigned int NUM_HBM_CHANNEL = " <<  this->num_channels_ << ";" << std::endl;
     header << "const unsigned int NUM_PE_TOTAL = NUM_PE_PER_HBM_CHANNEL*NUM_HBM_CHANNEL" << ";" << std::endl;
+    header << "const unsigned int NUM_PORT_PER_BANK = 2;" << std::endl;
+    header << "const unsigned int NUM_BANK_PER_HBM_CHANNEL = NUM_PE_PER_HBM_CHANNEL/NUM_PORT_PER_BANK"
+           << ";" << std::endl;
     header << "const unsigned int OUT_BUFFER_LEN = " << this->out_buffer_len_ << ";" << std::endl;
     header << "const unsigned int VECTOR_BUFFER_LEN = " << this->vector_buffer_len_ << ";" << std::endl;
     // Data types
@@ -318,6 +321,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
     // HBM
     size_t hbm_idx = 0;
     for (size_t i = 0; i < this->num_channels_; i++) {
+        ini << "sp=kernel_spmv_1.channel_" << hbm_idx << "_partition_indptr:HBM[" << hbm_idx << "]" << std::endl;
         ini << "sp=kernel_spmv_1.channel_" << hbm_idx << "_indices:HBM[" << hbm_idx << "]" << std::endl;
         hbm_idx++;
         if (this->graph_is_weighed_) {
@@ -326,9 +330,6 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
         }
     }
     // DDR
-    for (size_t i = 0; i < this->num_channels_; i++) {
-        ini << "sp=kernel_spmv_1.channel_" << i << "_partition_indptr:DDR[0]" << std::endl;
-    }
     ini << "sp=kernel_spmv_1.vector:DDR[0]" << std::endl;
     ini << "sp=kernel_spmv_1.out:DDR[0]" << std::endl;
     if (this->use_mask_) {
@@ -342,10 +343,10 @@ template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::link_kernel_code() {
     std::string command;
     if (this->graph_is_weighed_) {
-        command = "ln -s " + graphblas::root_path + "/graphblas/hw/kernel_spmv_weighted.cpp"
+        command = "cp " + graphblas::root_path + "/graphblas/hw/kernel_spmv_weighted.cpp"
                 + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     } else {
-        command = "ln -s " + graphblas::root_path + "/graphblas/hw/kernel_spmv_unweighted.cpp"
+        command = "cp " + graphblas::root_path + "/graphblas/hw/kernel_spmv_unweighted.cpp"
                 + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     }
     std::cout << command << std::endl;
@@ -412,7 +413,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     for (size_t c = 0; c < this->num_channels_; c++) {
         channel_partition_indptr_ext[c].obj = this->channel_partition_indptr_[c].data();
         channel_partition_indptr_ext[c].param = 0;
-        channel_partition_indptr_ext[c].flags = graphblas::DDR[0];
+        channel_partition_indptr_ext[c].flags = graphblas::HBM[c];
         channel_indices_ext[c].obj = this->channel_indices_[c].data();
         channel_indices_ext[c].param = 0;
         channel_indices_ext[c].flags = graphblas::HBM[c];
@@ -468,10 +469,16 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_rows));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_cols));
     // Send data to device
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->channel_partition_indptr_buf[0],
-                                                                        this->channel_indices_buf[0],
-                                                                        this->channel_partition_indptr_buf[1],
-                                                                        this->channel_indices_buf[1]}, 0 /* 0 means from host*/));
+    for (size_t c = 0; c < this->num_channels_; c++) {
+        OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(
+            {this->channel_partition_indptr_buf[c]}, 0 /* 0 means from host to device */));
+        OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(
+            {this->channel_indices_buf[c]}, 0));
+        if (this->graph_is_weighed_) {
+            OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(
+                {this->channel_vals_buf[c]}, 0));
+        }
+    }
     this->command_queue_.finish();
 }
 

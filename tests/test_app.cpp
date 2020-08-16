@@ -33,7 +33,11 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 void test_bfs() {
-    graphblas::app::BFS bfs;
+    uint32_t num_channels = 16;
+    uint32_t out_buffer_len = 1024;
+    uint32_t vector_buffer_len = 1024;
+    graphblas::app::BFS bfs(num_channels, out_buffer_len, vector_buffer_len);
+
     std::string target = "sw_emu";
     bfs.set_target(target);
     bfs.compile();

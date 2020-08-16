@@ -227,10 +227,23 @@ void util_pad_marker_end_of_row(std::vector<data_type> &adj_data,
                                 data_type val_marker,
                                 uint32_t idx_marker) {
     uint32_t num_rows = adj_indptr.size() - 1;
+    std::vector<data_type> adj_data_swap(adj_data.size() + num_rows);
+    std::vector<uint32_t> adj_indices_swap(adj_indices.size() + num_rows);
+    uint32_t count = 0;
     for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
-        adj_data.insert(adj_data.begin() + adj_indptr[row_idx + 1] + row_idx, val_marker);
-        adj_indices.insert(adj_indices.begin() + adj_indptr[row_idx + 1] + row_idx, idx_marker);
+        uint32_t start = adj_indptr[row_idx];
+        uint32_t end = adj_indptr[row_idx + 1];
+        for (size_t i = start; i < end; i++) {
+            adj_data_swap[count] = adj_data[i];
+            adj_indices_swap[count] = adj_indices[i];
+            count++;
+        }
+        adj_data_swap[count] = val_marker;
+        adj_indices_swap[count] = idx_marker;
+        count++;
     }
+    adj_data = adj_data_swap;
+    adj_indices = adj_indices_swap;
     for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
         adj_indptr[row_idx + 1] += (row_idx + 1);
     }

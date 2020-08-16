@@ -21,18 +21,21 @@ private:
     // Sparse matrix size
     uint32_t matrix_num_rows_;
     uint32_t matrix_num_cols_;
-    // Kernel configuration
+    // SpMV kernel configuration
     static const graphblas::SemiRingType semiring_ = graphblas::kLogicalAndOr;
-    static const uint32_t num_channels_ = 2;
-    static const uint32_t out_buffer_len_ = 1 * 1024 * 1024;
-    static const uint32_t vector_buffer_len_ = 0.25 * 1024 * 1024;
+    uint32_t num_channels_;
+    uint32_t out_buffer_len_;
+    uint32_t vector_buffer_len_;
 
 public:
-    BFS() {
+    BFS(uint32_t num_channels, uint32_t out_buffer_len, uint32_t vector_buffer_len) {
+        this->num_channels_ = num_channels;
+        this->out_buffer_len_ = out_buffer_len;
+        this->vector_buffer_len_ = vector_buffer_len;
         this->SpMV_ = new graphblas::module::SpMVModule<matrix_data_t, vector_data_t>(semiring_,
-                                                                                      num_channels_,
-                                                                                      out_buffer_len_,
-                                                                                      vector_buffer_len_);
+                                                                                      this->num_channels_,
+                                                                                      this->out_buffer_len_,
+                                                                                      this->vector_buffer_len_);
         this->SpMV_->set_mask_type(graphblas::kMaskWriteToZero);
         this->add_module(this->SpMV_);
         this->Assign_ = new graphblas::module::AssignVectorDenseModule<vector_data_t>();

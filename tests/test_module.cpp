@@ -41,15 +41,24 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 void test_spmv_module() {
     graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
-    uint32_t num_channels = 32;
-    uint32_t out_buffer_len = 2048;
-    uint32_t vector_buffer_len = 2048;
+    uint32_t num_channels = 16;
     using matrix_data_t = bool;
     using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
     std::string target = "sw_emu";
 
+    uint32_t out_buffer_len;
+    uint32_t vector_buffer_len;
+    if (target == "hw") {
+        out_buffer_len = 5120;
+        vector_buffer_len = 5120;
+    } else {
+        // Avoid stack overflow by using small arrays in emulation.
+        out_buffer_len = 512;
+        vector_buffer_len = 512;
+    }
+
     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
-                                     "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
+                                     "data/sparse_matrix_graph/dense_1K_csr_float32.npz";
     struct CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphblas::io::util_round_csr_matrix_dim(csr_matrix,
                                              num_channels * graphblas::pack_size,

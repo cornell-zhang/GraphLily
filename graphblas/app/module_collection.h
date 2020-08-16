@@ -64,6 +64,15 @@ public:
     }
 
     /*!
+     * \brief Generate the kernel .ini configuration file.
+     */
+    void generate_kernel_ini() {
+        for (size_t i = 0; i < this->num_modules_; i++) {
+            this->modules_[i]->generate_kernel_ini();
+        }
+    }
+
+    /*!
      * \brief Link the kernel cpp file to the proj directory.
      */
     void link_kernel_code() {
