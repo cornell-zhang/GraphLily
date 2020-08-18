@@ -422,9 +422,14 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
             sizeof(index_t) * this->channel_partition_indptr_[c].size(),
             &channel_partition_indptr_ext[c],
             &err));
+        size_t channel_indices_size = sizeof(graphblas::packed_index_t) * this->channel_indices_[c].size();
+        if (channel_indices_size >= 256 * 1000 * 1000) {
+            std::cout << "The capcity of one HBM channel is 256 MB" << std::endl;
+            exit(EXIT_FAILURE);
+        }
         OCL_CHECK(err, this->channel_indices_buf[c] = cl::Buffer(this->context_,
             CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-            sizeof(graphblas::packed_index_t) * this->channel_indices_[c].size(),
+            channel_indices_size,
             &channel_indices_ext[c],
             &err));
     }

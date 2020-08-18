@@ -6,7 +6,6 @@
 #include "./kernel_spmv.h"
 
 
-
 unsigned int log2(unsigned int x) {
     switch (x) {
         case    1: return 0;
@@ -174,9 +173,9 @@ static void read_data_one_channel(const PACKED_INDEX_T *indices_one_channel,
 static void unpack_data_one_channel(hls::stream<PACKED_INDEX_T> &indices_stream_one_channel,
                                     hls::stream<unsigned int> indices_stream_one_PE[NUM_PE_PER_HBM_CHANNEL]) {
     unsigned int size = indices_stream_one_channel.read().data[0];
-    for (unsigned int j = 0; j < NUM_PE_PER_HBM_CHANNEL; j++) {
+    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
-        indices_stream_one_PE[j] << size;
+        indices_stream_one_PE[PE_idx] << size;
     }
 
     PACKED_INDEX_T tmp;
@@ -184,9 +183,9 @@ static void unpack_data_one_channel(hls::stream<PACKED_INDEX_T> &indices_stream_
     for (int i = 0; i < size; i++) {
         #pragma HLS PIPELINE II=1
         tmp = indices_stream_one_channel.read();
-        for (int j = 0; j < NUM_PE_PER_HBM_CHANNEL; j++) {
+        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
-            indices_stream_one_PE[j] << tmp.data[j];
+            indices_stream_one_PE[PE_idx] << tmp.data[PE_idx];
         }
     }
 }
@@ -223,7 +222,7 @@ static void read_vector_ddr_to_uram(const PACKED_VECTOR_T *vector,
 static void compute_spmv_one_channel(hls::stream<unsigned int> indices_stream_one_PE[NUM_PE_PER_HBM_CHANNEL],
                                      VECTOR_T vector_uram_one_channel[VECTOR_BUFFER_LEN/NUM_BANK_PER_HBM_CHANNEL + 1][NUM_BANK_PER_HBM_CHANNEL],
                                      hls::stream<VECTOR_T> out_stream_one_channel[NUM_PE_PER_HBM_CHANNEL]) {
-    unsigned int size[NUM_PE_PER_HBM_CHANNEL];
+    int size[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=size complete
 
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
@@ -269,6 +268,14 @@ static void compute_spmv_one_channel(hls::stream<unsigned int> indices_stream_on
         tmp_out[PE_idx] = 0;
     }
 
+    bool fifo_empty[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=fifo_empty complete
+
+    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
+        #pragma HLS UNROLL
+        fifo_empty[PE_idx] = false;
+    }
+
     bool write[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=write complete
 
@@ -287,12 +294,12 @@ static void compute_spmv_one_channel(hls::stream<unsigned int> indices_stream_on
 
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
-            if (index[PE_idx] == IDX_MARKER) {
+            if (!finished[PE_idx] && (index[PE_idx] == IDX_MARKER) && !fifo_empty[PE_idx]) {
                 write[PE_idx] = true;
             } else {
                 write[PE_idx] = false;
             }
-            if (out_valid[PE_idx]) {
+            if (!finished[PE_idx] && out_valid[PE_idx] && !fifo_empty[PE_idx]) {
                 accumulate[PE_idx] = true;
             } else {
                 accumulate[PE_idx] = false;
@@ -302,14 +309,14 @@ static void compute_spmv_one_channel(hls::stream<unsigned int> indices_stream_on
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
             // consume a value; decrement size
-            if (out_valid[PE_idx] || (index[PE_idx] == IDX_MARKER)) {
+            if ((out_valid[PE_idx] || (index[PE_idx] == IDX_MARKER)) && !fifo_empty[PE_idx]) {
                 size[PE_idx]--;
             }
         }
 
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
-            if (size[PE_idx] == 0) {
+            if (size[PE_idx] <= 0) {
                 finished[PE_idx] = 1;
             }
         }
@@ -319,10 +326,12 @@ static void compute_spmv_one_channel(hls::stream<unsigned int> indices_stream_on
             if (finished[PE_idx]) {
                 index[PE_idx] = 0; // a dummy number
                 in_valid[PE_idx] = false;
-            } else if (out_valid[PE_idx] || (index[PE_idx] == IDX_MARKER)) {
+            } else if (out_valid[PE_idx] || (index[PE_idx] == IDX_MARKER) || fifo_empty[PE_idx]) {
                 if (indices_stream_one_PE[PE_idx].read_nb(index[PE_idx])) {
+                    fifo_empty[PE_idx] = false;
                     in_valid[PE_idx] = (index[PE_idx] != IDX_MARKER);
                 } else {
+                    fifo_empty[PE_idx] = true;
                     in_valid[PE_idx] = false;
                 }
             } else {
@@ -677,13 +686,10 @@ void kernel_spmv(
 
     hls::stream<PACKED_INDEX_T> indices_stream[NUM_HBM_CHANNEL];
     /* Depth is set to the same for all the streams in one array */
-    #pragma HLS STREAM variable=indices_stream depth=256
+    #pragma HLS STREAM variable=indices_stream depth=512
 
     hls::stream<unsigned int> unpacked_indices_stream[NUM_HBM_CHANNEL][NUM_PE_PER_HBM_CHANNEL];
-    #pragma HLS STREAM variable=unpacked_indices_stream depth=256
-
-    hls::stream<VECTOR_T> vector_stream[NUM_HBM_CHANNEL][NUM_PE_PER_HBM_CHANNEL];
-    #pragma HLS STREAM variable=vector_stream depth=256
+    #pragma HLS STREAM variable=unpacked_indices_stream depth=512
 
     hls::stream<VECTOR_T> out_stream[NUM_HBM_CHANNEL][NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS STREAM variable=out_stream depth=32
