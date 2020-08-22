@@ -39,15 +39,12 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 }
 
 
+template<typename matrix_data_t, typename vector_data_t,  graphblas::SemiRingType semiring>
 void test_spmv_module() {
-    graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
-    uint32_t num_channels = 16;
-    using matrix_data_t = bool;
-    using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
-    std::string target = "sw_emu";
-
+    uint32_t num_channels = 8;
     uint32_t out_buffer_len;
     uint32_t vector_buffer_len;
+    std::string target = "sw_emu";
     if (target == "hw") {
         out_buffer_len = 5120;
         vector_buffer_len = 5120;
@@ -63,8 +60,16 @@ void test_spmv_module() {
     graphblas::io::util_round_csr_matrix_dim(csr_matrix,
                                              num_channels * graphblas::pack_size,
                                              graphblas::pack_size);
+    if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
+        for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
+    }
     std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
-    std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % 2);});
+    if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
+         std::generate(vector_float.begin(), vector_float.end(),
+            [&](){return float(rand() % 10) / 10 / csr_matrix.num_cols;});
+    } else {
+        std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % 2);});
+    }
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector(vector_float.begin(),
                                                                         vector_float.end());
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results;
@@ -162,7 +167,7 @@ void test_copy_buffer_bind_buffer() {
     using vector_data_t = unsigned int;
     graphblas::module::AssignVectorDenseModule<vector_data_t> module;
 
-    uint32_t length = 10;
+    uint32_t length = 128;
     std::vector<float, aligned_allocator<float>> mask_float(length);
     std::generate(mask_float.begin(), mask_float.end(), [&](){return float(rand() % 2);});
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask(mask_float.begin(), mask_float.end());
@@ -218,7 +223,10 @@ void test_copy_buffer_bind_buffer() {
 
 int main(int argc, char *argv[]) {
     clean_proj_folder();
-    test_spmv_module();
+    test_spmv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
+
+    clean_proj_folder();
+    test_spmv_module<ap_ufixed<32, 1>, ap_ufixed<32, 1>, graphblas::kMulAdd>();
 
     clean_proj_folder();
     test_assign_vector_dense_module();

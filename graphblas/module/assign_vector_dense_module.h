@@ -130,9 +130,9 @@ void AssignVectorDenseModule<vector_data_t>::generate_kernel_header() {
     system(command.c_str());
     std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Data types
-    header << "typedef " << this->vector_data_t_str_ << " VECTOR_T;" << std::endl;
-    header << "const unsigned int VECTOR_PACK_SIZE = " << graphblas::pack_size << ";" << std::endl;
-    header << "typedef struct {VECTOR_T data[VECTOR_PACK_SIZE];}" << " PACKED_VECTOR_T;" << std::endl;
+    header << "typedef " << this->vector_data_t_str_ << " VAL_T;" << std::endl;
+    header << "const unsigned int PACK_SIZE = " << graphblas::pack_size << ";" << std::endl;
+    header << "typedef struct {VAL_T data[PACK_SIZE];}" << " PACKED_VAL_T;" << std::endl;
     // Mask
     switch (this->mask_type_) {
         case graphblas::kMaskWriteToZero:

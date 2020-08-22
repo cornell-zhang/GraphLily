@@ -58,9 +58,7 @@ const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 template<typename dtype>
 std::string dtype_to_str() {
     std::string str;
-    if (std::is_same<dtype, bool>::value) {
-        str = "bool";
-    } else if (std::is_same<dtype, unsigned int>::value) {
+    if (std::is_same<dtype, unsigned int>::value) {
         str = "unsigned int";
     } else if (std::is_same<dtype, int>::value) {
         str = "int";
@@ -93,7 +91,7 @@ enum MaskType {
 typedef uint32_t index_t;
 const uint32_t idx_marker = 0xffffffff;
 const uint32_t pack_size = 16;
-using packed_index_t = struct {index_t data[pack_size];};
+typedef struct {index_t data[pack_size];} packed_index_t;
 
 // Aligned float vector
 using aligned_float_t = std::vector<float, aligned_allocator<float>>;

@@ -14,7 +14,7 @@ namespace app {
 class BFS : public app::ModuleCollection {
 private:
     // modules
-    using matrix_data_t = bool;
+    using matrix_data_t = unsigned int;
     using vector_data_t = unsigned int;
     graphblas::module::SpMVModule<matrix_data_t, vector_data_t> *SpMV_;
     graphblas::module::AssignVectorDenseModule<vector_data_t> *Assign_;
