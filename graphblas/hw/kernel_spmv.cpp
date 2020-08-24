@@ -171,7 +171,7 @@ static void read_matrix_one_channel(const PACKET_T *matrix_one_channel,
     PACKED_INDEX_T size;
     for (unsigned int k = 0; k < PACK_SIZE; k++) {
         #pragma HLS UNROLL
-        size.data[k] = x[k+1] - 0;
+        size.data[k] = x[k+1];
     }
     indices_stream_one_channel << size;
     unsigned int max_size = unsigned_array_max(size.data);
@@ -266,14 +266,6 @@ static void compute_spmv_one_channel(hls::stream<INDEX_T> indices_stream_one_PE[
         index[PE_idx] = indices_stream_one_PE[PE_idx].read();
     }
 
-    VAL_T val[NUM_PE_PER_HBM_CHANNEL];
-    #pragma HLS ARRAY_PARTITION variable=val complete
-
-    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
-        #pragma HLS UNROLL
-        val[PE_idx] = vals_stream_one_PE[PE_idx].read();
-    }
-
     bool in_valid[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=in_valid complete
 
@@ -281,6 +273,9 @@ static void compute_spmv_one_channel(hls::stream<INDEX_T> indices_stream_one_PE[
         #pragma HLS UNROLL
         in_valid[PE_idx] = (index[PE_idx] != IDX_MARKER);
     }
+
+    VAL_T val[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=val complete
 
     bool finished[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=finished complete
@@ -353,28 +348,35 @@ static void compute_spmv_one_channel(hls::stream<INDEX_T> indices_stream_one_PE[
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
             if (size[PE_idx] <= 0) {
-                finished[PE_idx] = 1;
+                finished[PE_idx] = true;
             }
         }
 
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
             if (finished[PE_idx]) {
+                fifo_empty[PE_idx] = false;
                 index[PE_idx] = 0; // a dummy number
                 in_valid[PE_idx] = false;
             } else if (out_valid[PE_idx] || (index[PE_idx] == IDX_MARKER) || fifo_empty[PE_idx]) {
                 if (indices_stream_one_PE[PE_idx].read_nb(index[PE_idx])) {
                     fifo_empty[PE_idx] = false;
                     in_valid[PE_idx] = (index[PE_idx] != IDX_MARKER);
-                    val[PE_idx] = vals_stream_one_PE[PE_idx].read();
                 } else {
                     fifo_empty[PE_idx] = true;
                     in_valid[PE_idx] = false;
                 }
             } else {
+                fifo_empty[PE_idx] = false;
                 index[PE_idx] = index[PE_idx];
                 in_valid[PE_idx] = true;
-                val[PE_idx] = val[PE_idx];
+            }
+        }
+
+        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
+            #pragma HLS UNROLL
+            if (write[PE_idx] || accumulate[PE_idx]) {
+                val[PE_idx] = vals_stream_one_PE[PE_idx].read();
             }
         }
 
@@ -429,6 +431,19 @@ static void write_out_bram_one_PE(hls::stream<VAL_T> &s,
 }
 
 
+// #define WRITE_OUT_BRAM_ONE_CHANNEL(streams, brams, channel_idx, num_rows) { \
+//     unsigned int start_PE_idx = channel_idx * NUM_PE_PER_HBM_CHANNEL; \
+//     write_out_bram_one_PE(streams[0], brams[start_PE_idx + 0], start_PE_idx + 0, num_rows); \
+//     write_out_bram_one_PE(streams[1], brams[start_PE_idx + 1], start_PE_idx + 1, num_rows); \
+//     write_out_bram_one_PE(streams[2], brams[start_PE_idx + 2], start_PE_idx + 2, num_rows); \
+//     write_out_bram_one_PE(streams[3], brams[start_PE_idx + 3], start_PE_idx + 3, num_rows); \
+//     write_out_bram_one_PE(streams[4], brams[start_PE_idx + 4], start_PE_idx + 4, num_rows); \
+//     write_out_bram_one_PE(streams[5], brams[start_PE_idx + 5], start_PE_idx + 5, num_rows); \
+//     write_out_bram_one_PE(streams[6], brams[start_PE_idx + 6], start_PE_idx + 6, num_rows); \
+//     write_out_bram_one_PE(streams[7], brams[start_PE_idx + 7], start_PE_idx + 7, num_rows); \
+// } \
+
+
 #define WRITE_OUT_BRAM_ONE_CHANNEL(streams, brams, channel_idx, num_rows) { \
     unsigned int start_PE_idx = channel_idx * NUM_PE_PER_HBM_CHANNEL; \
     write_out_bram_one_PE(streams[0], brams[start_PE_idx + 0], start_PE_idx + 0, num_rows); \
@@ -470,6 +485,22 @@ void kernel_spmv(
     const PACKET_T *channel_6_matrix,
     const INDEX_T *channel_7_partition_indptr,
     const PACKET_T *channel_7_matrix,
+    // const INDEX_T *channel_8_partition_indptr,
+    // const PACKET_T *channel_8_matrix,
+    // const INDEX_T *channel_9_partition_indptr,
+    // const PACKET_T *channel_9_matrix,
+    // const INDEX_T *channel_10_partition_indptr,
+    // const PACKET_T *channel_10_matrix,
+    // const INDEX_T *channel_11_partition_indptr,
+    // const PACKET_T *channel_11_matrix,
+    // const INDEX_T *channel_12_partition_indptr,
+    // const PACKET_T *channel_12_matrix,
+    // const INDEX_T *channel_13_partition_indptr,
+    // const PACKET_T *channel_13_matrix,
+    // const INDEX_T *channel_14_partition_indptr,
+    // const PACKET_T *channel_14_matrix,
+    // const INDEX_T *channel_15_partition_indptr,
+    // const PACKET_T *channel_15_matrix,
 #if defined(USE_MASK)
     const PACKED_VAL_T *mask,
 #endif
@@ -485,20 +516,36 @@ void kernel_spmv(
 #pragma HLS INTERFACE m_axi port=channel_5_matrix offset=slave bundle=gmem5
 #pragma HLS INTERFACE m_axi port=channel_6_matrix offset=slave bundle=gmem6
 #pragma HLS INTERFACE m_axi port=channel_7_matrix offset=slave bundle=gmem7
+// #pragma HLS INTERFACE m_axi port=channel_8_matrix offset=slave bundle=gmem8
+// #pragma HLS INTERFACE m_axi port=channel_9_matrix offset=slave bundle=gmem9
+// #pragma HLS INTERFACE m_axi port=channel_10_matrix offset=slave bundle=gmem10
+// #pragma HLS INTERFACE m_axi port=channel_11_matrix offset=slave bundle=gmem11
+// #pragma HLS INTERFACE m_axi port=channel_12_matrix offset=slave bundle=gmem12
+// #pragma HLS INTERFACE m_axi port=channel_13_matrix offset=slave bundle=gmem13
+// #pragma HLS INTERFACE m_axi port=channel_14_matrix offset=slave bundle=gmem14
+// #pragma HLS INTERFACE m_axi port=channel_15_matrix offset=slave bundle=gmem15
 
-#pragma HLS INTERFACE m_axi port=channel_0_partition_indptr offset=slave bundle=gmem8
-#pragma HLS INTERFACE m_axi port=channel_1_partition_indptr offset=slave bundle=gmem9
-#pragma HLS INTERFACE m_axi port=channel_2_partition_indptr offset=slave bundle=gmem10
-#pragma HLS INTERFACE m_axi port=channel_3_partition_indptr offset=slave bundle=gmem11
-#pragma HLS INTERFACE m_axi port=channel_4_partition_indptr offset=slave bundle=gmem12
-#pragma HLS INTERFACE m_axi port=channel_5_partition_indptr offset=slave bundle=gmem13
-#pragma HLS INTERFACE m_axi port=channel_6_partition_indptr offset=slave bundle=gmem14
-#pragma HLS INTERFACE m_axi port=channel_7_partition_indptr offset=slave bundle=gmem15
+#pragma HLS INTERFACE m_axi port=channel_0_partition_indptr offset=slave bundle=gmem16
+#pragma HLS INTERFACE m_axi port=channel_1_partition_indptr offset=slave bundle=gmem17
+#pragma HLS INTERFACE m_axi port=channel_2_partition_indptr offset=slave bundle=gmem18
+#pragma HLS INTERFACE m_axi port=channel_3_partition_indptr offset=slave bundle=gmem19
+#pragma HLS INTERFACE m_axi port=channel_4_partition_indptr offset=slave bundle=gmem20
+#pragma HLS INTERFACE m_axi port=channel_5_partition_indptr offset=slave bundle=gmem21
+#pragma HLS INTERFACE m_axi port=channel_6_partition_indptr offset=slave bundle=gmem22
+#pragma HLS INTERFACE m_axi port=channel_7_partition_indptr offset=slave bundle=gmem23
+// #pragma HLS INTERFACE m_axi port=channel_8_partition_indptr offset=slave bundle=gmem24
+// #pragma HLS INTERFACE m_axi port=channel_9_partition_indptr offset=slave bundle=gmem25
+// #pragma HLS INTERFACE m_axi port=channel_10_partition_indptr offset=slave bundle=gmem26
+// #pragma HLS INTERFACE m_axi port=channel_11_partition_indptr offset=slave bundle=gmem27
+// #pragma HLS INTERFACE m_axi port=channel_12_partition_indptr offset=slave bundle=gmem28
+// #pragma HLS INTERFACE m_axi port=channel_13_partition_indptr offset=slave bundle=gmem29
+// #pragma HLS INTERFACE m_axi port=channel_14_partition_indptr offset=slave bundle=gmem30
+// #pragma HLS INTERFACE m_axi port=channel_15_partition_indptr offset=slave bundle=gmem31
 
-#pragma HLS INTERFACE m_axi port=vector offset=slave bundle=gmem16
-#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem17
+#pragma HLS INTERFACE m_axi port=vector offset=slave bundle=gmem32
+#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem33
 #if defined(USE_MASK)
-#pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem18
+#pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem34
 #endif
 
 #pragma HLS INTERFACE s_axilite port=channel_0_matrix bundle=control
@@ -509,6 +556,14 @@ void kernel_spmv(
 #pragma HLS INTERFACE s_axilite port=channel_5_matrix bundle=control
 #pragma HLS INTERFACE s_axilite port=channel_6_matrix bundle=control
 #pragma HLS INTERFACE s_axilite port=channel_7_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_8_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_9_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_10_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_11_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_12_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_13_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_14_matrix bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_15_matrix bundle=control
 
 #pragma HLS INTERFACE s_axilite port=channel_0_partition_indptr bundle=control
 #pragma HLS INTERFACE s_axilite port=channel_1_partition_indptr bundle=control
@@ -518,6 +573,14 @@ void kernel_spmv(
 #pragma HLS INTERFACE s_axilite port=channel_5_partition_indptr bundle=control
 #pragma HLS INTERFACE s_axilite port=channel_6_partition_indptr bundle=control
 #pragma HLS INTERFACE s_axilite port=channel_7_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_8_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_9_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_10_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_11_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_12_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_13_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_14_partition_indptr bundle=control
+// #pragma HLS INTERFACE s_axilite port=channel_15_partition_indptr bundle=control
 
 #pragma HLS INTERFACE s_axilite port=vector bundle=control
 #pragma HLS INTERFACE s_axilite port=out bundle=control
@@ -537,6 +600,14 @@ void kernel_spmv(
 #pragma HLS DATA_PACK variable=channel_5_matrix
 #pragma HLS DATA_PACK variable=channel_6_matrix
 #pragma HLS DATA_PACK variable=channel_7_matrix
+// #pragma HLS DATA_PACK variable=channel_8_matrix
+// #pragma HLS DATA_PACK variable=channel_9_matrix
+// #pragma HLS DATA_PACK variable=channel_10_matrix
+// #pragma HLS DATA_PACK variable=channel_11_matrix
+// #pragma HLS DATA_PACK variable=channel_12_matrix
+// #pragma HLS DATA_PACK variable=channel_13_matrix
+// #pragma HLS DATA_PACK variable=channel_14_matrix
+// #pragma HLS DATA_PACK variable=channel_15_matrix
 
 #pragma HLS DATA_PACK variable=vector
 #pragma HLS DATA_PACK variable=out
@@ -631,6 +702,38 @@ void kernel_spmv(
                                     indices_stream[7],
                                     vals_stream[7],
                                     &channel_7_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_8_matrix,
+            //                         indices_stream[8],
+            //                         vals_stream[8],
+            //                         &channel_8_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_9_matrix,
+            //                         indices_stream[9],
+            //                         vals_stream[9],
+            //                         &channel_9_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_10_matrix,
+            //                         indices_stream[10],
+            //                         vals_stream[10],
+            //                         &channel_10_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_11_matrix,
+            //                         indices_stream[11],
+            //                         vals_stream[11],
+            //                         &channel_11_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_12_matrix,
+            //                         indices_stream[12],
+            //                         vals_stream[12],
+            //                         &channel_12_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_13_matrix,
+            //                         indices_stream[13],
+            //                         vals_stream[13],
+            //                         &channel_13_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_14_matrix,
+            //                         indices_stream[14],
+            //                         vals_stream[14],
+            //                         &channel_14_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            // read_matrix_one_channel(channel_15_matrix,
+            //                         indices_stream[15],
+            //                         vals_stream[15],
+            //                         &channel_15_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
 
             unpack_matrix_one_channel(indices_stream[0],
                                       unpacked_indices_stream[0],
@@ -664,6 +767,38 @@ void kernel_spmv(
                                       unpacked_indices_stream[7],
                                       vals_stream[7],
                                       unpacked_vals_stream[7]);
+            // unpack_matrix_one_channel(indices_stream[8],
+            //                           unpacked_indices_stream[8],
+            //                           vals_stream[8],
+            //                           unpacked_vals_stream[8]);
+            // unpack_matrix_one_channel(indices_stream[9],
+            //                           unpacked_indices_stream[9],
+            //                           vals_stream[9],
+            //                           unpacked_vals_stream[9]);
+            // unpack_matrix_one_channel(indices_stream[10],
+            //                           unpacked_indices_stream[10],
+            //                           vals_stream[10],
+            //                           unpacked_vals_stream[10]);
+            // unpack_matrix_one_channel(indices_stream[11],
+            //                           unpacked_indices_stream[11],
+            //                           vals_stream[11],
+            //                           unpacked_vals_stream[11]);
+            // unpack_matrix_one_channel(indices_stream[12],
+            //                           unpacked_indices_stream[12],
+            //                           vals_stream[12],
+            //                           unpacked_vals_stream[12]);
+            // unpack_matrix_one_channel(indices_stream[13],
+            //                           unpacked_indices_stream[13],
+            //                           vals_stream[13],
+            //                           unpacked_vals_stream[13]);
+            // unpack_matrix_one_channel(indices_stream[14],
+            //                           unpacked_indices_stream[14],
+            //                           vals_stream[14],
+            //                           unpacked_vals_stream[14]);
+            // unpack_matrix_one_channel(indices_stream[15],
+            //                           unpacked_indices_stream[15],
+            //                           vals_stream[15],
+            //                           unpacked_vals_stream[15]);
 
             compute_spmv_one_channel(unpacked_indices_stream[0],
                                      unpacked_vals_stream[0],
@@ -697,6 +832,38 @@ void kernel_spmv(
                                      unpacked_vals_stream[7],
                                      vector_uram[7],
                                      out_stream[7]);
+            // compute_spmv_one_channel(unpacked_indices_stream[8],
+            //                          unpacked_vals_stream[8],
+            //                          vector_uram[8],
+            //                          out_stream[8]);
+            // compute_spmv_one_channel(unpacked_indices_stream[9],
+            //                          unpacked_vals_stream[9],
+            //                          vector_uram[9],
+            //                          out_stream[9]);
+            // compute_spmv_one_channel(unpacked_indices_stream[10],
+            //                          unpacked_vals_stream[10],
+            //                          vector_uram[10],
+            //                          out_stream[10]);
+            // compute_spmv_one_channel(unpacked_indices_stream[11],
+            //                          unpacked_vals_stream[11],
+            //                          vector_uram[11],
+            //                          out_stream[11]);
+            // compute_spmv_one_channel(unpacked_indices_stream[12],
+            //                          unpacked_vals_stream[12],
+            //                          vector_uram[12],
+            //                          out_stream[12]);
+            // compute_spmv_one_channel(unpacked_indices_stream[13],
+            //                          unpacked_vals_stream[13],
+            //                          vector_uram[13],
+            //                          out_stream[13]);
+            // compute_spmv_one_channel(unpacked_indices_stream[14],
+            //                          unpacked_vals_stream[14],
+            //                          vector_uram[14],
+            //                          out_stream[14]);
+            // compute_spmv_one_channel(unpacked_indices_stream[15],
+            //                          unpacked_vals_stream[15],
+            //                          vector_uram[15],
+            //                          out_stream[15]);
 
             WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[0], out_bram, 0, size)
             WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[1], out_bram, 1, size)
@@ -706,6 +873,14 @@ void kernel_spmv(
             WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[5], out_bram, 5, size)
             WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[6], out_bram, 6, size)
             WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[7], out_bram, 7, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[8], out_bram, 8, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[9], out_bram, 9, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[10], out_bram, 10, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[11], out_bram, 11, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[12], out_bram, 12, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[13], out_bram, 13, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[14], out_bram, 14, size)
+            // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[15], out_bram, 15, size)
         }
 
         assert (size % PACK_SIZE == 0);

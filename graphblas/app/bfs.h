@@ -52,6 +52,7 @@ public:
         graphblas::io::util_round_csr_matrix_dim(csr_matrix,
                                                  num_channels_ * graphblas::pack_size,
                                                  num_channels_ * graphblas::pack_size);
+        for (auto &x : csr_matrix.adj_data) x = 1;
         this->SpMV_->load_and_format_matrix(csr_matrix);
         this->matrix_num_rows_ = this->SpMV_->get_num_rows();
         this->matrix_num_cols_ = this->SpMV_->get_num_cols();
@@ -62,10 +63,10 @@ public:
         this->SpMV_->send_matrix_host_to_device();
     }
 
-    using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
-    aligned_vector_t run(uint32_t source, uint32_t num_iterations) {
-        aligned_vector_t input(this->matrix_num_rows_, 0);
-        aligned_vector_t distance(this->matrix_num_rows_, 0);
+    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    aligned_val_t run(uint32_t source, uint32_t num_iterations) {
+        aligned_val_t input(this->matrix_num_rows_, 0);
+        aligned_val_t distance(this->matrix_num_rows_, 0);
         input[source] = 1;
         distance[source] = 1;
         this->SpMV_->send_vector_host_to_device(input);

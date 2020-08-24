@@ -3,11 +3,15 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include "ap_fixed.h"
+#include <ap_fixed.h>
 #include "graphblas/io/data_loader.h"
 #include "graphblas/io/data_formatter.h"
 #include "graphblas/module/spmv_module.h"
 #include "graphblas/module/assign_vector_dense_module.h"
+#include "graphblas/module/add_scalar_vector_dense_module.h"
+
+
+std::string target = "sw_emu";
 
 
 void clean_proj_folder() {
@@ -44,7 +48,6 @@ void test_spmv_module() {
     uint32_t num_channels = 8;
     uint32_t out_buffer_len;
     uint32_t vector_buffer_len;
-    std::string target = "sw_emu";
     if (target == "hw") {
         out_buffer_len = 5120;
         vector_buffer_len = 5120;
@@ -62,6 +65,8 @@ void test_spmv_module() {
                                              graphblas::pack_size);
     if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
         for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
+    } else {
+        for (auto &x : csr_matrix.adj_data) x = 1.0;
     }
     std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
     if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
@@ -146,7 +151,6 @@ void test_assign_vector_dense_module() {
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_inout(reference_inout.begin(),
                                                                               reference_inout.end());
 
-    std::string target = "sw_emu";
     module.set_target(target);
     module.set_mask_type(graphblas::kMaskWriteToOne);
     module.compile();
@@ -163,6 +167,34 @@ void test_assign_vector_dense_module() {
 }
 
 
+void test_add_scalar_vector_dense_module() {
+    using vector_data_t = ap_ufixed<32, 1>;
+    graphblas::module::eWiseAddModule<vector_data_t> module;
+
+    uint32_t length = 128;
+    vector_data_t val = 0.14;
+    float val_float = float(val);
+
+    std::vector<float, aligned_allocator<float>> in_float(length);
+    std::generate(in_float.begin(), in_float.end(), [&](){return float(rand() % 10) / 100;});
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> in(in_float.begin(), in_float.end());
+    std::vector<float, aligned_allocator<float>> reference_out =
+        module.compute_reference_results(in_float, length, val_float);
+
+    module.set_target(target);
+    module.compile();
+    module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+
+    module.send_in_host_to_device(in);
+    module.allocate_out_buf(length);
+    module.run(length, val);
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_out = module.send_out_device_to_host();
+    verify<vector_data_t>(reference_out, kernel_out);
+
+    std::cout << "eWiseAddModule test passed" << std::endl;
+}
+
+
 void test_copy_buffer_bind_buffer() {
     using vector_data_t = unsigned int;
     graphblas::module::AssignVectorDenseModule<vector_data_t> module;
@@ -175,7 +207,6 @@ void test_copy_buffer_bind_buffer() {
     std::fill(inout_float.begin(), inout_float.end(), 0);
     std::vector<vector_data_t, aligned_allocator<vector_data_t>> inout(inout_float.begin(), inout_float.end());
 
-    std::string target = "sw_emu";
     module.set_target(target);
     module.set_mask_type(graphblas::kMaskWriteToOne);
     module.compile();
@@ -230,6 +261,9 @@ int main(int argc, char *argv[]) {
 
     clean_proj_folder();
     test_assign_vector_dense_module();
+
+    clean_proj_folder();
+    test_add_scalar_vector_dense_module();
 
     clean_proj_folder();
     test_copy_buffer_bind_buffer();

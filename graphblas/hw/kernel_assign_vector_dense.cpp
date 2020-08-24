@@ -1,4 +1,6 @@
+#include <ap_fixed.h>
 #include <assert.h>
+#include <iostream>
 
 #include "./kernel_assign_vector_dense.h"
 

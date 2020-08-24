@@ -18,16 +18,17 @@ namespace module {
 template<typename vector_data_t>
 class AssignVectorDenseModule : public BaseModule {
 private:
+    using packed_val_t = struct {vector_data_t data[graphblas::pack_size];};
+    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+
     /*! \brief The mask type */
     graphblas::MaskType mask_type_;
-    /*! \brief The packed data type */
-    using packed_data_t = struct {vector_data_t data[graphblas::pack_size];};
     /*! \brief String representation of the data type */
     std::string vector_data_t_str_;
     /*! \brief Internal copy of mask */
-    std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask_;
+    aligned_val_t mask_;
     /*! \brief Internal copy of inout */
-    std::vector<vector_data_t, aligned_allocator<vector_data_t>> inout_;
+    aligned_val_t inout_;
 
 public:
     // Device buffers
@@ -52,17 +53,15 @@ public:
         }
     }
 
-    using aligned_vector_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
-
     /*!
      * \brief Send the mask from host to device.
      */
-    void send_mask_host_to_device(aligned_vector_t &mask);
+    void send_mask_host_to_device(aligned_val_t &mask);
 
     /*!
      * \brief Send the inout from host to device.
      */
-    void send_inout_host_to_device(aligned_vector_t &inout);
+    void send_inout_host_to_device(aligned_val_t &inout);
 
     /*!
      * \brief Bind the mask buffer to an existing buffer.
@@ -91,7 +90,7 @@ public:
      * \brief Send the mask from device to host.
      * \return The mask.
      */
-    aligned_vector_t send_mask_device_to_host() {
+    aligned_val_t send_mask_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->mask_;
@@ -101,7 +100,7 @@ public:
      * \brief Send the inout from device to host.
      * \return The inout.
      */
-    aligned_vector_t send_inout_device_to_host() {
+    aligned_val_t send_inout_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->inout_;
@@ -114,8 +113,10 @@ public:
      * \param length The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
-    void compute_reference_results(graphblas::aligned_float_t &mask, graphblas::aligned_float_t &inout,
-                                   uint32_t length, float val);
+    void compute_reference_results(graphblas::aligned_float_t &mask,
+                                   graphblas::aligned_float_t &inout,
+                                   uint32_t length,
+                                   float val);
 
     void generate_kernel_header() override;
 
@@ -163,7 +164,7 @@ void AssignVectorDenseModule<vector_data_t>::generate_kernel_ini() {
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_vector_t &mask) {
+void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_val_t &mask) {
     this->mask_.assign(mask.begin(), mask.end());
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
@@ -182,7 +183,7 @@ void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_ve
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_vector_t &inout) {
+void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_val_t &inout) {
     this->inout_.assign(inout.begin(), inout.end());
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();
@@ -204,7 +205,12 @@ template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::run(uint32_t length, vector_data_t val) {
     cl_int err;
     OCL_CHECK(err, err = this->kernel_.setArg(2, length));
-    OCL_CHECK(err, err = this->kernel_.setArg(3, val));
+    // To avoid runtime error of invalid scalar argument size
+    if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
+        OCL_CHECK(err, err = this->kernel_.setArg(3, 8, (void*)&val));
+    } else {
+        OCL_CHECK(err, err = this->kernel_.setArg(3, val));
+    }
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();
 }

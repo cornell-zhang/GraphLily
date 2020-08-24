@@ -268,6 +268,24 @@ void util_round_csr_matrix_dim(CSRMatrix<data_type> &csr_matrix,
 }
 
 
+template<typename data_type>
+void util_normalize_csr_matrix_by_outdegree(CSRMatrix<data_type> &csr_matrix) {
+    std::vector<uint32_t> nnz_each_col(csr_matrix.num_cols);
+    std::fill(nnz_each_col.begin(), nnz_each_col.end(), 0);
+    for (auto col_idx : csr_matrix.adj_indices) {
+        nnz_each_col[col_idx]++;
+    }
+    for (size_t row_idx = 0; row_idx < csr_matrix.num_rows; row_idx++) {
+        uint32_t start = csr_matrix.adj_indptr[row_idx];
+        uint32_t end = csr_matrix.adj_indptr[row_idx + 1];
+        for (size_t i = start; i < end; i++) {
+            uint32_t col_idx = csr_matrix.adj_indices[i];
+            csr_matrix.adj_data[i] = 1.0 / nnz_each_col[col_idx];
+        }
+    }
+}
+
+
 /*!
  * \brief Formatter for the sparse matrix used in SpMV. It does column partitioning and row packing.
  *

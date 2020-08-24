@@ -131,6 +131,18 @@ void test_util_round_csr_matrix_dim() {
 }
 
 
+void test_util_normalize_csr_matrix_by_outdegree() {
+    CSRMatrix<float> M = csr_matrix_1;
+    util_normalize_csr_matrix_by_outdegree(M);
+    assert(M.adj_data[0] == 0.5);
+    assert(M.adj_data[1] == 0.5);
+    assert(M.adj_data[2] == 0.5);
+    assert(M.adj_data[3] == 0.5);
+
+    std::cout << "test_util_normalize_csr_matrix_by_outdegree passed" << std::endl;
+}
+
+
 void test_util_convert_csr_to_dds() {
     CSRMatrix<float> M = csr_matrix_1;
     uint32_t num_cols_per_partition = 3;
@@ -342,6 +354,7 @@ int main(int argc, char *argv[]) {
 
     // Test data formatter
     test_util_round_csr_matrix_dim();
+    test_util_normalize_csr_matrix_by_outdegree();
     test_util_convert_csr_to_dds();
     test_util_reorder_rows_ascending_nnz();
     test_util_pack_rows();

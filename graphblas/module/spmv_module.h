@@ -341,6 +341,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(CSRMatrix<
     this->channel_packets_.resize(this->num_channels_);
     for (size_t c = 0; c < this->num_channels_; c++) {
         this->channel_partition_indptr_[c].resize(this->num_row_partitions_ * this->num_col_partitions_);
+        this->channel_partition_indptr_[c][0].start = 0;
     }
     for (size_t c = 0; c < this->num_channels_; c++) {
         for (size_t j = 0; j < this->num_row_partitions_; j++) {
@@ -353,11 +354,9 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(CSRMatrix<
                     vals_partition.begin(), vals_partition.end());
                 assert(indices_partition.size() == vals_partition.size());
                 auto indptr_partition = formatter.get_packed_indptr(j, i, c);
-                if (j == 0 && i == 0) {
-                    this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i].start = 0;
-                } else {
-                    this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i].start =
-                        this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i - 1].start
+                if (!((j == (this->num_row_partitions_ - 1)) && (i == (this->num_col_partitions_ - 1)))) {
+                    this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i + 1].start =
+                        this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i].start
                         + indices_partition.size();
                 }
                 this->channel_partition_indptr_[c][j*this->num_col_partitions_ + i].nnz
