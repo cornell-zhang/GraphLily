@@ -39,6 +39,8 @@ private:
     uint32_t vector_buffer_len_;
     /*! \brief The number of column partitions */
     uint32_t num_col_partitions_;
+    /*! \brief The max number of partitions limited by BRAM */
+    uint32_t max_num_partitions_;
 
     using val_t = vector_data_t;
     using packed_val_t = struct {val_t data[graphblas::pack_size];};
@@ -206,7 +208,7 @@ public:
      * \param vector The dense vector.
      * \return The reference results.
      */
-    graphblas::aligned_float_t compute_reference_results(graphblas::aligned_float_t &vector);
+    graphblas::aligned_dense_float_vec_t compute_reference_results(graphblas::aligned_dense_float_vec_t &vector);
 
     /*!
      * \brief Compute reference results.
@@ -214,8 +216,8 @@ public:
      * \param mask The mask.
      * \return The reference results.
      */
-    graphblas::aligned_float_t compute_reference_results(graphblas::aligned_float_t &vector,
-                                                         graphblas::aligned_float_t &mask);
+    graphblas::aligned_dense_float_vec_t compute_reference_results(graphblas::aligned_dense_float_vec_t &vector,
+                                                                   graphblas::aligned_dense_float_vec_t &mask);
 
     void generate_kernel_header() override;
 
@@ -239,6 +241,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::_get_kernel_config(SemiRingType s
     this->num_channels_ = num_channels;
     this->out_buffer_len_ = out_buffer_len;
     this->vector_buffer_len_ = vector_buffer_len;
+    this->max_num_partitions_ = 1024;
 }
 
 
@@ -258,6 +261,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
            << ";" << std::endl;
     header << "const unsigned int OUT_BUFFER_LEN = " << this->out_buffer_len_ << ";" << std::endl;
     header << "const unsigned int VECTOR_BUFFER_LEN = " << this->vector_buffer_len_ << ";" << std::endl;
+    header << "const unsigned int MAX_NUM_PARTITION = " << this->max_num_partitions_ << ";" << std::endl;
     // Data types
     header << "typedef unsigned int INDEX_T;" << std::endl;
     header << "typedef " << this->val_t_str_ << " VAL_T;" << std::endl;
@@ -306,14 +310,16 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
     ini << "[connectivity]" << std::endl;
     // HBM
     for (size_t hbm_idx = 0; hbm_idx < this->num_channels_; hbm_idx++) {
-        ini << "sp=kernel_spmv_1.channel_" << hbm_idx << "_partition_indptr:HBM[" << hbm_idx << "]" << std::endl;
         ini << "sp=kernel_spmv_1.channel_" << hbm_idx << "_matrix:HBM[" << hbm_idx << "]" << std::endl;
     }
     // DDR
-    ini << "sp=kernel_spmv_1.vector:DDR[0]" << std::endl;
-    ini << "sp=kernel_spmv_1.out:DDR[0]" << std::endl;
+    for (size_t i = 0; i < this->num_channels_; i++) {
+        ini << "sp=kernel_spmv_1.channel_" << i << "_partition_indptr:DDR[1]" << std::endl;
+    }
+    ini << "sp=kernel_spmv_1.vector:DDR[1]" << std::endl;
+    ini << "sp=kernel_spmv_1.out:DDR[1]" << std::endl;
     if (this->use_mask_) {
-        ini << "sp=kernel_spmv_1.mask:DDR[0]" << std::endl;
+        ini << "sp=kernel_spmv_1.mask:DDR[1]" << std::endl;
     }
     ini.close();
 }
@@ -323,6 +329,14 @@ template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(CSRMatrix<float> const &csr_matrix_float) {
     this->csr_matrix_float_ = csr_matrix_float;
     this->csr_matrix_ = graphblas::io::csr_matrix_convert_from_float<val_t>(csr_matrix_float);
+    this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buffer_len_ - 1) /
+        this->out_buffer_len_;
+    this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vector_buffer_len_ - 1) /
+        this->vector_buffer_len_;
+    if (this->num_row_partitions_ * this->num_col_partitions_ > this->max_num_partitions_) {
+        std::cout << "The max number of partitions is " << this->max_num_partitions_ << std::endl;
+        exit(EXIT_FAILURE);
+    }
     SpMVDataFormatter<val_t, graphblas::pack_size, packed_val_t, graphblas::packed_index_t>
         formatter(this->csr_matrix_);
     val_t val_marker = 0;
@@ -331,10 +345,6 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(CSRMatrix<
                                            this->num_channels_,
                                            val_marker,
                                            graphblas::idx_marker);
-    this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buffer_len_ - 1) /
-        this->out_buffer_len_;
-    this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vector_buffer_len_ - 1) /
-        this->vector_buffer_len_;
     std::vector<aligned_packed_index_t> channel_indices(this->num_channels_);
     std::vector<aligned_packed_val_t> channel_vals(this->num_channels_);
     this->channel_partition_indptr_.resize(this->num_channels_);
@@ -387,7 +397,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     for (size_t c = 0; c < this->num_channels_; c++) {
         channel_partition_indptr_ext[c].obj = this->channel_partition_indptr_[c].data();
         channel_partition_indptr_ext[c].param = 0;
-        channel_partition_indptr_ext[c].flags = graphblas::HBM[c];
+        channel_partition_indptr_ext[c].flags = graphblas::DDR[1];
         channel_packets_ext[c].obj = this->channel_packets_[c].data();
         channel_packets_ext[c].param = 0;
         channel_packets_ext[c].flags = graphblas::HBM[c];
@@ -411,7 +421,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     cl_mem_ext_ptr_t results_ext;
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
-    results_ext.flags = graphblas::DDR[0];
+    results_ext.flags = graphblas::DDR[1];
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
         sizeof(val_t) * this->csr_matrix_.num_rows,
@@ -447,7 +457,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphblas::DDR[0];
+    vector_ext.flags = graphblas::DDR[1];
     cl_int err;
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -466,7 +476,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphblas::DDR[0];
+    mask_ext.flags = graphblas::DDR[1];
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -498,9 +508,9 @@ for (size_t row_idx = 0; row_idx < this->csr_matrix_float_.num_rows; row_idx++) 
 }                                                                               } \
 
 template<typename matrix_data_t, typename vector_data_t>
-graphblas::aligned_float_t
-SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_float_t &vector) {
-    aligned_float_t reference_results(this->csr_matrix_.num_rows);
+graphblas::aligned_dense_float_vec_t
+SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dense_float_vec_t &vector) {
+    aligned_dense_float_vec_t reference_results(this->csr_matrix_.num_rows);
     std::fill(reference_results.begin(), reference_results.end(), 0);
     switch (this->semiring_) {
         case graphblas::kMulAdd:
@@ -519,10 +529,10 @@ SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_floa
 
 
 template<typename matrix_data_t, typename vector_data_t>
-graphblas::aligned_float_t
-SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(graphblas::aligned_float_t &vector,
-                                                                    graphblas::aligned_float_t &mask) {
-    graphblas::aligned_float_t reference_results = this->compute_reference_results(vector);
+graphblas::aligned_dense_float_vec_t
+SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(graphblas::aligned_dense_float_vec_t &vector,
+                                                                    graphblas::aligned_dense_float_vec_t &mask) {
+    graphblas::aligned_dense_float_vec_t reference_results = this->compute_reference_results(vector);
     if (this->mask_type_ == graphblas::kMaskWriteToZero) {
         for (size_t i = 0; i < this->csr_matrix_.num_rows; i++) {
             if (mask[i] != 0) {

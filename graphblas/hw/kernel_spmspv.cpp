@@ -9,7 +9,7 @@
 
 
 //------------------------------------------------------------
-// functions used for line tracing 
+// functions used for line tracing
 //------------------------------------------------------------
 
 #ifndef __SYNTHESIS__
@@ -20,7 +20,7 @@ T array_sum(T array[ARRAY_SIZE]) {
   T result = 0;
   for (size_t i = 0; i < ARRAY_SIZE; i++) {
     result += array[i];
-  }  
+  }
   return result;
 }
 
@@ -61,22 +61,22 @@ static void DL_spmspv(
   unsigned int tile_cnt,
   // tile base
   INDEX_T tile_base
-) {  
+) {
   // calculate mat_idxptr base address
   unsigned int idxptr_base = tile_cnt * (num_columns + 1);
 
   // line tracing
   #ifndef __SYNTHESIS__
-    std::cout << "DL idxptr base: " 
+    std::cout << "DL idxptr base: "
               << std::setw(5) << idxptr_base << std::endl;
-  #endif 
+  #endif
 
   // loop over all active columns
   loop_over_active_columns_DL:
   for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_nnz_total; vec_nnz_cnt++) {
 
-    // slice out the current column out of the active columns 
-    INDEX_T current_colid = vec_dit[vec_nnz_cnt + 1].index;  
+    // slice out the current column out of the active columns
+    INDEX_T current_colid = vec_dit[vec_nnz_cnt + 1].index;
     nnz_from_vec_stream << vec_dit[vec_nnz_cnt + 1].data;
 
     // [0] for start, [1] for end
@@ -85,25 +85,25 @@ static void DL_spmspv(
 
     // line tracing
     // #ifndef __SYNTHESIS__
-    //   std::cout << "DL Reading Idxptr from : " 
+    //   std::cout << "DL Reading Idxptr from : "
     //             << "Start[" << std::setw(5) << current_colid + idxptr_base     << "], "
     //             << "End  [" << std::setw(5) << current_colid + idxptr_base + 1 << "]" << std::endl;
-    // #endif 
+    // #endif
 
     loop_get_column_len_DL_unroll:
     for (unsigned int i = 0; i < 2; i++) {
-      #pragma HLS unroll    
-      col_slice[i] = mat_idxptr[current_colid + idxptr_base + i];  
-    }    
+      #pragma HLS unroll
+      col_slice[i] = mat_idxptr[current_colid + idxptr_base + i];
+    }
     INDEX_T current_collen = col_slice[1] - col_slice[0];
-    
+
     // line tracing
     // #ifndef __SYNTHESIS__
-    //   std::cout << "DL Active Column : " 
+    //   std::cout << "DL Active Column : "
     //             << "Start" << std::setw(5) << col_slice[0]     << ", "
-    //             << "End  " << std::setw(5) << col_slice[1] - 1 << ", " 
+    //             << "End  " << std::setw(5) << col_slice[1] - 1 << ", "
     //             << "Size " << std::setw(3) << current_collen   << std::endl;
-    // #endif 
+    // #endif
 
     current_collen_stream << current_collen; // measured in number of packets
 
@@ -113,9 +113,9 @@ static void DL_spmspv(
 
       // line tracing
       // #ifndef __SYNTHESIS__
-      //   std::cout << "DL Loading from: " 
+      //   std::cout << "DL Loading from: "
       //             << "Pkt[" << std::setw(5) << tile_base + i + col_slice[0] << "]" << std::endl;
-      // #endif 
+      // #endif
 
       // [IMPORTANT] read mat_dit here
       PACKED_DWI_T dwi_packet_from_mat = mat_dwi[tile_base + i + col_slice[0]];
@@ -125,15 +125,15 @@ static void DL_spmspv(
         #pragma HLS unroll
         nnz_from_mat_stream[k] << dwi_packet_from_mat.datapkt[k];
         current_row_id_stream[k] << dwi_packet_from_mat.indexpkt[k];
-      }        
+      }
     }
 
-     
+
   }
 }
 
 //------------------------------------------------------------
-// array shift functions 
+// array shift functions
 //------------------------------------------------------------
 
 template <typename T, const unsigned int ARRAY_SIZE>
@@ -149,7 +149,7 @@ void array_shift_left(T array[ARRAY_SIZE],T array_dest[ARRAY_SIZE], unsigned int
 }
 
 //------------------------------------------------------------
-// array add functions 
+// array add functions
 //------------------------------------------------------------
 
 template <typename INDEX_T, const unsigned int ARRAY_SIZE, const unsigned int MAX>
@@ -162,39 +162,39 @@ void array_cyclic_add(arbiter_result<INDEX_T> array[ARRAY_SIZE], unsigned int in
     if(!array[i].bank_idle) {
       array[i].virtual_port_id = (array[i].virtual_port_id + inc) % MAX;
     }
-  }  
+  }
 }
 
 //------------------------------------------------------------
-// bool array reduction functions 
+// bool array reduction functions
 //------------------------------------------------------------
 
 // reduction and
 template <const unsigned int ARRAY_SIZE>
-bool bool_array_and_reduction(bool array[ARRAY_SIZE]) {  
+bool bool_array_and_reduction(bool array[ARRAY_SIZE]) {
   #pragma HLS latency min=0 max=0
   bool result = true;
   for (unsigned int i = 0; i < ARRAY_SIZE; i++) {
     #pragma HLS unroll
     result = result && array[i];
-  }  
+  }
   return result;
 }
 
 // reduction or
 template <const unsigned int ARRAY_SIZE>
-bool bool_array_or_reduction(bool array[ARRAY_SIZE]) {  
+bool bool_array_or_reduction(bool array[ARRAY_SIZE]) {
   #pragma HLS latency min=0 max=0
   bool result = false;
   for (unsigned int i = 0; i < ARRAY_SIZE; i++) {
     #pragma HLS unroll
     result = result || array[i];
-  }  
+  }
   return result;
 }
 
 //------------------------------------------------------------
-// connect table assignment functions 
+// connect table assignment functions
 //------------------------------------------------------------
 #define ct_assign(arr,vpid,bkid) \
   arr[ 0][bkid]=0;\
@@ -234,7 +234,7 @@ bool bool_array_or_reduction(bool array[ARRAY_SIZE]) {
   arr[15][bkid]=0;
 
 //------------------------------------------------------------
-// bram access network (BAN) functions 
+// bram access network (BAN) functions
 //------------------------------------------------------------
 
 // adjust connect table
@@ -247,25 +247,25 @@ void ct_adjust(bool ct[NUM_PE][NUM_BANK],unsigned shamt) {
     for (unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
       #pragma HLS unroll
       ct_temp[PEid] = ct[(PEid + NUM_PE - shamt) % NUM_PE][BKid];
-    } 
+    }
     for (unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
       #pragma HLS unroll
       ct[PEid][BKid] = ct_temp[PEid];
-    }     
+    }
   }
 }
 
 // arbiter logic
 void bram_access_arbiter(
   // virtual ports
-  rd_req<INDEX_T> requests[NUM_PE],  
+  rd_req<INDEX_T> requests[NUM_PE],
   // arbitering results (used for write)
   arbiter_result<INDEX_T> rd_arbiter_results[NUM_BANK],
   // connectivity table (used to grant PEs)
   bool connect_table[NUM_PE][NUM_BANK],
   // rotate priority
   unsigned int &rotate_priority
-){  
+){
   #pragma HLS latency min=0 max=0
 
   rd_req<INDEX_T> requests_temp[NUM_PE];
@@ -275,7 +275,7 @@ void bram_access_arbiter(
   #pragma HLS array_partition variable=good_req complete
 
   // change to the correct priority
-  array_shift_left<rd_req<INDEX_T>,NUM_PE>(requests,requests_temp,rotate_priority); 
+  array_shift_left<rd_req<INDEX_T>,NUM_PE>(requests,requests_temp,rotate_priority);
 
   // find out requests to be arbitered
   loop_ab_check_req_unroll:
@@ -283,7 +283,7 @@ void bram_access_arbiter(
     #pragma HLS unroll
     good_req[VPid] = (requests_temp[VPid].valid) && (!requests_temp[VPid].zero);
   }
-  
+
   // arbiter
   loop_ab_logic_unroll:
   for(unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
@@ -380,7 +380,7 @@ void bram_access_arbiter(
   ct_adjust(connect_table,rotate_priority);
 
   // update priority rotate
-  rotate_priority = (rotate_priority + 1) % NUM_PE;  
+  rotate_priority = (rotate_priority + 1) % NUM_PE;
 }
 
 // grant PE logic
@@ -391,12 +391,12 @@ void bram_access_grant_PE(
   bool PE_ostall_RB[NUM_PE],
   // PE progress counters increament enable
   unsigned int PE_progress[NUM_PE],
-  // arbitering connectivity results 
+  // arbitering connectivity results
   bool connect_table[NUM_PE][NUM_BANK],
   // output
   bool granted_PE[NUM_PE]
-){  
-  #pragma HLS inline  
+){
+  #pragma HLS inline
   // grant PEs
   loop_grant_PE_unroll:
   for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
@@ -415,20 +415,20 @@ void bram_access_grant_PE(
     } else {
       granted_PE[VPid] = 0;
       PE_ostall_RB[VPid] = 1;
-    }    
+    }
   }
 }
 
 void bram_access_read(
   // virtual ports
   rd_req<INDEX_T> requests[NUM_PE],
-  rd_resp<VAL_T> responses[NUM_PE],  
+  rd_resp<VAL_T> responses[NUM_PE],
   // bram
   VAL_T bram[NUM_BANK][BANK_SIZE],
   // arbitering results (used for write)
   arbiter_result<INDEX_T> rd_arbiter_results[NUM_BANK],
   bool granted_PE[NUM_PE]
-){  
+){
   #pragma HLS inline
 
   // pipeline registers (_local means local to bram)
@@ -445,29 +445,29 @@ void bram_access_read(
   loop_rb_inpp_abresult_unroll:
   for (unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
     #pragma HLS unroll
-    rd_arbiter_results_local[BKid] = 
+    rd_arbiter_results_local[BKid] =
       HLS_REG< arbiter_result<INDEX_T> >(
         HLS_REG< arbiter_result<INDEX_T> >(
           HLS_REG< arbiter_result<INDEX_T> >(
             HLS_REG< arbiter_result<INDEX_T> >(
               HLS_REG< arbiter_result<INDEX_T> >(rd_arbiter_results[BKid])))));
   }
-  loop_rb_inpp_vpreq_unroll:  
+  loop_rb_inpp_vpreq_unroll:
   for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
     #pragma HLS unroll
-    requests_local[VPid] = 
+    requests_local[VPid] =
       HLS_REG< rd_req<INDEX_T> >(
         HLS_REG< rd_req<INDEX_T> >(
           HLS_REG< rd_req<INDEX_T> >(
             HLS_REG< rd_req<INDEX_T> >(
-              HLS_REG< rd_req<INDEX_T> >(requests[VPid]))))); 
-    granted_PE_local[VPid] = 
+              HLS_REG< rd_req<INDEX_T> >(requests[VPid])))));
+    granted_PE_local[VPid] =
       HLS_REG< bool >(
         HLS_REG< bool >(
           HLS_REG< bool >(
             HLS_REG< bool >(
               HLS_REG< bool >(granted_PE[VPid])))));
-  }  
+  }
 
   // read access logic
   VAL_T rd_data_local[NUM_BANK];
@@ -496,13 +496,13 @@ void bram_access_read(
       responses_local[VPid].data = 0;
       responses_local[VPid].valid = 0;
     }
-  } 
+  }
 
   // output pipeline
   loop_rb_outpp_vpresp_unroll:
   for(unsigned int VPid = 0; VPid < NUM_PE; VPid++){
     #pragma HLS unroll
-    responses[VPid] = 
+    responses[VPid] =
       HLS_REG< rd_resp<VAL_T> >(
         HLS_REG< rd_resp<VAL_T> >(
           HLS_REG< rd_resp<VAL_T> >(
@@ -519,7 +519,7 @@ void bram_access_write(
   VAL_T bram[NUM_PE][BANK_SIZE],
   // arbitering results from read
   arbiter_result<INDEX_T> arbiter_results_from_rd[NUM_BANK]
-){    
+){
   #pragma HLS inline
   // pipeline registers (_local means local to bram)
   wr_req<VAL_T,INDEX_T> requests_local[NUM_PE];
@@ -531,7 +531,7 @@ void bram_access_write(
   loop_wb_inpp_vpreq_unroll:
   for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
     #pragma HLS unroll
-    requests_local[VPid] = 
+    requests_local[VPid] =
       HLS_REG< wr_req<VAL_T,INDEX_T> >(
         HLS_REG< wr_req<VAL_T,INDEX_T> >(
           HLS_REG< wr_req<VAL_T,INDEX_T> >(
@@ -541,13 +541,13 @@ void bram_access_write(
   loop_wb_inpp_abresults_unroll:
   for (unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
     #pragma HLS unroll
-    arbiter_results_from_rd_local[BKid] = 
+    arbiter_results_from_rd_local[BKid] =
       HLS_REG< arbiter_result<INDEX_T> >(
         HLS_REG< arbiter_result<INDEX_T> >(
           HLS_REG< arbiter_result<INDEX_T> >(
             HLS_REG< arbiter_result<INDEX_T> >(
               HLS_REG< arbiter_result<INDEX_T> >(arbiter_results_from_rd[BKid])))));
-  }  
+  }
 
   // write access logic
   loop_wr_logic_unroll:
@@ -556,12 +556,12 @@ void bram_access_write(
     INDEX_T vpid = arbiter_results_from_rd_local[BKid].virtual_port_id;
     if(!arbiter_results_from_rd_local[BKid].bank_idle) {
       bram[BKid][requests_local[vpid].addr >> BANK_ID_NBITS] = requests_local[vpid].data;
-    }    
+    }
   }
 }
 
 //----------------------------------------------------
-// kernel process elements 
+// kernel process elements
 //----------------------------------------------------
 static void PE_spmspv(
   // FIFO from DL
@@ -598,13 +598,13 @@ static void PE_spmspv(
   #pragma HLS array_partition variable=ostall_FI complete
   #pragma HLS array_partition variable=PE_progress complete
   #pragma HLS array_partition variable=PE_finished complete
-  
+
   // *************  Virtual Port  **************
   // no write response is needed, because if read is success, write will also success
   // Virtual port signals
   rd_req<INDEX_T> VrdP_req[NUM_PE];
   rd_resp<VAL_T> VrdP_resp[NUM_PE];
-  wr_req<VAL_T,INDEX_T> VwrP_req[NUM_PE];  
+  wr_req<VAL_T,INDEX_T> VwrP_req[NUM_PE];
   #pragma HLS array_partition variable=VrdP_req complete
   #pragma HLS array_partition variable=VrdP_resp complete
   #pragma HLS array_partition variable=VwrP_req complete
@@ -620,13 +620,13 @@ static void PE_spmspv(
 
   // loop over all active columns
   loop_over_active_columns_PE:
-  for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_nnz_total; vec_nnz_cnt++) { 
+  for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_nnz_total; vec_nnz_cnt++) {
     #pragma HLS pipeline off
 
     // used for line tracing
     #ifndef __SYNTHESIS__
-      int round = 0;   
-      bool input_success_ltr[NUM_PE]; 
+      int round = 0;
+      bool input_success_ltr[NUM_PE];
     #endif
 
     // reset PE state
@@ -658,7 +658,7 @@ static void PE_spmspv(
 
     // start processing
     loop_process_element_pipeline:
-    while(!bool_array_and_reduction<NUM_PE>(PE_finished)) { 
+    while(!bool_array_and_reduction<NUM_PE>(PE_finished)) {
       #pragma HLS pipeline II=1
       #pragma HLS latency min=9
       // #pragma HLS resource variable=result_inc core=DSP48 latency=3
@@ -674,11 +674,11 @@ static void PE_spmspv(
                   << "Round " << round << "\t"
                   << "[" << array_sum<unsigned int,NUM_PE>(PE_progress) << "/" << collen * PACKET_SIZE << "]"
                   << std::endl;
-        round ++; 
+        round ++;
         if(round > MAX_SW_EMU_LIMIT) {
           std::cout << "[ERROR] Exceeded max software emulation loop count. Probably there is a deadlock" << std::endl;
           return;
-        }   
+        }
       #endif
       */
 
@@ -686,7 +686,7 @@ static void PE_spmspv(
       loop_process_element_F_unroll:
       for (unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
         #pragma HLS unroll
-        // update progress 
+        // update progress
         PE_finished[PEid] = (PE_progress[PEid] >= collen);
         if(!PE_finished[PEid]) {
           // if stalled due to bram read, do not fetch data
@@ -698,14 +698,14 @@ static void PE_spmspv(
               input_rowid_success = true;
               nnz_from_mat_stream[PEid].read_nb(nnz_from_mat[PEid]);
             }
-            bool input_success = input_rowid_success; 
+            bool input_success = input_rowid_success;
 
             // specially mark padded zero
             if(nnz_from_mat[PEid] == 0) {
               VrdP_req[PEid].zero = 1;
             } else {
               VrdP_req[PEid].zero = 0;
-            }        
+            }
 
             if(input_success) {
               ostall_FI[PEid] = 0;
@@ -723,7 +723,7 @@ static void PE_spmspv(
             #ifndef __SYNTHESIS__
               input_success_ltr[PEid] = input_success;
             #endif
-          } 
+          }
         } else {
           VrdP_req[PEid].valid = 0;
           VrdP_req[PEid].zero = 0;
@@ -735,7 +735,7 @@ static void PE_spmspv(
           #ifndef __SYNTHESIS__
             input_success_ltr[PEid] = false;
           #endif
-        }     
+        }
       }
 
       // arbiter logic
@@ -756,8 +756,8 @@ static void PE_spmspv(
       );
 
       // process read requests
-      bram_access_read(VrdP_req,VrdP_resp,bram,rd_arbiter_results,granted_PE);  
-      
+      bram_access_read(VrdP_req,VrdP_resp,bram,rd_arbiter_results,granted_PE);
+
       // execute and send write requests
       loop_process_element_X_unroll:
       for(unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
@@ -778,7 +778,7 @@ static void PE_spmspv(
         } else {
           VwrP_req[PEid].data = 0;
           VwrP_req[PEid].addr = 0;
-        }      
+        }
       }
 
       // process write requests
@@ -799,13 +799,13 @@ static void PE_spmspv(
                     << "[" << std::setw(5) << (display_value        ? std::to_string(current_row_id[k])                 : "--") << ""  << ""
                     << "(" << std::setw(2) << (display_value        ? std::to_string(current_row_id[k] & BANK_ID_MASK)  : "--") << ")]"<< "|"
                     << ""  << std::setw(9) << (VrdP_resp[k].valid   ? std::to_string((float)VrdP_resp[k].data)          : "--") << ""  << "|"
-                    << ""  << std::setw(9) << (VrdP_resp[k].valid   ? std::to_string((float)VwrP_req[k].data)           : "--") << "" 
+                    << ""  << std::setw(9) << (VrdP_resp[k].valid   ? std::to_string((float)VwrP_req[k].data)           : "--") << ""
                     << "} {"
-                    << (VrdP_req[k].zero    ? "Rz" : 
+                    << (VrdP_req[k].zero    ? "Rz" :
                         VrdP_req[k].valid   ? "Rv" : " ." ) << ":"
                     << (ostall_RB[k]        ?  "x" :  "o" ) << "|"
                     << (VrdP_resp[k].valid  ? "Wc" : " ." ) << "|"
-                    << "}";        
+                    << "}";
           std::cout << std::endl;
         }
 
@@ -834,10 +834,10 @@ static void PE_spmspv(
           }
           std::cout << std::endl;
         }
-        
 
-      #endif  
-      */  
+
+      #endif
+      */
 
     }
   }
@@ -850,7 +850,7 @@ static void PE_spmspv(
 static void execution_spmspv(
   // gmem pointer
   const PACKED_DWI_T mat_dwi_ddr[],
-  const INDEX_T mat_idxptr_ddr[], 
+  const INDEX_T mat_idxptr_ddr[],
   const DIT_T vec_dit_ddr[],
   // size
   unsigned int vec_nnz_total,
@@ -873,9 +873,9 @@ static void execution_spmspv(
 
   static hls::stream<VAL_T> nnz_from_vec_stream;
   #pragma HLS STREAM variable=nnz_from_vec_stream depth=256
-  
+
   #pragma HLS dataflow
-    
+
   DL_spmspv(
     mat_dwi_ddr,
     mat_idxptr_ddr,
@@ -889,8 +889,8 @@ static void execution_spmspv(
     tile_cnt,
     tile_base
   );
-  
-  #ifndef __SYNTHESIS__     
+
+  #ifndef __SYNTHESIS__
     std::cout << "[INFO kernel_spmspv] DL complete" << std::endl;
     std::cout.flush();
   #endif
@@ -904,8 +904,8 @@ static void execution_spmspv(
     bram,
     tile_cnt
   );
-  
-  #ifndef __SYNTHESIS__      
+
+  #ifndef __SYNTHESIS__
     std::cout << "[INFO kernel_spmspv] PE complete" << std::endl;
     std::cout.flush();
   #endif
@@ -946,7 +946,7 @@ static void checkout_results(
       }
     }
 
-    local_Nnnz_no_mask += local_Nnnz_inc;   
+    local_Nnnz_no_mask += local_Nnnz_inc;
   }
   Nnnz_no_mask << local_Nnnz_no_mask;
 }
@@ -977,7 +977,7 @@ static void write_back_ddr(
 
   // used forline tracing
   #ifndef __SYNTHESIS__
-    unsigned int round = 0;    
+    unsigned int round = 0;
   #endif
   loop_until_all_written_back:
   while(!(checkout_finish && (local_Nnnz_no_mask == wb_cnt))) {
@@ -998,7 +998,7 @@ static void write_back_ddr(
 #if defined(USE_MASK)
   #if defined(MASK_WRITE_TO_ZERO)
         if(mask[wb_temp.index] == 0)
-  #endif 
+  #endif
   #if defined(MASK_WRITE_TO_ONE)
         if(mask[wb_temp.index] != 0)
   #endif
@@ -1006,7 +1006,7 @@ static void write_back_ddr(
         {
           sparse_dit[Nnnz + 1] = wb_temp;
           Nnnz ++;
-      
+
         // line tracing
 //         #ifndef __SYNTHESIS__
 //           std::cout << "["   << wb_cnt << "/" << local_Nnnz_no_mask << "]";
@@ -1018,9 +1018,9 @@ static void write_back_ddr(
 // #endif
 //                     << " >> B["  << std::setw(5) << Nnnz << "]}"
 //                     << std::endl  << std::flush;
-//         #endif 
+//         #endif
         }
-      }        
+      }
     }
   }
 }
@@ -1057,7 +1057,7 @@ static void write_back_spmspv(
     Nnnz_no_mask
   );
 
-  #ifndef __SYNTHESIS__     
+  #ifndef __SYNTHESIS__
     std::cout << "[INFO kernel_spmspv] CHECKOUT complete" << std::endl;
     std::cout.flush();
   #endif
@@ -1074,13 +1074,13 @@ static void write_back_spmspv(
     tile_cnt
   );
 
-  #ifndef __SYNTHESIS__     
+  #ifndef __SYNTHESIS__
     std::cout << "[INFO kernel_spmspv] WRITE DDR complete" << std::endl;
     std::cout.flush();
   #endif
 
-} 
-    
+}
+
 //----------------------------------------------------
 // kernel spmspv
 //----------------------------------------------------
@@ -1090,7 +1090,7 @@ void kernel_spmspv(
   // ddr pointer
   const DIT_T* vec_dit_ddr,
   const PACKED_DWI_T* mat_dwi_ddr,
-  const INDEX_T* mat_idxptr_ddr, 
+  const INDEX_T* mat_idxptr_ddr,
   const INDEX_T* mat_tileptr_ddr,
 #if defined(USE_MASK)
   const INDEX_T* mask_ddr,
@@ -1100,7 +1100,7 @@ void kernel_spmspv(
   const unsigned int num_columns,
   const unsigned int num_tiles
 ) {
-  
+
   // interfaces
   #pragma HLS INTERFACE m_axi port=mat_dwi_ddr      offset=slave bundle=gmem0
   #pragma HLS INTERFACE m_axi port=mat_idxptr_ddr   offset=slave bundle=gmem1
@@ -1139,7 +1139,7 @@ void kernel_spmspv(
   unsigned int vec_nnz_total = vec_dit_ddr[0].index;
 
   // line tracing
-  #ifndef __SYNTHESIS__ 
+  #ifndef __SYNTHESIS__
     std::cout << "[INFO kernel_spmspv] start, input vector non-zero count : " << vec_nnz_total << std::endl;
   #endif
 
@@ -1165,16 +1165,16 @@ void kernel_spmspv(
         for (unsigned int p = 0; p < NUM_PORT_PER_BANK; p++) {
           #pragma HLS unroll
           bram[j][i * NUM_PORT_PER_BANK + p] = 0;
-        }      
+        }
       }
     }
 
     // read tile base
     INDEX_T tile_base = mat_tileptr_ddr[tile_cnt];
-    
+
     // line tracing
     #ifndef __SYNTHESIS__
-      std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt 
+      std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt
                 << " Base at " << std::setw(5) << tile_base << std::endl;
     #endif
 
@@ -1205,7 +1205,7 @@ void kernel_spmspv(
       result_nnz_cnt_localreg,
       tile_cnt
     );
-   
+
     // line tracing
     #ifndef __SYNTHESIS__
       std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt << " WB complete" << std::endl;
@@ -1218,13 +1218,12 @@ void kernel_spmspv(
   result_head.index = result_nnz_cnt_localreg;
   result_head.data = 0;
   result_ddr[0] = result_head;
-  
+
   // line tracing
   #ifndef __SYNTHESIS__
     std::cout << "[INFO kernel_spmspv] finish, result non-zero count : " << result_nnz_cnt_localreg << std::endl;
   #endif
 
-}  
+}
 
 } // extern "C"
-

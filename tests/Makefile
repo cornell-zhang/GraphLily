@@ -1,19 +1,17 @@
-COMMON_REPO = $(GRAPHBLAS_ROOT_PATH)
-
 BUILD_DIR = ./build
 
 HOST_ARCH = x86
 
 CXXFLAGS += -Wall -O3 -g -std=c++11
-CXXFLAGS += -I$(COMMON_REPO)
+CXXFLAGS += -I$(GRAPHBLAS_ROOT_PATH)
 
 LDFLAGS += -lrt -lstdc++
 
-include $(COMMON_REPO)/common/includes/xcl2/xcl2.mk
+include $(GRAPHBLAS_ROOT_PATH)/xrt/includes/xcl2/xcl2.mk
 CXXFLAGS += $(xcl2_CXXFLAGS)
 LDFLAGS += $(xcl2_LDFLAGS)
 
-include $(COMMON_REPO)/common/includes/opencl/opencl.mk
+include $(GRAPHBLAS_ROOT_PATH)/xrt/includes/opencl/opencl.mk
 CXXFLAGS += $(opencl_CXXFLAGS)
 LDFLAGS += $(opencl_LDFLAGS)
 

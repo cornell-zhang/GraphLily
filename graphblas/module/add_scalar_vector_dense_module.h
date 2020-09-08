@@ -88,9 +88,10 @@ public:
      * \param val The value to be assigned to the inout vector.
      * \return Teh output vector.
      */
-    graphblas::aligned_float_t compute_reference_results(graphblas::aligned_float_t const &in,
-                                                         uint32_t length,
-                                                         float val);
+    graphblas::aligned_dense_float_vec_t
+    compute_reference_results(graphblas::aligned_dense_float_vec_t const &in,
+                              uint32_t length,
+                              float val);
 
     void generate_kernel_header() override;
 
@@ -178,11 +179,11 @@ void eWiseAddModule<vector_data_t>::run(uint32_t length, vector_data_t val) {
 }
 
 
-template<typename vector_data_t> graphblas::aligned_float_t
-eWiseAddModule<vector_data_t>::compute_reference_results(graphblas::aligned_float_t const &in,
+template<typename vector_data_t> graphblas::aligned_dense_float_vec_t
+eWiseAddModule<vector_data_t>::compute_reference_results(graphblas::aligned_dense_float_vec_t const &in,
                                                          uint32_t length,
                                                          float val) {
-    graphblas::aligned_float_t out(length);
+    graphblas::aligned_dense_float_vec_t out(length);
     for (uint32_t i = 0; i < length; i++) {
         out[i] = in[i] + val;
     }

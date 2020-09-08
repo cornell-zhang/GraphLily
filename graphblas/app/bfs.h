@@ -83,9 +83,9 @@ public:
         return this->SpMV_->send_mask_device_to_host();
     }
 
-    graphblas::aligned_float_t compute_reference_results(uint32_t source, uint32_t num_iterations) {
-        graphblas::aligned_float_t input(this->matrix_num_rows_, 0);
-        graphblas::aligned_float_t distance(this->matrix_num_rows_, 0);
+    graphblas::aligned_dense_float_vec_t compute_reference_results(uint32_t source, uint32_t num_iterations) {
+        graphblas::aligned_dense_float_vec_t input(this->matrix_num_rows_, 0);
+        graphblas::aligned_dense_float_vec_t distance(this->matrix_num_rows_, 0);
         input[source] = 1;
         distance[source] = 1;
         for (size_t i = 1; i <= num_iterations; i++) {

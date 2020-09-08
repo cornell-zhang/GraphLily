@@ -227,7 +227,7 @@ static void read_vector_ddr_to_uram(const PACKED_VAL_T *vector,
     if (col_partition_idx == (num_col_partitions - 1)) {
         size = num_cols - (num_col_partitions - 1) * VECTOR_BUFFER_LEN;
     }
-    assert (size % PACK_SIZE == 0);
+    assert(size % PACK_SIZE == 0);
     unsigned int vsize = size / PACK_SIZE;
     PACKED_VAL_T tmp;
 
@@ -526,26 +526,26 @@ void kernel_spmv(
 // #pragma HLS INTERFACE m_axi port=channel_15_matrix offset=slave bundle=gmem15
 
 #pragma HLS INTERFACE m_axi port=channel_0_partition_indptr offset=slave bundle=gmem16
-#pragma HLS INTERFACE m_axi port=channel_1_partition_indptr offset=slave bundle=gmem17
-#pragma HLS INTERFACE m_axi port=channel_2_partition_indptr offset=slave bundle=gmem18
-#pragma HLS INTERFACE m_axi port=channel_3_partition_indptr offset=slave bundle=gmem19
-#pragma HLS INTERFACE m_axi port=channel_4_partition_indptr offset=slave bundle=gmem20
-#pragma HLS INTERFACE m_axi port=channel_5_partition_indptr offset=slave bundle=gmem21
-#pragma HLS INTERFACE m_axi port=channel_6_partition_indptr offset=slave bundle=gmem22
-#pragma HLS INTERFACE m_axi port=channel_7_partition_indptr offset=slave bundle=gmem23
-// #pragma HLS INTERFACE m_axi port=channel_8_partition_indptr offset=slave bundle=gmem24
-// #pragma HLS INTERFACE m_axi port=channel_9_partition_indptr offset=slave bundle=gmem25
-// #pragma HLS INTERFACE m_axi port=channel_10_partition_indptr offset=slave bundle=gmem26
-// #pragma HLS INTERFACE m_axi port=channel_11_partition_indptr offset=slave bundle=gmem27
-// #pragma HLS INTERFACE m_axi port=channel_12_partition_indptr offset=slave bundle=gmem28
-// #pragma HLS INTERFACE m_axi port=channel_13_partition_indptr offset=slave bundle=gmem29
-// #pragma HLS INTERFACE m_axi port=channel_14_partition_indptr offset=slave bundle=gmem30
-// #pragma HLS INTERFACE m_axi port=channel_15_partition_indptr offset=slave bundle=gmem31
+#pragma HLS INTERFACE m_axi port=channel_1_partition_indptr offset=slave bundle=gmem16
+#pragma HLS INTERFACE m_axi port=channel_2_partition_indptr offset=slave bundle=gmem16
+#pragma HLS INTERFACE m_axi port=channel_3_partition_indptr offset=slave bundle=gmem16
+#pragma HLS INTERFACE m_axi port=channel_4_partition_indptr offset=slave bundle=gmem16
+#pragma HLS INTERFACE m_axi port=channel_5_partition_indptr offset=slave bundle=gmem16
+#pragma HLS INTERFACE m_axi port=channel_6_partition_indptr offset=slave bundle=gmem16
+#pragma HLS INTERFACE m_axi port=channel_7_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_8_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_9_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_10_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_11_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_12_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_13_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_14_partition_indptr offset=slave bundle=gmem16
+// #pragma HLS INTERFACE m_axi port=channel_15_partition_indptr offset=slave bundle=gmem16
 
-#pragma HLS INTERFACE m_axi port=vector offset=slave bundle=gmem32
-#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem33
+#pragma HLS INTERFACE m_axi port=vector offset=slave bundle=gmem17
+#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem18
 #if defined(USE_MASK)
-#pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem34
+#pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem19
 #endif
 
 #pragma HLS INTERFACE s_axilite port=channel_0_matrix bundle=control
@@ -644,6 +644,61 @@ void kernel_spmv(
     unsigned int num_row_partitions = (num_rows + OUT_BUFFER_LEN - 1) / OUT_BUFFER_LEN;
     unsigned int num_col_partitions = (num_cols + VECTOR_BUFFER_LEN - 1) / VECTOR_BUFFER_LEN;
 
+    INDEX_T partition_indptr_bram[NUM_HBM_CHANNEL][MAX_NUM_PARTITION * (PACK_SIZE + 1)];
+    #pragma HLS ARRAY_PARTITION variable=partition_indptr_bram complete dim=1
+    assert(num_row_partitions * num_col_partitions <= MAX_NUM_PARTITION);
+
+    int size_partition_indptr = num_row_partitions * num_col_partitions * (PACK_SIZE + 1);
+
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[0][i] = channel_0_partition_indptr[i];
+    }
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[1][i] = channel_1_partition_indptr[i];
+    }
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[2][i] = channel_2_partition_indptr[i];
+    }
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[3][i] = channel_3_partition_indptr[i];
+    }
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[4][i] = channel_4_partition_indptr[i];
+    }
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[5][i] = channel_5_partition_indptr[i];
+    }
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[6][i] = channel_6_partition_indptr[i];
+    }
+    for (int i = 0; i < size_partition_indptr; i++) {
+        partition_indptr_bram[7][i] = channel_7_partition_indptr[i];
+    }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[8][i] = channel_8_partition_indptr[i];
+    // }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[9][i] = channel_9_partition_indptr[i];
+    // }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[10][i] = channel_10_partition_indptr[i];
+    // }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[11][i] = channel_11_partition_indptr[i];
+    // }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[12][i] = channel_12_partition_indptr[i];
+    // }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[13][i] = channel_13_partition_indptr[i];
+    // }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[14][i] = channel_14_partition_indptr[i];
+    // }
+    // for (int i = 0; i < size_partition_indptr; i++) {
+    //     partition_indptr_bram[15][i] = channel_15_partition_indptr[i];
+    // }
+
     // Iterate row partitions
     for (int row_partition_idx = 0; row_partition_idx < num_row_partitions; row_partition_idx++) {
 
@@ -673,67 +728,67 @@ void kernel_spmv(
             read_matrix_one_channel(channel_0_matrix,
                                     indices_stream[0],
                                     vals_stream[0],
-                                    &channel_0_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[0][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             read_matrix_one_channel(channel_1_matrix,
                                     indices_stream[1],
                                     vals_stream[1],
-                                    &channel_1_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[1][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             read_matrix_one_channel(channel_2_matrix,
                                     indices_stream[2],
                                     vals_stream[2],
-                                    &channel_2_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[2][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             read_matrix_one_channel(channel_3_matrix,
                                     indices_stream[3],
                                     vals_stream[3],
-                                    &channel_3_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[3][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             read_matrix_one_channel(channel_4_matrix,
                                     indices_stream[4],
                                     vals_stream[4],
-                                    &channel_4_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[4][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             read_matrix_one_channel(channel_5_matrix,
                                     indices_stream[5],
                                     vals_stream[5],
-                                    &channel_5_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[5][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             read_matrix_one_channel(channel_6_matrix,
                                     indices_stream[6],
                                     vals_stream[6],
-                                    &channel_6_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[6][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             read_matrix_one_channel(channel_7_matrix,
                                     indices_stream[7],
                                     vals_stream[7],
-                                    &channel_7_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+                                    &partition_indptr_bram[7][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_8_matrix,
             //                         indices_stream[8],
             //                         vals_stream[8],
-            //                         &channel_8_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[8][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_9_matrix,
             //                         indices_stream[9],
             //                         vals_stream[9],
-            //                         &channel_9_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[9][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_10_matrix,
             //                         indices_stream[10],
             //                         vals_stream[10],
-            //                         &channel_10_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[10][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_11_matrix,
             //                         indices_stream[11],
             //                         vals_stream[11],
-            //                         &channel_11_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[11][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_12_matrix,
             //                         indices_stream[12],
             //                         vals_stream[12],
-            //                         &channel_12_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[12][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_13_matrix,
             //                         indices_stream[13],
             //                         vals_stream[13],
-            //                         &channel_13_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[13][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_14_matrix,
             //                         indices_stream[14],
             //                         vals_stream[14],
-            //                         &channel_14_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[14][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
             // read_matrix_one_channel(channel_15_matrix,
             //                         indices_stream[15],
             //                         vals_stream[15],
-            //                         &channel_15_partition_indptr[(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
+            //                         &partition_indptr_bram[15][(row_partition_idx*num_col_partitions + col_partition_idx)*(PACK_SIZE+1)]);
 
             unpack_matrix_one_channel(indices_stream[0],
                                       unpacked_indices_stream[0],
@@ -883,7 +938,7 @@ void kernel_spmv(
             // WRITE_OUT_BRAM_ONE_CHANNEL(out_stream[15], out_bram, 15, size)
         }
 
-        assert (size % PACK_SIZE == 0);
+        assert(size % PACK_SIZE == 0);
         unsigned int vsize = size / PACK_SIZE;
         PACKED_VAL_T tmp_out;
 #if defined(USE_MASK)

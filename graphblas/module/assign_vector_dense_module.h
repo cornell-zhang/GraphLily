@@ -113,8 +113,8 @@ public:
      * \param length The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
-    void compute_reference_results(graphblas::aligned_float_t &mask,
-                                   graphblas::aligned_float_t &inout,
+    void compute_reference_results(graphblas::aligned_dense_float_vec_t &mask,
+                                   graphblas::aligned_dense_float_vec_t &inout,
                                    uint32_t length,
                                    float val);
 
@@ -217,8 +217,8 @@ void AssignVectorDenseModule<vector_data_t>::run(uint32_t length, vector_data_t 
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphblas::aligned_float_t &mask,
-                                                                       graphblas::aligned_float_t &inout,
+void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphblas::aligned_dense_float_vec_t &mask,
+                                                                       graphblas::aligned_dense_float_vec_t &inout,
                                                                        uint32_t length,
                                                                        float val) {
     if (this->mask_type_ == graphblas::kMaskWriteToZero) {

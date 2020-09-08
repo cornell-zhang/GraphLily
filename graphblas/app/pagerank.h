@@ -76,8 +76,8 @@ public:
         return this->SpMV_->send_vector_device_to_host();
     }
 
-    graphblas::aligned_float_t compute_reference_results(float damping, uint32_t num_iterations) {
-        graphblas::aligned_float_t rank(this->matrix_num_rows_, 1.0 / this->matrix_num_rows_);
+    graphblas::aligned_dense_float_vec_t compute_reference_results(float damping, uint32_t num_iterations) {
+        graphblas::aligned_dense_float_vec_t rank(this->matrix_num_rows_, 1.0 / this->matrix_num_rows_);
         for (size_t i = 1; i <= num_iterations; i++) {
             rank = this->SpMV_->compute_reference_results(rank);
             rank = this->eWiseAdd_->compute_reference_results(rank,

@@ -474,6 +474,7 @@ _format(uint32_t out_buffer_len,
     this->num_hbm_channels_ = num_hbm_channels;
 }
 
+
 //--------------------------------------------------
 // Compressed Sparse Column (CSC) format support
 //--------------------------------------------------
@@ -500,7 +501,7 @@ private:
 
 private:
     void _format(uint32_t out_buffer_len, uint32_t pack_size);
- 
+
 public:
     SpMSpVDataFormatter(CSCMatrix<data_type> const &csc_matrix) {
         this->csc_matrix_ = csc_matrix;
@@ -519,21 +520,21 @@ public:
      */
     uint32_t num_row_partitions() {
         return this->num_row_partitions_;
-    }    
+    }
 
     /*!
      * \brief get number of packets
      */
     uint32_t num_packets_total() {
         return this->num_packets_total_;
-    } 
+    }
 
     /*!
      * \brief get a formatted packet
      */
     data_index_packet_type get_formatted_packet(int i) {
         return this->formatted_adj_packet[i];
-    } 
+    }
 
     /*!
      * \brief get a formatted indptr
@@ -548,7 +549,6 @@ public:
     index_type get_formatted_partptr(int i) {
         return this->formatted_adj_partptr[i];
     }
-
 };
 
 template<typename data_type,typename index_type, typename data_index_packet_type>
@@ -586,7 +586,7 @@ _format(uint32_t out_buffer_len, uint32_t pack_size)
     // add initial tile idxptr
     for (size_t t = 0; t < this->num_row_partitions_; t++) {
       tile_idxptr_buf[t].push_back(0);
-    } 
+    }
 
     // add initial tileptr
     this->formatted_adj_partptr.push_back(0);
@@ -596,21 +596,21 @@ _format(uint32_t out_buffer_len, uint32_t pack_size)
       // slice out one column
       index_type start = this->csc_matrix_.adj_indptr[i];
       index_type end = this->csc_matrix_.adj_indptr[i+1];
-      index_type col_len = end - start;   
+      index_type col_len = end - start;
 
-      // clear temporary buffer 
+      // clear temporary buffer
       for (size_t t = 0; t < this->num_row_partitions_; t++) {
         tile_data_buf[t].clear();
         tile_idx_buf[t].clear();
         tile_nnz_cnt[t] = 0;
-      }       
+      }
 
       // loop over all rows and distribute to the corresbonding tile
       for (unsigned int j = 0; j < col_len; j++) {
         unsigned int dest_tile = this->csc_matrix_.adj_indices[start + j] / out_buffer_len;
         tile_data_buf[dest_tile].push_back(this->csc_matrix_.adj_data[start + j]);
         tile_idx_buf[dest_tile].push_back(this->csc_matrix_.adj_indices[start + j]);
-        tile_nnz_cnt[dest_tile] ++; 
+        tile_nnz_cnt[dest_tile] ++;
       }
 
       // column padding and data packing for every tile
@@ -623,8 +623,8 @@ _format(uint32_t out_buffer_len, uint32_t pack_size)
           tile_data_buf[t].push_back(0);
           tile_idx_buf[t].push_back(0);
         }
-        tile_pkt_cnt[t] += num_packets; 
-        total_num_packets += num_packets; 
+        tile_pkt_cnt[t] += num_packets;
+        total_num_packets += num_packets;
 
         // data packing
         for (unsigned int p = 0; p < num_packets; p++) {
@@ -634,7 +634,7 @@ _format(uint32_t out_buffer_len, uint32_t pack_size)
             dwi_packet.indices[k] = tile_idx_buf[t][k + p * pack_size];
           }
           tile_ditpkt_buf[t].push_back(dwi_packet);
-        }         
+        }
       }
 
       // append tile idxptr
@@ -658,10 +658,7 @@ _format(uint32_t out_buffer_len, uint32_t pack_size)
     std::cout << "Size of idxptr    : " << this->formatted_adj_indptr.size()  << std::endl;
     std::cout << "Size of tileptr   : " << this->formatted_adj_partptr.size() << std::endl;
     this->num_packets_total_ = total_num_packets;
-    
 }
-
-
 
 } // namespace io
 } // namespace graphblas

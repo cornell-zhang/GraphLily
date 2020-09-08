@@ -1,6 +1,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <cassert>
+
 #include "graphblas/io/data_loader.h"
 #include "graphblas/io/data_formatter.h"
 
@@ -346,6 +348,20 @@ void test_spmv_data_formatter_row_partitioning() {
 }
 
 
+void test_csr2csc() {
+    CSRMatrix<float> csr_matrix = csr_matrix_1;
+    CSCMatrix<float> csc_matrix = csr2csc<float>(csr_matrix);
+
+    assert(csc_matrix.num_rows == 4);
+    assert(csc_matrix.num_cols == 4);
+    check_vector_equal<float>(csc_matrix.adj_data, std::vector<float>{1, 5, 2, 7, 3, 6, 4, 8});
+    check_vector_equal<uint32_t>(csc_matrix.adj_indices, std::vector<uint32_t>{0, 1, 0, 2, 0, 1, 0, 3});
+    check_vector_equal<uint32_t>(csc_matrix.adj_indptr, std::vector<uint32_t>{0, 2, 4, 6, 8,});
+
+    std::cout << "test_csr2csc passed" << std::endl;
+}
+
+
 int main(int argc, char *argv[]) {
     // Test data loader
     test_create_csr_matrix();
@@ -360,4 +376,7 @@ int main(int argc, char *argv[]) {
     test_util_pack_rows();
     test_spmv_data_formatter_col_partitioning();
     test_spmv_data_formatter_row_partitioning();
+
+    // test csr2csc
+    test_csr2csc();
 }

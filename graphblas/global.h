@@ -77,7 +77,7 @@ std::string dtype_to_str() {
 enum SemiRingType {
     kMulAdd = 0,
     kLogicalAndOr = 1,
-    kPlusMin = 2,
+    kAddMin = 2,
 };
 
 // Mask type
@@ -87,19 +87,16 @@ enum MaskType {
     kMaskWriteToOne = 2,
 };
 
-// Index type and packed index type
+// Data types
 typedef uint32_t index_t;
 const uint32_t idx_marker = 0xffffffff;
 const uint32_t pack_size = 16;
 typedef struct {index_t data[pack_size];} packed_index_t;
 
-// Float data + index turple
-typedef struct {index_t index; float val;} index_float_struct_t;
+typedef struct {index_t index; float val;} index_float_t;
 
-// Aligned float vector
-using aligned_float_t = std::vector<float, aligned_allocator<float>>;
-// Aligned float_index vector
-using aligned_index_float_struct_t = std::vector<index_float_struct_t, aligned_allocator<index_float_struct_t>>;
+using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
+using aligned_sparse_float_vec_t = std::vector<index_float_t, aligned_allocator<index_float_t>>;
 
 // Makefile for synthesizing xclbin
 const std::string makefile_prologue =
@@ -112,7 +109,7 @@ const std::string makefile_prologue =
     "\n"
     "VPP := v++\n"
     "\n"
-    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --save-temps \n"
+    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --save-temps\n"
     "\n"
     "FUSED_KERNEL = $(BUILD_DIR)/fused.xclbin\n"
     "\n"
