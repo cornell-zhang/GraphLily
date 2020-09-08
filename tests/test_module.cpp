@@ -23,9 +23,9 @@ void clean_proj_folder() {
 
 
 template <typename sparse_vec_t, typename dense_vec_t>
-dense_vec_t convert_sparse_vector_to_dense_vector(const sparse_vec_t &sparse_vector) {
+dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector, uint32_t range) {
     int nnz = sparse_vector[0].index;
-    dense_vec_t dense_vector(nnz);
+    dense_vec_t dense_vector(range);
     std::fill(dense_vector.begin(), dense_vector.end(), 0);
     for (int i = 1; i < nnz + 1; i++) {
         dense_vector[sparse_vector[i].index] = sparse_vector[i].val;
@@ -219,9 +219,11 @@ void test_spmspv_module() {
     kernel_results = module.send_results_device_to_host();
     reference_results = module.compute_reference_results(vector_float);
     aligned_val_t kernel_results_dense =
-        convert_sparse_vector_to_dense_vector<aligned_val_index_t, aligned_val_t>(kernel_results);
+        convert_sparse_vec_to_dense_vec<aligned_val_index_t, aligned_val_t>(
+            kernel_results, csc_matrix.num_rows);
     graphblas::aligned_dense_float_vec_t reference_results_dense =
-        convert_sparse_vector_to_dense_vector<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(reference_results);
+        convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
+            reference_results, csc_matrix.num_rows);
     verify<vector_data_t>(reference_results_dense, kernel_results_dense);
     std::cout << "SpMSpV test with no mask passed" << std::endl;
     }
@@ -242,9 +244,11 @@ void test_spmspv_module() {
     kernel_results = module2.send_results_device_to_host();
     reference_results = module2.compute_reference_results(vector_float, mask_float);
     aligned_val_t kernel_results_dense =
-        convert_sparse_vector_to_dense_vector<aligned_val_index_t, aligned_val_t>(kernel_results);
+        convert_sparse_vec_to_dense_vec<aligned_val_index_t, aligned_val_t>(
+            kernel_results, csc_matrix.num_rows);
     graphblas::aligned_dense_float_vec_t reference_results_dense =
-        convert_sparse_vector_to_dense_vector<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(reference_results);
+        convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
+            reference_results, csc_matrix.num_rows);
     verify<vector_data_t>(reference_results_dense, kernel_results_dense);
     std::cout << "SpMSpV test with mask passed" << std::endl;
     }
