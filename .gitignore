@@ -24,3 +24,7 @@ lib/
 *build/
 *build_dir.*
 *.run/
+.vscode
+data
+build*
+spmspv

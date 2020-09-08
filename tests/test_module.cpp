@@ -7,6 +7,7 @@
 #include "graphblas/io/data_loader.h"
 #include "graphblas/io/data_formatter.h"
 #include "graphblas/module/spmv_module.h"
+#include "graphblas/module/spmspv_module.h"
 #include "graphblas/module/assign_vector_dense_module.h"
 #include "graphblas/module/add_scalar_vector_dense_module.h"
 
@@ -20,7 +21,7 @@ void clean_proj_folder() {
     system(command.c_str());
 }
 
-
+// verify between two dense vector
 template <typename data_t>
 void verify(std::vector<float, aligned_allocator<float>> &reference_results,
             std::vector<data_t, aligned_allocator<data_t>> &kernel_results) {
@@ -40,6 +41,74 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
             exit(EXIT_FAILURE);
         }
     }
+}
+
+// test two data index turple equal
+template <typename val_index_type>
+bool teq_dit(graphblas::index_float_struct_t a, val_index_type b) {
+  float epsilon = 0.0001;
+  if(abs(a.val - (float)b.val) < epsilon)
+    if(a.index == b.index)
+      return true;
+  return false;
+}
+
+// find one dit in a dit vector
+template <typename val_index_type>
+bool search_dit(graphblas::aligned_index_float_struct_t vector, val_index_type element, std::vector<bool> &checklist) {
+  bool found = false;
+  unsigned int len = vector.size();
+  for (size_t i = 0; i < len; i++) {
+    if(teq_dit<val_index_type>(vector[i],element) && !checklist[i]) {
+      found = true;
+      checklist[i] = true;
+      break;
+    }
+  }
+  return found;
+}
+
+// verify between two sparse vector
+template <typename val_index_type>
+void verify_spmspv(
+  graphblas::aligned_index_float_struct_t reference_result,
+  std::vector<val_index_type, aligned_allocator<val_index_type>> kernel_result) {
+  if (kernel_result.size() == reference_result.size()) {
+    unsigned int length = reference_result.size();
+
+    // used to keep track of whether all elements in ref is matched by result
+    std::vector<bool> checklist(length,false);
+
+    // is every element from result in reference?
+    for (size_t i = 0; i < length; i++) {
+      bool found_match = search_dit<val_index_type>(reference_result,kernel_result[i],checklist);
+      if(!found_match) {
+        std::cout << "Error: Result mismatch"
+                        << std::endl;
+        std::cout << "Result[" << i << "] not found in reference" << std::endl;
+        std::cout << " data  = " << kernel_result[i].val   << std::endl;
+        std::cout << " index = " << kernel_result[i].index << std::endl;
+        exit(EXIT_FAILURE);        
+      }
+    }
+
+    // is all elements in reference matched with one from result?
+    for (size_t i = 0; i < length; i++) {
+      if(!checklist[i]) {
+        std::cout << "Error: Result mismatch"
+                        << std::endl;
+        std::cout << "Reference[" << i << "] not matched by results" << std::endl;
+        std::cout << " data  = " << reference_result[i].val   << std::endl;
+        std::cout << " index = " << reference_result[i].index << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+  } else {
+    std::cout << "Error: Result and Reference size Mismatch" << std::endl
+              << "Result    : size " << kernel_result.size() << std::endl
+              << "Reference : size " << reference_result.size() << std::endl;
+    exit(EXIT_FAILURE);
+  }  
 }
 
 
@@ -131,6 +200,109 @@ void test_spmv_module() {
 
     std::cout << "SpMV test with mask passed" << std::endl;
     }
+}
+
+
+template<typename matrix_data_t, typename vector_data_t, graphblas::SemiRingType semiring>
+void test_spmspv_module() {
+
+  // data types
+  using val_index_t = struct {
+    graphblas::index_t index;
+    vector_data_t val; 
+  };
+
+  using aligned_val_index_t = std::vector<val_index_t,aligned_allocator<val_index_t>>;
+  using aligned_val_t = std::vector<vector_data_t,aligned_allocator<vector_data_t>>;
+
+  // vector sparsity 99%
+  float vector_sparsity = 0.99;
+
+  // output buffer size (MUST DIVIDE 32)
+  uint32_t output_buffer_len = 640000;
+
+  // matrix data path
+  std::string csc_float_npz_path = "/work/shared/common/research/graphblas/"
+                                     "data/sparse_matrix_graph/uniform_100K_1000_csc_float32.npz";
+
+  // load matrix
+  struct CSCMatrix<float> csc_matrix = graphblas::io::load_csc_matrix_from_float_npz(csc_float_npz_path); 
+
+  // generate vector
+  unsigned int vector_length = csc_matrix.num_cols;
+  unsigned int vector_nnz_cnt = (unsigned int)floor(vector_length * (1 - vector_sparsity));
+  unsigned int vector_indices_increment = vector_length / vector_nnz_cnt;
+  
+  graphblas::aligned_index_float_struct_t vector_float(vector_nnz_cnt);
+  for (size_t i = 0; i < vector_nnz_cnt; i++) {
+    vector_float[i].val = (float)(rand() % 10) / 10;
+    vector_float[i].index = i * vector_indices_increment;
+  }
+  graphblas::index_float_struct_t vector_head;
+  vector_head.index = vector_nnz_cnt;
+  vector_head.val = 0;
+  vector_float.insert(vector_float.begin(),vector_head);
+  aligned_val_index_t vector(vector_float.size());
+  for (size_t i = 0; i < vector[0].index + 1; i++) {
+    vector[i].index = vector_float[i].index;
+    vector[i].val = vector_float[i].val;
+  }
+  
+
+  // generate mask
+  unsigned int mask_length = csc_matrix.num_rows;
+  graphblas::aligned_float_t mask_float(mask_length,0);
+  for (size_t i = 0; i < mask_length; i++) {
+    mask_float[i] = (float)(rand() % 2);
+  }
+  aligned_val_t mask;
+  std::copy(mask_float.begin(),mask_float.end(),std::back_inserter(mask));
+
+  // create kernel results
+  aligned_val_index_t kernel_results(csc_matrix.num_rows + 1);
+  // create reference results
+  graphblas::aligned_index_float_struct_t reference_results(csc_matrix.num_rows + 1);
+
+  /*----------------------------- No mask -------------------------------*/
+  {
+  graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, val_index_t> module(
+    semiring,output_buffer_len
+  );
+
+  module.set_target(target);
+  module.set_mask_type(graphblas::kNoMask);
+  module.compile();  
+  module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+  module.load_and_format_matrix(csc_matrix);
+  module.send_matrix_host_to_device();
+  module.send_vector_host_to_device(vector);
+  module.run();
+  kernel_results = module.send_results_device_to_host();
+  reference_results = module.compute_reference_results(vector_float);
+  verify_spmspv<val_index_t>(reference_results,kernel_results);
+  std::cout << "SpMSpV test with no mask passed" << std::endl;
+  }
+
+  /*----------------------------- With mask -------------------------------*/
+  {
+  graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, val_index_t> module2(
+    semiring,output_buffer_len
+  );
+  module2.set_target(target);
+  module2.set_mask_type(graphblas::kMaskWriteToZero);
+  module2.compile();
+  module2.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+  module2.load_and_format_matrix(csc_matrix);
+  module2.send_matrix_host_to_device();
+  module2.send_mask_host_to_device(mask);
+  module2.send_vector_host_to_device(vector);
+  module2.run();
+  kernel_results = module2.send_results_device_to_host();
+  reference_results = module2.compute_reference_results(vector_float,mask_float);
+  verify_spmspv<val_index_t>(reference_results,kernel_results);
+  std::cout << "SpMSpV test with mask passed" << std::endl;
+  }
+                          
 }
 
 
@@ -253,20 +425,26 @@ void test_copy_buffer_bind_buffer() {
 
 
 int main(int argc, char *argv[]) {
-    clean_proj_folder();
-    test_spmv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
+    // clean_proj_folder();
+    // test_spmv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
+
+    // clean_proj_folder();
+    // test_spmv_module<ap_ufixed<32, 1>, ap_ufixed<32, 1>, graphblas::kMulAdd>();
+
+    // clean_proj_folder();
+    // test_assign_vector_dense_module();
+
+    // clean_proj_folder();
+    // test_add_scalar_vector_dense_module();
+
+    // clean_proj_folder();
+    // test_copy_buffer_bind_buffer();
 
     clean_proj_folder();
-    test_spmv_module<ap_ufixed<32, 1>, ap_ufixed<32, 1>, graphblas::kMulAdd>();
+    test_spmspv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
 
     clean_proj_folder();
-    test_assign_vector_dense_module();
-
-    clean_proj_folder();
-    test_add_scalar_vector_dense_module();
-
-    clean_proj_folder();
-    test_copy_buffer_bind_buffer();
+    test_spmspv_module<ap_ufixed<32, 1>, ap_ufixed<32, 1>, graphblas::kMulAdd>();
 }
 
 #pragma GCC diagnostic pop

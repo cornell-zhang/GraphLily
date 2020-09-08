@@ -93,8 +93,13 @@ const uint32_t idx_marker = 0xffffffff;
 const uint32_t pack_size = 16;
 typedef struct {index_t data[pack_size];} packed_index_t;
 
+// Float data + index turple
+typedef struct {index_t index; float val;} index_float_struct_t;
+
 // Aligned float vector
 using aligned_float_t = std::vector<float, aligned_allocator<float>>;
+// Aligned float_index vector
+using aligned_index_float_struct_t = std::vector<index_float_struct_t, aligned_allocator<index_float_struct_t>>;
 
 // Makefile for synthesizing xclbin
 const std::string makefile_prologue =
