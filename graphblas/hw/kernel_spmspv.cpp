@@ -30,7 +30,7 @@ T array_sum(T array[ARRAY_SIZE]) {
 // Hardware Manipulating Helper Functions
 //----------------------------------------------------
 
-// fore a register
+// force a register
 template<class T>
 T HLS_REG(T in){
 #pragma HLS pipeline
@@ -67,8 +67,7 @@ static void DL_spmspv(
 
     // line tracing
     #ifndef __SYNTHESIS__
-        std::cout << "DL idxptr base: "
-                            << std::setw(5) << idxptr_base << std::endl;
+        std::cout << "DL idxptr base: " << std::setw(5) << idxptr_base << std::endl;
     #endif
 
     // loop over all active columns
@@ -86,8 +85,8 @@ static void DL_spmspv(
         // line tracing
         // #ifndef __SYNTHESIS__
         //     std::cout << "DL Reading Idxptr from : "
-        //                         << "Start[" << std::setw(5) << current_colid + idxptr_base         << "], "
-        //                         << "End    [" << std::setw(5) << current_colid + idxptr_base + 1 << "]" << std::endl;
+        //               << "Start[" << std::setw(5) << current_colid + idxptr_base     << "], "
+        //               << "End  [" << std::setw(5) << current_colid + idxptr_base + 1 << "]" << std::endl;
         // #endif
 
         loop_get_column_len_DL_unroll:
@@ -100,9 +99,9 @@ static void DL_spmspv(
         // line tracing
         // #ifndef __SYNTHESIS__
         //     std::cout << "DL Active Column : "
-        //                         << "Start" << std::setw(5) << col_slice[0]         << ", "
-        //                         << "End    " << std::setw(5) << col_slice[1] - 1 << ", "
-        //                         << "Size " << std::setw(3) << current_collen     << std::endl;
+        //               << "Start" << std::setw(5) << col_slice[0]     << ", "
+        //               << "End  " << std::setw(5) << col_slice[1] - 1 << ", "
+        //               << "Size " << std::setw(3) << current_collen   << std::endl;
         // #endif
 
         current_collen_stream << current_collen; // measured in number of packets
@@ -114,7 +113,7 @@ static void DL_spmspv(
             // line tracing
             // #ifndef __SYNTHESIS__
             //     std::cout << "DL Loading from: "
-            //                         << "Pkt[" << std::setw(5) << tile_base + i + col_slice[0] << "]" << std::endl;
+            //               << "Pkt[" << std::setw(5) << tile_base + i + col_slice[0] << "]" << std::endl;
             // #endif
 
             // [IMPORTANT] read mat_dit here
@@ -127,8 +126,6 @@ static void DL_spmspv(
                 current_row_id_stream[k] << dwi_packet_from_mat.indexpkt[k];
             }
         }
-
-
     }
 }
 
@@ -426,38 +423,38 @@ static void PE_spmspv(
     // tile count
     unsigned int tile_cnt
 ) {
-    // *************    PE    **************
+    // *************  PE  **************
     // PE registers
-    VAL_T     nnz_from_mat[NUM_PE];
+    VAL_T   nnz_from_mat[NUM_PE];
     INDEX_T current_row_id[NUM_PE];
-    VAL_T     nnz_from_vec;
-    VAL_T     result_inc[NUM_PE];
+    VAL_T   nnz_from_vec;
+    VAL_T   result_inc[NUM_PE];
     INDEX_T collen;
     #pragma HLS array_partition variable=nnz_from_mat complete
     #pragma HLS array_partition variable=current_row_id complete
     #pragma HLS array_partition variable=result_inc complete
     // granted by arbiter
     bool granted[NUM_PE];
-    #pragma HLS array_partition variable=granted                complete
+    #pragma HLS array_partition variable=granted        complete
     // whether to resend a request
     bool resend_req[NUM_PE]; // to be forwarded (also the switch to data forwarding)
-    #pragma HLS array_partition variable=resend_req         complete
+    #pragma HLS array_partition variable=resend_req     complete
     // processed item count
     unsigned int fetch_cnt[NUM_PE];
     bool all_fetched[NUM_PE];
     unsigned int process_cnt[NUM_PE];
     bool all_processed[NUM_PE]; // to be forwarded
-    #pragma HLS array_partition variable=fetch_cnt            complete
-    #pragma HLS array_partition variable=all_fetched        complete
-    #pragma HLS array_partition variable=process_cnt        complete
-    #pragma HLS array_partition variable=all_processed    complete
+    #pragma HLS array_partition variable=fetch_cnt      complete
+    #pragma HLS array_partition variable=all_fetched    complete
+    #pragma HLS array_partition variable=process_cnt    complete
+    #pragma HLS array_partition variable=all_processed  complete
     // forwarding signals
     INDEX_T current_row_id_fwd[NUM_PE];
-    VAL_T     nnz_from_mat_fwd[NUM_PE];
-    #pragma HLS array_partition variable=current_row_id_fwd    complete
-    #pragma HLS array_partition variable=nnz_from_mat_fwd        complete
+    VAL_T   nnz_from_mat_fwd[NUM_PE];
+    #pragma HLS array_partition variable=current_row_id_fwd  complete
+    #pragma HLS array_partition variable=nnz_from_mat_fwd    complete
 
-    // *************    Virtual Port    **************
+    // *************  Virtual Port  **************
     // no write response is needed, because if read is success, write will also success
     // Virtual port signals
     rd_req<INDEX_T> VrdP_req[NUM_PE];
@@ -467,7 +464,7 @@ static void PE_spmspv(
     #pragma HLS array_partition variable=VrdP_resp complete
     #pragma HLS array_partition variable=VwrP_req complete
 
-    // *************    Arbiter    **************
+    // *************  Arbiter  **************
     // save read arbiter results which will be used in write
     arbiter_result<INDEX_T> rd_arbiter_results[NUM_BANK];
     #pragma HLS array_partition variable=rd_arbiter_results complete
@@ -524,21 +521,21 @@ static void PE_spmspv(
             #pragma HLS dependence variable=bram inter WAR false
             #pragma HLS dependence variable=bram inter WAW false
             // update rotate priority path
-            #pragma HLS dependence variable=rotate_priority inter distance=FWD_DISTANCE         RAW true
+            #pragma HLS dependence variable=rotate_priority inter distance=FWD_DISTANCE     RAW true
             // data forwarding paths
-            #pragma HLS dependence variable=all_processed             inter distance=FWD_DISTANCE         RAW true
-            #pragma HLS dependence variable=resend_req                    inter distance=FWD_DISTANCE         RAW true
-            #pragma HLS dependence variable=current_row_id_fwd    inter distance=FWD_DISTANCE         RAW true
-            #pragma HLS dependence variable=nnz_from_mat_fwd        inter distance=FWD_DISTANCE         RAW true
+            #pragma HLS dependence variable=all_processed       inter distance=FWD_DISTANCE     RAW true
+            #pragma HLS dependence variable=resend_req          inter distance=FWD_DISTANCE     RAW true
+            #pragma HLS dependence variable=current_row_id_fwd  inter distance=FWD_DISTANCE     RAW true
+            #pragma HLS dependence variable=nnz_from_mat_fwd    inter distance=FWD_DISTANCE     RAW true
 
             // line tracing
             /*
             #ifndef __SYNTHESIS__
                 std::cout << "Column Cnt " << vec_nnz_cnt << "\t"
-                                    << "Column Length " << collen << "\t"
-                                    << "Round " << round << "\t"
-                                    << "[" << array_sum<unsigned int,NUM_PE>(process_cnt) << "/" << collen * PACKET_SIZE << "]"
-                                    << std::endl;
+                          << "Column Length " << collen << "\t"
+                          << "Round " << round << "\t"
+                          << "[" << array_sum<unsigned int,NUM_PE>(process_cnt) << "/" << collen * PACKET_SIZE << "]"
+                          << std::endl;
                 round ++;
                 if(round > MAX_SW_EMU_LIMIT) {
                     std::cout << "[ERROR] Exceeded max software emulation loop count. Probably there is a deadlock" << std::endl;
@@ -568,9 +565,9 @@ static void PE_spmspv(
                         // need to fetch
                         if(!all_fetched[PEid]) {
                             INDEX_T cri;
-                            VAL_T     nfm;
-                            bool cri_rdsuccess =    current_row_id_stream[PEid].read_nb(cri);
-                            bool nfm_rdsuccess =    nnz_from_mat_stream[PEid].read_nb(nfm);
+                            VAL_T   nfm;
+                            bool cri_rdsuccess = current_row_id_stream[PEid].read_nb(cri);
+                            bool nfm_rdsuccess = nnz_from_mat_stream[PEid].read_nb(nfm);
                             // fetch success
                             if(cri_rdsuccess && nfm_rdsuccess) {
                                 cri -= tile_cnt * TILE_SIZE;
@@ -686,20 +683,20 @@ static void PE_spmspv(
                 for (size_t k = 0; k < NUM_PE; k++) {
                     bool display_value = input_success_ltr[k] || !granted[k];
                     std::cout << "PE [" << std::setw(2) << k << "] {"
-                                        << ""    << std::setw(4) << (all_processed[k]             ?    "----" :    std::to_string(process_cnt[k]))                                << ""    << ""
+                                        << ""  << std::setw(4) << (all_processed[k]     ?  "----" :  std::to_string(process_cnt[k]))                << ""  << ""
                                         << "} {"
-                                        << ""    << std::setw(2) << (input_success_ltr[k] ? "->" : "--")                                                                                            << ""    << "|"
-                                        << ""    << std::setw(9) << (display_value                ? std::to_string((float)nnz_from_mat[k])                        : "--") << ""    << "|"
-                                        << ""    << std::setw(9) << (display_value                ? std::to_string((float)nnz_from_vec)                             : "--") << ""    << "|"
-                                        << "[" << std::setw(5) << (display_value                ? std::to_string(current_row_id[k])                                 : "--") << ""    << ""
-                                        << "(" << std::setw(2) << (display_value                ? std::to_string(current_row_id[k] & BANK_ID_MASK)    : "--") << ")]"<< "|"
-                                        << ""    << std::setw(9) << (VrdP_resp[k].valid     ? std::to_string((float)VrdP_resp[k].data)                    : "--") << ""    << "|"
-                                        << ""    << std::setw(9) << (VrdP_resp[k].valid     ? std::to_string((float)VwrP_req[k].data)                     : "--") << ""
+                                        << ""  << std::setw(2) << (input_success_ltr[k] ? "->" : "--")                                              << ""  << "|"
+                                        << ""  << std::setw(9) << (display_value        ? std::to_string((float)nnz_from_mat[k])            : "--") << ""  << "|"
+                                        << ""  << std::setw(9) << (display_value        ? std::to_string((float)nnz_from_vec)               : "--") << ""  << "|"
+                                        << "[" << std::setw(5) << (display_value        ? std::to_string(current_row_id[k])                 : "--") << ""  << ""
+                                        << "(" << std::setw(2) << (display_value        ? std::to_string(current_row_id[k] & BANK_ID_MASK)  : "--") << ")]"<< "|"
+                                        << ""  << std::setw(9) << (VrdP_resp[k].valid   ? std::to_string((float)VrdP_resp[k].data)          : "--") << ""  << "|"
+                                        << ""  << std::setw(9) << (VrdP_resp[k].valid   ? std::to_string((float)VwrP_req[k].data)           : "--") << ""
                                         << "} {"
-                                        << (VrdP_req[k].zero        ? "Rz" :
-                                                VrdP_req[k].valid     ? "Rv" : " ." ) << ":"
-                                        << (!granted[k]                 ?    "x" :    "o" ) << "|"
-                                        << (VrdP_resp[k].valid    ? "Wc" : " ." ) << "|"
+                                        << (VrdP_req[k].zero    ? "Rz" :
+                                                VrdP_req[k].valid   ? "Rv" : " ." ) << ":"
+                                        << (!granted[k]         ?  "x" :  "o" ) << "|"
+                                        << (VrdP_resp[k].valid  ? "Wc" : " ." ) << "|"
                                         << "}";
                     std::cout << std::endl;
                 }
@@ -708,19 +705,17 @@ static void PE_spmspv(
                 std::cout << "BA (R" << std::setw(2) << ((rotate_priority- 1) % NUM_PE) << ") {";
                 for (size_t x = 0; x < NUM_PE; x++) {
                     std::cout << "["
-                                        << ""    << std::setw(2) << x << ""    << ":"
-                                        << ""    << std::setw(2) << ((rd_arbiter_results[x].bank_idle) ? "--" : std::to_string(rd_arbiter_results[x].virtual_port_id)) << ""    << ""
-                                        << "]";
+                              << ""  << std::setw(2) << x << ""  << ":"
+                              << ""  << std::setw(2) << ((rd_arbiter_results[x].bank_idle) ? "--" : std::to_string(rd_arbiter_results[x].virtual_port_id)) << ""  << ""
+                              << "]";
                 }
                 std::cout << "}";
                 std::cout << std::endl;
 
             #endif
             */
-
         }
     }
-
 }
 
 //----------------------------------------------------
@@ -915,18 +910,18 @@ static void write_back_ddr(
                     sparse_dit[Nnnz + 1] = wb_temp;
                     Nnnz ++;
 
-                // line tracing
-//                 #ifndef __SYNTHESIS__
-//                     std::cout << "["     << wb_cnt << "/" << local_Nnnz_no_mask << "]";
-//                     std::cout << "LN"    << std::setw(2) << Lane_id << " : "
-//                                         << "{("    << std::setw(5) << wb_temp.data    << ", "
-//                                         << "@"     << std::setw(5) << wb_temp.index << ")|"
+//                     line tracing
+//                     #ifndef __SYNTHESIS__
+//                     std::cout << "["   << wb_cnt << "/" << local_Nnnz_no_mask << "]";
+//                     std::cout << "LN"  << std::setw(2) << Lane_id << " : "
+//                               << "{("  << std::setw(5) << wb_temp.data  << ", "
+//                               << "@"   << std::setw(5) << wb_temp.index << ")|"
 // #if defined(USE_MASK)
-//                                         << "M "    << std::setw(1) << mask[wb_temp.index]
+//                               << "M "  << std::setw(1) << mask[wb_temp.index]
 // #endif
-//                                         << " >> B["    << std::setw(5) << Nnnz << "]}"
-//                                         << std::endl    << std::flush;
-//                 #endif
+//                               << " >> B["  << std::setw(5) << Nnnz << "]}"
+//                               << std::endl  << std::flush;
+// #endif
                 }
             }
         }
@@ -986,7 +981,6 @@ static void write_back_spmspv(
         std::cout << "[INFO kernel_spmspv] WRITE DDR complete" << std::endl;
         std::cout.flush();
     #endif
-
 }
 
 //----------------------------------------------------
@@ -1010,28 +1004,28 @@ void kernel_spmspv(
 ) {
 
     // interfaces
-    #pragma HLS INTERFACE m_axi port=mat_dwi_ddr            offset=slave bundle=gmem0
-    #pragma HLS INTERFACE m_axi port=mat_idxptr_ddr     offset=slave bundle=gmem1
-    #pragma HLS INTERFACE m_axi port=mat_tileptr_ddr    offset=slave bundle=gmem1
-    #pragma HLS INTERFACE m_axi port=vec_dit_ddr            offset=slave bundle=gmem2
+    #pragma HLS INTERFACE m_axi port=mat_dwi_ddr      offset=slave bundle=gmem0
+    #pragma HLS INTERFACE m_axi port=mat_idxptr_ddr   offset=slave bundle=gmem1
+    #pragma HLS INTERFACE m_axi port=mat_tileptr_ddr  offset=slave bundle=gmem1
+    #pragma HLS INTERFACE m_axi port=vec_dit_ddr      offset=slave bundle=gmem2
 #if defined(USE_MASK)
-    #pragma HLS INTERFACE m_axi port=mask_ddr                 offset=slave bundle=gmem2
+    #pragma HLS INTERFACE m_axi port=mask_ddr         offset=slave bundle=gmem2
 #endif
-    #pragma HLS INTERFACE m_axi port=result_ddr             offset=slave bundle=gmem3
+    #pragma HLS INTERFACE m_axi port=result_ddr       offset=slave bundle=gmem3
 
-    #pragma HLS INTERFACE s_axilite port=mat_dwi_ddr            bundle=control
-    #pragma HLS INTERFACE s_axilite port=mat_idxptr_ddr     bundle=control
-    #pragma HLS INTERFACE s_axilite port=mat_tileptr_ddr    bundle=control
-    #pragma HLS INTERFACE s_axilite port=vec_dit_ddr            bundle=control
+    #pragma HLS INTERFACE s_axilite port=mat_dwi_ddr      bundle=control
+    #pragma HLS INTERFACE s_axilite port=mat_idxptr_ddr   bundle=control
+    #pragma HLS INTERFACE s_axilite port=mat_tileptr_ddr  bundle=control
+    #pragma HLS INTERFACE s_axilite port=vec_dit_ddr      bundle=control
 #if defined(USE_MASK)
-    #pragma HLS INTERFACE s_axilite port=mask_ddr                 bundle=control
+    #pragma HLS INTERFACE s_axilite port=mask_ddr         bundle=control
 #endif
-    #pragma HLS INTERFACE s_axilite port=result_ddr             bundle=control
+    #pragma HLS INTERFACE s_axilite port=result_ddr       bundle=control
 
-    #pragma HLS INTERFACE s_axilite port=num_columns            bundle=control
-    #pragma HLS INTERFACE s_axilite port=num_tiles                bundle=control
+    #pragma HLS INTERFACE s_axilite port=num_columns      bundle=control
+    #pragma HLS INTERFACE s_axilite port=num_tiles        bundle=control
 
-    #pragma HLS INTERFACE s_axilite port=return                     bundle=control
+    #pragma HLS INTERFACE s_axilite port=return           bundle=control
 
     #pragma HLS data_pack variable=mat_dwi_ddr
     #pragma HLS data_pack variable=vec_dit_ddr
@@ -1040,7 +1034,7 @@ void kernel_spmspv(
     // block ram (output buffer)
     static VAL_T bram[NUM_BANK][BANK_SIZE];
     #pragma HLS array_partition variable=bram complete dim=1
-    // *************    Pipelining BRAM ***************
+    // *************  Pipelining BRAM ***************
     #pragma HLS resource variable=bram core=RAM_2P_BRAM latency=4
 
     unsigned int result_nnz_cnt_localreg = 0;
@@ -1131,8 +1125,6 @@ void kernel_spmspv(
     #ifndef __SYNTHESIS__
         std::cout << "[INFO kernel_spmspv] finish, result non-zero count : " << result_nnz_cnt_localreg << std::endl;
     #endif
-
 }
 
 } // extern "C"
-
