@@ -181,6 +181,8 @@ public:
     aligned_val_index_t send_vector_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
+        // truncate useless data
+        this->vector_.resize(this->vector_[0].index + 1);
         return this->vector_;
     }
 

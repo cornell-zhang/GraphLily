@@ -7,6 +7,18 @@
 
 #include "./kernel_spmspv.h"
 
+//------------------------------------------------------------
+// line tracing swtiches
+//------------------------------------------------------------
+
+#ifndef __SYNTHESIS__
+
+bool line_tracing_DL = false;
+bool line_tracing_PE = false;
+bool line_tracing_kernel = true;
+
+#endif
+
 
 //------------------------------------------------------------
 // functions used for line tracing
@@ -39,95 +51,6 @@ T HLS_REG(T in){
     return in;
 }
 
-//----------------------------------------------------
-// Data Loader
-//----------------------------------------------------
-
-static void DL_spmspv(
-    // bram buffers
-    const PACKED_DWI_T mat_dwi[],
-    const INDEX_T mat_idxptr[],
-    const DIT_T vec_dit[],
-    // stream buffers (DL->PE)
-    hls::stream<VAL_T> nnz_from_mat_stream[],
-    hls::stream<INDEX_T> current_row_id_stream[],
-    hls::stream<VAL_T> &nnz_from_vec_stream,
-    hls::stream<INDEX_T> &current_collen_stream,
-    // column count
-    unsigned int vec_nnz_total,
-    // mat size
-    const unsigned int num_columns,
-    // tile count
-    unsigned int tile_cnt,
-    // tile base
-    INDEX_T tile_base
-) {
-    // calculate mat_idxptr base address
-    unsigned int idxptr_base = tile_cnt * (num_columns + 1);
-
-    // line tracing
-    #ifndef __SYNTHESIS__
-        std::cout << "DL idxptr base: " << std::setw(5) << idxptr_base << std::endl;
-    #endif
-
-    // loop over all active columns
-    loop_over_active_columns_DL:
-    for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_nnz_total; vec_nnz_cnt++) {
-
-        // slice out the current column out of the active columns
-        INDEX_T current_colid = vec_dit[vec_nnz_cnt + 1].index;
-        nnz_from_vec_stream << vec_dit[vec_nnz_cnt + 1].data;
-
-        // [0] for start, [1] for end
-        INDEX_T col_slice[2];
-        #pragma HLS array_partition variable=col_slice complete
-
-        // line tracing
-        // #ifndef __SYNTHESIS__
-        //     std::cout << "DL Reading Idxptr from : "
-        //               << "Start[" << std::setw(5) << current_colid + idxptr_base     << "], "
-        //               << "End  [" << std::setw(5) << current_colid + idxptr_base + 1 << "]" << std::endl;
-        // #endif
-
-        loop_get_column_len_DL_unroll:
-        for (unsigned int i = 0; i < 2; i++) {
-            #pragma HLS unroll
-            col_slice[i] = mat_idxptr[current_colid + idxptr_base + i];
-        }
-        INDEX_T current_collen = col_slice[1] - col_slice[0];
-
-        // line tracing
-        // #ifndef __SYNTHESIS__
-        //     std::cout << "DL Active Column : "
-        //               << "Start" << std::setw(5) << col_slice[0]     << ", "
-        //               << "End  " << std::setw(5) << col_slice[1] - 1 << ", "
-        //               << "Size " << std::setw(3) << current_collen   << std::endl;
-        // #endif
-
-        current_collen_stream << current_collen; // measured in number of packets
-
-        loop_over_pkts_DL:
-        for (unsigned int i = 0; i < current_collen; i++) {
-            #pragma HLS pipeline II=1
-
-            // line tracing
-            // #ifndef __SYNTHESIS__
-            //     std::cout << "DL Loading from: "
-            //               << "Pkt[" << std::setw(5) << tile_base + i + col_slice[0] << "]" << std::endl;
-            // #endif
-
-            // [IMPORTANT] read mat_dit here
-            PACKED_DWI_T dwi_packet_from_mat = mat_dwi[tile_base + i + col_slice[0]];
-
-            loop_unpack_DL_unroll:
-            for (unsigned int k = 0; k < PACKET_SIZE; k++) {
-                #pragma HLS unroll
-                nnz_from_mat_stream[k] << dwi_packet_from_mat.datapkt[k];
-                current_row_id_stream[k] << dwi_packet_from_mat.indexpkt[k];
-            }
-        }
-    }
-}
 
 //------------------------------------------------------------
 // array shift functions
@@ -408,6 +331,105 @@ void bram_access_write(
 }
 
 //----------------------------------------------------
+// Data Loader
+//----------------------------------------------------
+
+static void DL_spmspv(
+    // bram buffers
+    const PACKED_DWI_T mat_dwi[],
+    const INDEX_T mat_idxptr[],
+    const DIT_T vec_dit[],
+    // stream buffers (DL->PE)
+    hls::stream<VAL_T> nnz_from_mat_stream[],
+    hls::stream<INDEX_T> current_row_id_stream[],
+    hls::stream<VAL_T> &nnz_from_vec_stream,
+    hls::stream<INDEX_T> &current_collen_stream,
+    // column count
+    unsigned int vec_nnz_total,
+    // mat size
+    const unsigned int num_columns,
+    // tile count
+    unsigned int tile_cnt,
+    // tile base
+    INDEX_T tile_base
+) {
+    // calculate mat_idxptr base address
+    unsigned int idxptr_base = tile_cnt * (num_columns + 1);
+
+    // line tracing
+    #ifndef __SYNTHESIS__
+    if(line_tracing_DL) {
+        std::cout << "[INFO kernel_spmspv] DL idxptr base: " << std::setw(5) << idxptr_base << std::endl;
+    }
+    #endif
+
+    // loop over all active columns
+    loop_over_active_columns_DL:
+    for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_nnz_total; vec_nnz_cnt++) {
+
+        // slice out the current column out of the active columns
+        INDEX_T current_colid = vec_dit[vec_nnz_cnt + 1].index;
+        nnz_from_vec_stream << vec_dit[vec_nnz_cnt + 1].data;
+
+        // [0] for start, [1] for end
+        INDEX_T col_slice[2];
+        #pragma HLS array_partition variable=col_slice complete
+
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_DL) {
+            std::cout << "DL Reading Idxptr from : "
+                      << "Start[" << std::setw(5) << current_colid + idxptr_base     << "], "
+                      << "End  [" << std::setw(5) << current_colid + idxptr_base + 1 << "]" << std::endl;
+        }
+        #endif
+
+        loop_get_column_len_DL_unroll:
+        for (unsigned int i = 0; i < 2; i++) {
+            #pragma HLS unroll
+            col_slice[i] = mat_idxptr[current_colid + idxptr_base + i];
+        }
+        INDEX_T current_collen = col_slice[1] - col_slice[0];
+
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_DL) {
+            std::cout   << "DL Active Column : "
+                        << "ID    " << std::setw(5) << current_colid << ", "
+                        << "Start " << std::setw(5) << tile_base + col_slice[0]     << ", "
+                        << "End   " << std::setw(5) << tile_base + col_slice[1] - 1 << ", "
+                        << "Size  " << std::setw(3) << current_collen   << std::endl;
+        }
+        #endif
+
+        current_collen_stream << current_collen; // measured in number of packets
+
+        loop_over_pkts_DL:
+        for (unsigned int i = 0; i < current_collen; i++) {
+            #pragma HLS pipeline II=1
+
+            // line tracing
+            #ifndef __SYNTHESIS__
+            if(line_tracing_DL) {
+                std::cout << "DL Load packet from: "
+                          << "Pkt[" << std::setw(5) << tile_base + i + col_slice[0] << "]" << std::endl;
+            }
+            #endif
+
+            // [IMPORTANT] read mat_dit here
+            PACKED_DWI_T dwi_packet_from_mat = mat_dwi[tile_base + i + col_slice[0]];
+
+            loop_unpack_DL_unroll:
+            for (unsigned int k = 0; k < PACKET_SIZE; k++) {
+                #pragma HLS unroll
+                nnz_from_mat_stream[k] << dwi_packet_from_mat.datapkt[k];
+                current_row_id_stream[k] << dwi_packet_from_mat.indexpkt[k];
+            }
+        }
+    }
+}
+
+//----------------------------------------------------
 // kernel process elements
 //----------------------------------------------------
 static void PE_spmspv(
@@ -529,20 +551,22 @@ static void PE_spmspv(
             #pragma HLS dependence variable=nnz_from_mat_fwd    inter distance=FWD_DISTANCE     RAW true
 
             // line tracing
-            /*
+
             #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
                 std::cout << "Column Cnt " << vec_nnz_cnt << "\t"
                           << "Column Length " << collen << "\t"
                           << "Round " << round << "\t"
                           << "[" << array_sum<unsigned int,NUM_PE>(process_cnt) << "/" << collen * PACKET_SIZE << "]"
                           << std::endl;
                 round ++;
-                if(round > MAX_SW_EMU_LIMIT) {
-                    std::cout << "[ERROR] Exceeded max software emulation loop count. Probably there is a deadlock" << std::endl;
-                    return;
-                }
+                // if(round > MAX_SW_EMU_LIMIT) {
+                //     std::cout << "[ERROR] Exceeded max software emulation loop count. Probably there is a deadlock" << std::endl;
+                //     return;
+                // }
+            }
             #endif
-            */
+
 
             // fetch inputs and send requests
             loop_pe_fetch_unroll:
@@ -570,11 +594,10 @@ static void PE_spmspv(
                             bool nfm_rdsuccess = nnz_from_mat_stream[PEid].read_nb(nfm);
                             // fetch success
                             if(cri_rdsuccess && nfm_rdsuccess) {
-                                cri -= tile_cnt * TILE_SIZE;
-                                current_row_id[PEid] = cri;
+                                current_row_id[PEid] = cri - tile_cnt * TILE_SIZE;
                                 nnz_from_mat[PEid] = nfm;
                                 VrdP_req[PEid].valid = true;
-                                VrdP_req[PEid].addr = cri;
+                                VrdP_req[PEid].addr = cri - tile_cnt * TILE_SIZE;
                                 VrdP_req[PEid].zero = (nfm == 0);
                                 fetch_cnt[PEid] ++;
                             } else { // fetch failed
@@ -586,9 +609,9 @@ static void PE_spmspv(
                             }
 
                             // used for line tracing
-                            // #ifndef __SYNTHESIS__
-                            //     input_success_ltr[PEid] = cri_rdsuccess && nfm_rdsuccess;
-                            // #endif
+                            #ifndef __SYNTHESIS__
+                                input_success_ltr[PEid] = cri_rdsuccess && nfm_rdsuccess;
+                            #endif
 
                         } else { // no need to fetch
                             current_row_id[PEid] = 0;
@@ -607,6 +630,12 @@ static void PE_spmspv(
                 }
             }
             // ------------ end of F stage
+            // line tracing
+            #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
+                std::cout << "F" << std::flush;
+            }
+            #endif
 
             // arbiter logic
             bram_access_arbiter(
@@ -616,6 +645,12 @@ static void PE_spmspv(
                 rotate_priority
             );
             // ------------ end of A stage
+            // line tracing
+            #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
+                std::cout << "A" << std::flush;
+            }
+            #endif
 
             // forward ungranted requests to F stage, update process_cnt
             loop_pe_postarb_unroll:
@@ -642,10 +677,22 @@ static void PE_spmspv(
             // update priority rotate
             rotate_priority = (rotate_priority + 1) % NUM_PE;
             // ------------ end of P stage
+            // line tracing
+            #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
+                std::cout << "P" << std::flush;
+            }
+            #endif
 
             // process read requests
             bram_access_read(VrdP_req,VrdP_resp,bram,rd_arbiter_results,granted);
             // ------------ end of R stage
+            // line tracing
+            #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
+                std::cout << "R" << std::flush;
+            }
+            #endif
 
             // execute and send write requests
             loop_process_element_X_unroll:
@@ -655,11 +702,11 @@ static void PE_spmspv(
 #if defined(MulAddSemiring)
                     result_inc[PEid] = nnz_from_mat[PEid] * nnz_from_vec;
                     VwrP_req[PEid].data = VrdP_resp[PEid].data + result_inc[PEid];
-                    VwrP_req[PEid].addr = current_row_id[PEid] - tile_cnt * TILE_SIZE;
+                    VwrP_req[PEid].addr = current_row_id[PEid];
 #elif defined(LogicalAndOrSemiring)
                     result_inc[PEid] = nnz_from_mat[PEid] && nnz_from_vec;
                     VwrP_req[PEid].data = VrdP_resp[PEid].data || result_inc[PEid];
-                    VwrP_req[PEid].addr = current_row_id[PEid] - tile_cnt * TILE_SIZE;
+                    VwrP_req[PEid].addr = current_row_id[PEid];
 #else
                     std::cout << "Invalid semiring" << std::endl;
                     exit(EXIT_FAILURE);
@@ -671,14 +718,26 @@ static void PE_spmspv(
                 }
             }
             // ------------ end of X stage
+            // line tracing
+            #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
+                std::cout << "X" << std::flush;
+            }
+            #endif
 
             // process write requests
             bram_access_write(VwrP_req,bram,rd_arbiter_results);
             // ------------ end of W stage
+            // line tracing
+            #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
+                std::cout << "W\n" << std::flush;
+            }
+            #endif
 
             // line tracing
-            /*
             #ifndef __SYNTHESIS__
+            if(line_tracing_PE) {
                 // PE states
                 for (size_t k = 0; k < NUM_PE; k++) {
                     bool display_value = input_success_ltr[k] || !granted[k];
@@ -698,7 +757,7 @@ static void PE_spmspv(
                                         << (!granted[k]         ?  "x" :  "o" ) << "|"
                                         << (VrdP_resp[k].valid  ? "Wc" : " ." ) << "|"
                                         << "}";
-                    std::cout << std::endl;
+                    std::cout << std::endl << std::flush;
                 }
 
                 // Arbiter results
@@ -710,10 +769,10 @@ static void PE_spmspv(
                               << "]";
                 }
                 std::cout << "}";
-                std::cout << std::endl;
-
+                std::cout << std::endl << std::flush;
+            }
             #endif
-            */
+
         }
     }
 }
@@ -765,8 +824,10 @@ static void execution_spmspv(
     );
 
     #ifndef __SYNTHESIS__
+    if(line_tracing_kernel) {
         std::cout << "[INFO kernel_spmspv] DL complete" << std::endl;
         std::cout.flush();
+    }
     #endif
 
     PE_spmspv(
@@ -780,8 +841,10 @@ static void execution_spmspv(
     );
 
     #ifndef __SYNTHESIS__
+    if(line_tracing_kernel) {
         std::cout << "[INFO kernel_spmspv] PE complete" << std::endl;
         std::cout.flush();
+    }
     #endif
 }
 
@@ -961,8 +1024,10 @@ static void write_back_spmspv(
     );
 
     #ifndef __SYNTHESIS__
+    if(line_tracing_kernel) {
         std::cout << "[INFO kernel_spmspv] CHECKOUT complete" << std::endl;
         std::cout.flush();
+    }
     #endif
 
     write_back_ddr(
@@ -978,8 +1043,10 @@ static void write_back_spmspv(
     );
 
     #ifndef __SYNTHESIS__
+    if(line_tracing_kernel) {
         std::cout << "[INFO kernel_spmspv] WRITE DDR complete" << std::endl;
         std::cout.flush();
+    }
     #endif
 }
 
@@ -1042,7 +1109,9 @@ void kernel_spmspv(
 
     // line tracing
     #ifndef __SYNTHESIS__
+    if(line_tracing_kernel) {
         std::cout << "[INFO kernel_spmspv] start, input vector non-zero count : " << vec_nnz_total << std::endl;
+    }
     #endif
 
     // loop over all tiles
@@ -1053,7 +1122,9 @@ void kernel_spmspv(
 
         // line tracing
         #ifndef __SYNTHESIS__
+        if(line_tracing_kernel) {
             std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt << " Buffer reset" << std::endl;
+        }
         #endif
 
         // reset output buffer
@@ -1076,8 +1147,10 @@ void kernel_spmspv(
 
         // line tracing
         #ifndef __SYNTHESIS__
+        if(line_tracing_kernel) {
             std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt
                                 << " Base at " << std::setw(5) << tile_base << std::endl;
+        }
         #endif
 
         // execution
@@ -1094,7 +1167,9 @@ void kernel_spmspv(
 
         // line tracing
         #ifndef __SYNTHESIS__
+        if(line_tracing_kernel) {
             std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt << " EX complete" << std::endl;
+        }
         #endif
 
         // write back to result_ddr
@@ -1110,7 +1185,9 @@ void kernel_spmspv(
 
         // line tracing
         #ifndef __SYNTHESIS__
+        if(line_tracing_kernel) {
             std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt << " WB complete" << std::endl;
+        }
         #endif
 
     } // loop over all tiles
@@ -1123,7 +1200,9 @@ void kernel_spmspv(
 
     // line tracing
     #ifndef __SYNTHESIS__
+    if(line_tracing_kernel) {
         std::cout << "[INFO kernel_spmspv] finish, result non-zero count : " << result_nnz_cnt_localreg << std::endl;
+    }
     #endif
 }
 

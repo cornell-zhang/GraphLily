@@ -98,6 +98,8 @@ typedef struct {index_t index; float val;} index_float_t;
 using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
 using aligned_sparse_float_vec_t = std::vector<index_float_t, aligned_allocator<index_float_t>>;
 
+const uint32_t UINT_INF = 0xffffffff;
+
 // Makefile for synthesizing xclbin
 const std::string makefile_prologue =
     "COMMON_REPO = $(GRAPHBLAS_ROOT_PATH)\n"
