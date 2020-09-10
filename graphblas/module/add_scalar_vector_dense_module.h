@@ -19,14 +19,14 @@ template<typename vector_data_t>
 class eWiseAddModule : public BaseModule {
 private:
     using packed_val_t = struct {vector_data_t data[graphblas::pack_size];};
-    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
     /*! \brief String representation of the data type */
     std::string vector_data_t_str_;
     /*! \brief Internal copy of the input vector */
-    aligned_val_t in_;
+    aligned_dense_vec_t in_;
     /*! \brief Internal copy of the output vector */
-    aligned_val_t out_;
+    aligned_dense_vec_t out_;
 
 public:
     // Device buffers
@@ -41,7 +41,7 @@ public:
     /*!
      * \brief Send the input vector from host to device.
      */
-    void send_in_host_to_device(aligned_val_t &in);
+    void send_in_host_to_device(aligned_dense_vec_t &in);
 
     /*!
      * \brief Allocate the output buffer.
@@ -75,7 +75,7 @@ public:
      * \brief Send the output vector from device to host.
      * \return The output vector.
      */
-    aligned_val_t send_out_device_to_host() {
+    aligned_dense_vec_t send_out_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->out_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->out_;
@@ -127,7 +127,7 @@ void eWiseAddModule<vector_data_t>::generate_kernel_ini() {
 
 
 template<typename vector_data_t>
-void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_val_t &in) {
+void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_dense_vec_t &in) {
     this->in_.assign(in.begin(), in.end());
     cl_mem_ext_ptr_t in_ext;
     in_ext.obj = this->in_.data();

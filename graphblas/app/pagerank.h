@@ -47,7 +47,7 @@ public:
     }
 
     void load_and_format_matrix(std::string csr_float_npz_path, float damping) {
-        struct CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
+        CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
         graphblas::io::util_round_csr_matrix_dim(csr_matrix,
                                                  num_channels_ * graphblas::pack_size,
                                                  num_channels_ * graphblas::pack_size);
@@ -63,9 +63,9 @@ public:
         this->SpMV_->send_matrix_host_to_device();
     }
 
-    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
-    aligned_val_t run(vector_data_t damping, uint32_t num_iterations) {
-        aligned_val_t rank(this->matrix_num_rows_, 1.0 / this->matrix_num_rows_);
+    using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    aligned_dense_vec_t run(vector_data_t damping, uint32_t num_iterations) {
+        aligned_dense_vec_t rank(this->matrix_num_rows_, 1.0 / this->matrix_num_rows_);
         this->SpMV_->send_vector_host_to_device(rank);
         this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
         this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);

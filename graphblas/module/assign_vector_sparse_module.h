@@ -19,14 +19,14 @@ template<typename vector_data_t, typename sparse_vector_data_t>
 class AssignVectorSparseModule : public BaseModule {
 private:
     using aligned_mask_t = std::vector<sparse_vector_data_t, aligned_allocator<sparse_vector_data_t>>;
-    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
     /*! \brief String representation of the data type */
     std::string vector_data_t_str_;
     /*! \brief Internal copy of mask */
     aligned_mask_t mask_;
     /*! \brief Internal copy of inout */
-    aligned_val_t  inout_;
+    aligned_dense_vec_t  inout_;
     /*! \brief Internal copy of new_frontier */
     aligned_mask_t new_frontier_;
     /*! \brief Working mode. 0 for BFS, 1 for SSSP */
@@ -64,7 +64,7 @@ public:
     /*!
      * \brief Send the inout from host to device.
      */
-    void send_inout_host_to_device(aligned_val_t &inout);
+    void send_inout_host_to_device(aligned_dense_vec_t &inout);
 
     /*!
      * \brief Bind the mask buffer to an existing buffer.
@@ -111,7 +111,7 @@ public:
      * \brief Send the inout from device to host.
      * \return The inout.
      */
-    aligned_val_t send_inout_device_to_host() {
+    aligned_dense_vec_t send_inout_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->inout_;
@@ -209,7 +209,7 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::send_mask_hos
 
 
 template<typename vector_data_t, typename sparse_vector_data_t>
-void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::send_inout_host_to_device(aligned_val_t &inout) {
+void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::send_inout_host_to_device(aligned_dense_vec_t &inout) {
     this->inout_.assign(inout.begin(), inout.end());
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();
@@ -244,10 +244,12 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::run(vector_da
 
 
 template<typename vector_data_t, typename sparse_vector_data_t>
-void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &mask,
-                                                                       graphblas::aligned_dense_float_vec_t &inout,
-                                                                       graphblas::aligned_sparse_float_vec_t &new_frontier,
-                                                                       float val) {
+void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::compute_reference_results(
+    graphblas::aligned_sparse_float_vec_t &mask,
+    graphblas::aligned_dense_float_vec_t &inout,
+    graphblas::aligned_sparse_float_vec_t &new_frontier,
+    float val
+) {
     new_frontier.clear();
     if (this->mode_ == 0) {
         for (size_t i = 0; i < mask[0].index; i++) {

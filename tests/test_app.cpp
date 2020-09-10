@@ -59,10 +59,20 @@ void test_bfs() {
 
     uint32_t source = 0;
     uint32_t num_iterations = 10;
-    auto kernel_results = bfs.run(source, num_iterations);
+
     auto reference_results = bfs.compute_reference_results(source, num_iterations);
+
+    auto kernel_results = bfs.run_pull_only(source, num_iterations);
     verify<unsigned int>(reference_results, kernel_results);
-    std::cout << "BFS test passed" << std::endl;
+    std::cout << "BFS test pull-only passed" << std::endl;
+
+    kernel_results = bfs.run_push_only(source, num_iterations);
+    verify<unsigned int>(reference_results, kernel_results);
+    std::cout << "BFS test push-only passed" << std::endl;
+
+    kernel_results = bfs.run_pull_push(source, num_iterations);
+    verify<unsigned int>(reference_results, kernel_results);
+    std::cout << "BFS test pull-push passed" << std::endl;
 }
 
 
@@ -93,11 +103,11 @@ void test_pagerank() {
 
 int main(int argc, char *argv[]) {
     // Cannot run more than one application, causing runtime error: some device is already programmed
-    // clean_proj_folder();
-    // test_bfs();
-
     clean_proj_folder();
-    test_pagerank();
+    test_bfs();
+
+    // clean_proj_folder();
+    // test_pagerank();
 }
 
 #pragma GCC diagnostic pop

@@ -19,16 +19,16 @@ template<typename vector_data_t>
 class AssignVectorDenseModule : public BaseModule {
 private:
     using packed_val_t = struct {vector_data_t data[graphblas::pack_size];};
-    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
     /*! \brief The mask type */
     graphblas::MaskType mask_type_;
     /*! \brief String representation of the data type */
     std::string vector_data_t_str_;
     /*! \brief Internal copy of mask */
-    aligned_val_t mask_;
+    aligned_dense_vec_t mask_;
     /*! \brief Internal copy of inout */
-    aligned_val_t inout_;
+    aligned_dense_vec_t inout_;
 
 public:
     // Device buffers
@@ -56,12 +56,12 @@ public:
     /*!
      * \brief Send the mask from host to device.
      */
-    void send_mask_host_to_device(aligned_val_t &mask);
+    void send_mask_host_to_device(aligned_dense_vec_t &mask);
 
     /*!
      * \brief Send the inout from host to device.
      */
-    void send_inout_host_to_device(aligned_val_t &inout);
+    void send_inout_host_to_device(aligned_dense_vec_t &inout);
 
     /*!
      * \brief Bind the mask buffer to an existing buffer.
@@ -90,7 +90,7 @@ public:
      * \brief Send the mask from device to host.
      * \return The mask.
      */
-    aligned_val_t send_mask_device_to_host() {
+    aligned_dense_vec_t send_mask_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->mask_;
@@ -100,7 +100,7 @@ public:
      * \brief Send the inout from device to host.
      * \return The inout.
      */
-    aligned_val_t send_inout_device_to_host() {
+    aligned_dense_vec_t send_inout_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->inout_;
@@ -164,7 +164,7 @@ void AssignVectorDenseModule<vector_data_t>::generate_kernel_ini() {
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_val_t &mask) {
+void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
     this->mask_.assign(mask.begin(), mask.end());
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
@@ -183,7 +183,7 @@ void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_va
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_val_t &inout) {
+void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_dense_vec_t &inout) {
     this->inout_.assign(inout.begin(), inout.end());
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();

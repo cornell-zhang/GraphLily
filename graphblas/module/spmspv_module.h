@@ -31,7 +31,7 @@ unsigned int log2(unsigned int x) {
     }
 }
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 class SpMSpVModule : public BaseModule {
 private:
     /*! \brief Whether the kernel uses mask */
@@ -48,12 +48,12 @@ private:
     uint32_t num_packets_;
 
     // using val_t = vector_data_t;
-    // using val_index_t = struct {val_t val; index_t index;};
+    // using index_val_t = struct {val_t val; index_t index;};
     using packet_t = struct {graphblas::index_t indices[graphblas::pack_size]; matrix_data_t vals[graphblas::pack_size];};
 
     using aligned_index_t = std::vector<graphblas::index_t, aligned_allocator<graphblas::index_t>>;
-    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
-    using aligned_val_index_t = std::vector<val_index_t, aligned_allocator<val_index_t>>;
+    using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    using aligned_sparse_vec_t = std::vector<index_val_t, aligned_allocator<index_val_t>>;
     using aligned_packet_t = std::vector<packet_t, aligned_allocator<packet_t>>;
 
     // String representation of the data type
@@ -67,14 +67,14 @@ private:
     aligned_index_t channel_partptr_;
     /*! \brief Internal copy of the sparse vector.
                The index field of the first element is the non-zero count of the vector */
-    aligned_val_index_t vector_;
+    aligned_sparse_vec_t vector_;
     /*! \brief Internal copy of mask */
-    aligned_val_t mask_;
+    aligned_dense_vec_t mask_;
     /*! \brief The argument index of mask to be used in setArg */
     uint32_t arg_idx_mask_;
     /*! \brief The kernel results.
                The index field of the first element is the non-zero count of the results */
-    aligned_val_index_t results_;
+    aligned_sparse_vec_t results_;
     /*! \brief The sparse matrix using float data type*/
     CSCMatrix<float> csc_matrix_float_;
     /*! \brief The sparse matrix */
@@ -163,12 +163,12 @@ public:
     /*!
      * \brief Send the sparse vector from host to device.
      */
-    void send_vector_host_to_device(aligned_val_index_t &vector);
+    void send_vector_host_to_device(aligned_sparse_vec_t &vector);
 
     /*!
      * \brief Send the mask from host to device.
      */
-    void send_mask_host_to_device(aligned_val_t &mask);
+    void send_mask_host_to_device(aligned_dense_vec_t &mask);
 
     /*!
      * \brief Run the module.
@@ -178,7 +178,7 @@ public:
     /*!
      * \brief Send the sparse vector from device to host.
      */
-    aligned_val_index_t send_vector_device_to_host() {
+    aligned_sparse_vec_t send_vector_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         // truncate useless data
@@ -190,7 +190,7 @@ public:
      * \brief Send the mask from device to host.
      * \return The mask.
      */
-    aligned_val_t send_mask_device_to_host() {
+    aligned_dense_vec_t send_mask_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->mask_;
@@ -200,7 +200,7 @@ public:
      * \brief Send the results from device to host.
      * \return The results.
      */
-    aligned_val_index_t send_results_device_to_host() {
+    aligned_sparse_vec_t send_results_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->results_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         // truncate useless data
@@ -230,23 +230,23 @@ public:
 };
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::_check_data_type() {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_check_data_type() {
     assert((std::is_same<matrix_data_t, vector_data_t>::value));
     this->val_t_str_ = graphblas::dtype_to_str<vector_data_t>();
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::_get_kernel_config(SemiRingType semiring,
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_get_kernel_config(SemiRingType semiring,
                                                                                  uint32_t out_buffer_len) {
     this->semiring_ = semiring;
     this->out_buffer_len_ = out_buffer_len;
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::generate_kernel_header() {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_header() {
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
@@ -334,8 +334,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::generate_kernel_he
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::generate_kernel_ini() {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_ini() {
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
@@ -364,8 +364,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::generate_kernel_in
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::load_and_format_matrix(CSCMatrix<float> const &csc_matrix_float) {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::load_and_format_matrix(CSCMatrix<float> const &csc_matrix_float) {
     this->csc_matrix_float_ = csc_matrix_float;
     this->csc_matrix_ = graphblas::io::csc_matrix_convert_from_float<matrix_data_t>(csc_matrix_float);
     SpMSpVDataFormatter<matrix_data_t,index_t,packet_t>
@@ -393,15 +393,18 @@ void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::load_and_format_ma
         this->channel_partptr_[i] = formatter.get_formatted_partptr(i);
     }
 
+    // reserve enough space for the vector
+    this->vector_.resize(this->get_num_cols() + 1);
+
     // prepare output memory
     this->results_.resize(this->get_num_rows() + 1);
 
-    std::fill(this->results_.begin(), this->results_.end(), (val_index_t){0,0});
+    std::fill(this->results_.begin(), this->results_.end(), (index_val_t){0,0});
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::send_matrix_host_to_device() {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_to_device() {
     cl_int err;
     // Handle matrix packet, indptr and partptr
     cl_mem_ext_ptr_t channel_packets_ext;
@@ -447,7 +450,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::send_matrix_host_t
     // Allocate memory on the FPGA
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(val_index_t) * (this->get_num_rows() + 1),
+        sizeof(index_val_t) * (this->get_num_rows() + 1),
         &results_ext,
         &err));
 
@@ -489,26 +492,24 @@ void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::send_matrix_host_t
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::send_vector_host_to_device(aligned_val_index_t &vector) {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_to_device(aligned_sparse_vec_t &vector) {
     cl_int err;
 
     // copy the input vector
-    this->vector_.assign(vector.begin(), vector.end());
+    std::copy(vector.begin(), vector.end(), this->vector_.begin());
     std::cout << "[INFO send_vector_host_to_device] : external vector copied" << std::endl << std::flush;
     std::cout << "[INFO send_vector_host_to_device] : external vector size : " << vector.size() << std::endl << std::flush;
-    index_t vector_nnz_cnt = vector[0].index;
 
     // Handle vector
     cl_mem_ext_ptr_t vector_ext;
-
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
     vector_ext.flags = graphblas::DDR[0];
 
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(val_index_t) * (vector_nnz_cnt + 1),
+                sizeof(index_val_t) * this->vector_.size(),
                 &vector_ext,
                 &err));
     std::cout << "[INFO send_vector_host_to_device] : memory allocated on FPGA" << std::endl << std::flush;
@@ -522,8 +523,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::send_vector_host_t
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::send_mask_host_to_device(aligned_val_t &mask) {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
     cl_int err;
 
     this->mask_.assign(mask.begin(), mask.end());
@@ -545,17 +546,17 @@ void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::send_mask_host_to_
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::run() {
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::run() {
     cl_int err;
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();
 }
 
 // reference without mask
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 graphblas::aligned_sparse_float_vec_t
-SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector) {
+SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector) {
     // measure dimensions
     unsigned int vec_nnz_total = vector[0].index;
     unsigned int num_rows = this->csc_matrix_.num_rows;
@@ -622,9 +623,9 @@ SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::compute_reference_resul
 
 
 // reference with mask
-template<typename matrix_data_t, typename vector_data_t, typename val_index_t>
+template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 graphblas::aligned_sparse_float_vec_t
-SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
+SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
                                                                                    graphblas::aligned_dense_float_vec_t &mask) {
     // measure dimensions
     unsigned int vec_nnz_total = vector[0].index;

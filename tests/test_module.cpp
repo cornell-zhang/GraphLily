@@ -4,6 +4,7 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 #include <ap_fixed.h>
+#include "graphblas/global.h"
 #include "graphblas/io/data_loader.h"
 #include "graphblas/io/data_formatter.h"
 #include "graphblas/module/spmv_module.h"
@@ -20,18 +21,6 @@ void clean_proj_folder() {
     std::string command = "rm -rf ./" + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-}
-
-
-template <typename sparse_vec_t, typename dense_vec_t>
-dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector, uint32_t range) {
-    int nnz = sparse_vector[0].index;
-    dense_vec_t dense_vector(range);
-    std::fill(dense_vector.begin(), dense_vector.end(), 0);
-    for (int i = 1; i < nnz + 1; i++) {
-        dense_vector[sparse_vector[i].index] = sparse_vector[i].val;
-    }
-    return dense_vector;
 }
 
 
@@ -151,18 +140,15 @@ void test_spmv_module() {
 template<typename matrix_data_t, typename vector_data_t, graphblas::SemiRingType semiring>
 void test_spmspv_module() {
     // data types
-    using val_index_t = struct {
-        graphblas::index_t index;
-        vector_data_t val;
-    };
-    using aligned_val_index_t = std::vector<val_index_t, aligned_allocator<val_index_t>>;
-    using aligned_val_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    using index_val_t = struct {graphblas::index_t index; vector_data_t val;};
+    using aligned_sparse_vec_t = std::vector<index_val_t, aligned_allocator<index_val_t>>;
+    using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
     // vector sparsity 99%
     float vector_sparsity = 0.99;
 
     // output buffer size (MUST DIVIDE 32)
-    uint32_t output_buffer_len = 128;
+    uint32_t out_buffer_len = 128;
 
     // matrix data path
     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
@@ -186,7 +172,7 @@ void test_spmspv_module() {
     vector_head.index = vector_nnz_cnt;
     vector_head.val = 0;
     vector_float.insert(vector_float.begin(), vector_head);
-    aligned_val_index_t vector(vector_float.size());
+    aligned_sparse_vec_t vector(vector_float.size());
     for (size_t i = 0; i < vector[0].index + 1; i++) {
         vector[i].index = vector_float[i].index;
         vector[i].val = vector_float[i].val;
@@ -198,16 +184,16 @@ void test_spmspv_module() {
     for (size_t i = 0; i < mask_length; i++) {
         mask_float[i] = (float)(rand() % 2);
     }
-    aligned_val_t mask;
+    aligned_dense_vec_t mask;
     std::copy(mask_float.begin(), mask_float.end(), std::back_inserter(mask));
 
-    aligned_val_index_t kernel_results(csc_matrix.num_rows + 1);
+    aligned_sparse_vec_t kernel_results(csc_matrix.num_rows + 1);
     graphblas::aligned_sparse_float_vec_t reference_results(csc_matrix.num_rows + 1);
 
     /*----------------------------- No mask -------------------------------*/
     {
-    graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>
-        module(semiring, output_buffer_len);
+    graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>
+        module(semiring, out_buffer_len);
 
     module.set_target(target);
     module.set_mask_type(graphblas::kNoMask);
@@ -219,40 +205,40 @@ void test_spmspv_module() {
     module.run();
     kernel_results = module.send_results_device_to_host();
     reference_results = module.compute_reference_results(vector_float);
-    aligned_val_t kernel_results_dense =
-        convert_sparse_vec_to_dense_vec<aligned_val_index_t, aligned_val_t>(
+    aligned_dense_vec_t kernel_results_dense =
+        graphblas::convert_sparse_vec_to_dense_vec<aligned_sparse_vec_t, aligned_dense_vec_t>(
             kernel_results, csc_matrix.num_rows);
     graphblas::aligned_dense_float_vec_t reference_results_dense =
-        convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
+        graphblas::convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
             reference_results, csc_matrix.num_rows);
     verify<vector_data_t>(reference_results_dense, kernel_results_dense);
     std::cout << "SpMSpV test with no mask passed" << std::endl;
     }
 
     /*----------------------------- With mask -------------------------------*/
-    // {
-    // graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, val_index_t>
-    //     module2(semiring, output_buffer_len);
-    // module2.set_target(target);
-    // module2.set_mask_type(graphblas::kMaskWriteToZero);
-    // module2.compile();
-    // module2.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-    // module2.load_and_format_matrix(csc_matrix);
-    // module2.send_matrix_host_to_device();
-    // module2.send_mask_host_to_device(mask);
-    // module2.send_vector_host_to_device(vector);
-    // module2.run();
-    // kernel_results = module2.send_results_device_to_host();
-    // reference_results = module2.compute_reference_results(vector_float, mask_float);
-    // aligned_val_t kernel_results_dense =
-    //     convert_sparse_vec_to_dense_vec<aligned_val_index_t, aligned_val_t>(
-    //         kernel_results, csc_matrix.num_rows);
-    // graphblas::aligned_dense_float_vec_t reference_results_dense =
-    //     convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
-    //         reference_results, csc_matrix.num_rows);
-    // verify<vector_data_t>(reference_results_dense, kernel_results_dense);
-    // std::cout << "SpMSpV test with mask passed" << std::endl;
-    // }
+    {
+    graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>
+        module2(semiring, out_buffer_len);
+    module2.set_target(target);
+    module2.set_mask_type(graphblas::kMaskWriteToZero);
+    module2.compile();
+    module2.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module2.load_and_format_matrix(csc_matrix);
+    module2.send_matrix_host_to_device();
+    module2.send_mask_host_to_device(mask);
+    module2.send_vector_host_to_device(vector);
+    module2.run();
+    kernel_results = module2.send_results_device_to_host();
+    reference_results = module2.compute_reference_results(vector_float, mask_float);
+    aligned_dense_vec_t kernel_results_dense =
+        graphblas::convert_sparse_vec_to_dense_vec<aligned_sparse_vec_t, aligned_dense_vec_t>(
+            kernel_results, csc_matrix.num_rows);
+    graphblas::aligned_dense_float_vec_t reference_results_dense =
+        graphblas::convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
+            reference_results, csc_matrix.num_rows);
+    verify<vector_data_t>(reference_results_dense, kernel_results_dense);
+    std::cout << "SpMSpV test with mask passed" << std::endl;
+    }
 }
 
 
@@ -288,6 +274,7 @@ void test_assign_vector_dense_module() {
     std::cout << "AssignVectorDenseModule test passed" << std::endl;
 }
 
+
 void test_assign_vector_sparse_module() {
     using vector_data_t = unsigned int;
     using sparse_data_t = struct {
@@ -305,7 +292,6 @@ void test_assign_vector_sparse_module() {
 
     unsigned int length = (unsigned int)floor(inout_size * (1 - mask_sparsity));
     unsigned int mask_indices_increment = inout_size / length;
-
 
     graphblas::module::AssignVectorSparseModule<vector_data_t,sparse_data_t> module;
     module.set_target(target);
@@ -380,55 +366,19 @@ void test_assign_vector_sparse_module() {
     kernel_new_frontier = module.send_new_frontier_device_to_host();
     module.compute_reference_results(mask_float_sssp, reference_inout_sssp, reference_new_frontier, 0);
 
-    // std::cout << "Inout = [";
-    // for (size_t i = 0; i < kernel_inout_print.size(); i++) {
-    //     std::cout << ((kernel_inout_print[i] == graphblas::UINT_INF) ? "INF" : std::to_string(kernel_inout_print[i])) << ", ";
-    // }
-    // std::cout << "]" << std::endl;
-
-    // std::cout << "Mask_sssp = [";
-    // for (size_t i = 1; i < length + 1; i++) {
-    //     std::cout << "(@" << mask_sssp[i].index << "," << mask_sssp[i].val << "), ";
-    // }
-    // std::cout << "]" << std::endl;
-
-    // std::cout << "Ref Inout' = [";
-    // for (size_t i = 0; i < reference_inout_sssp.size(); i++) {
-    //     std::cout << ((reference_inout_sssp[i] == graphblas::UINT_INF) ? "INF" : std::to_string(reference_inout_sssp[i])) << ", ";
-    // }
-    // std::cout << "]" << std::endl;
-
-    // std::cout << "Knl Inout' = [";
-    // for (size_t i = 0; i < kernel_inout_sssp.size(); i++) {
-    //     std::cout << ((kernel_inout_sssp[i] == graphblas::UINT_INF) ? "INF" : std::to_string(kernel_inout_sssp[i])) << ", ";
-    // }
-    // std::cout << "]" << std::endl;
-
     verify<vector_data_t>(reference_inout_sssp, kernel_inout_sssp);
     std::cout << "[INFO test_assign_sparse:SSSP] Inout Matched" << std::endl;
 
     graphblas::aligned_dense_float_vec_t dense_ref_nf =
-        convert_sparse_vec_to_dense_vec<
+        graphblas::convert_sparse_vec_to_dense_vec<
             graphblas::aligned_sparse_float_vec_t,graphblas::aligned_dense_float_vec_t
         >(reference_new_frontier,inout_size);
 
     std::vector<vector_data_t,aligned_allocator<vector_data_t>> dense_knl_nf =
-        convert_sparse_vec_to_dense_vec<
+        graphblas::convert_sparse_vec_to_dense_vec<
             std::vector<sparse_data_t,aligned_allocator<sparse_data_t>>,
             std::vector<vector_data_t,aligned_allocator<vector_data_t>>
         >(kernel_new_frontier,inout_size);
-
-    // std::cout << "Ref New_frontier = [";
-    // for (size_t i = 1; i < reference_new_frontier[0].index + 1; i++) {
-    //     std::cout << "(@" << reference_new_frontier[i].index << "," << reference_new_frontier[i].val << "), ";
-    // }
-    // std::cout << "]" << std::endl;
-
-    // std::cout << "Knl New_frontier = [";
-    // for (size_t i = 1; i < kernel_new_frontier[0].index + 1; i++) {
-    //     std::cout << "(@" << kernel_new_frontier[i].index << "," << kernel_new_frontier[i].val << "), ";
-    // }
-    // std::cout << "]" << std::endl;
 
     verify<vector_data_t>(dense_ref_nf, dense_knl_nf);
     std::cout << "[INFO test_assign_sparse:SSSP] New_frontier Matched" << std::endl;
@@ -522,30 +472,29 @@ void test_copy_buffer_bind_buffer() {
 
 
 int main(int argc, char *argv[]) {
-    // clean_proj_folder();
-    // test_spmv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
+    clean_proj_folder();
+    test_spmv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
 
-    // clean_proj_folder();
-    // test_spmv_module<ap_ufixed<32, 1>, ap_ufixed<32, 1>, graphblas::kMulAdd>();
+    clean_proj_folder();
+    test_spmv_module<ap_ufixed<32, 1>, ap_ufixed<32, 1>, graphblas::kMulAdd>();
 
-    // clean_proj_folder();
-    // test_spmspv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
+    clean_proj_folder();
+    test_spmspv_module<unsigned int, unsigned int, graphblas::kLogicalAndOr>();
 
     clean_proj_folder();
     test_spmspv_module<ap_ufixed<32, 1>, ap_ufixed<32, 1>, graphblas::kMulAdd>();
 
-    // clean_proj_folder();
-    // test_assign_vector_dense_module();
+    clean_proj_folder();
+    test_assign_vector_dense_module();
 
-    // clean_proj_folder();
-    // test_assign_vector_sparse_module();
+    clean_proj_folder();
+    test_assign_vector_sparse_module();
 
-    // clean_proj_folder();
-    // test_add_scalar_vector_dense_module();
+    clean_proj_folder();
+    test_add_scalar_vector_dense_module();
 
-    // clean_proj_folder();
-    // test_copy_buffer_bind_buffer();
-
+    clean_proj_folder();
+    test_copy_buffer_bind_buffer();
 }
 
 #pragma GCC diagnostic pop

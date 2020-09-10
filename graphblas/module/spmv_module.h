@@ -48,7 +48,7 @@ private:
     using partition_indptr_t = struct {graphblas::index_t start; graphblas::packed_index_t nnz;};
 
     using aligned_index_t = std::vector<graphblas::index_t, aligned_allocator<graphblas::index_t>>;
-    using aligned_val_t = std::vector<val_t, aligned_allocator<val_t>>;
+    using aligned_dense_vec_t = std::vector<val_t, aligned_allocator<val_t>>;
     using aligned_packed_index_t = std::vector<graphblas::packed_index_t, aligned_allocator<graphblas::packed_index_t>>;
     using aligned_packed_val_t = std::vector<packed_val_t, aligned_allocator<packed_val_t>>;
     using aligned_packet_t = std::vector<packet_t, aligned_allocator<packet_t>>;
@@ -62,13 +62,13 @@ private:
     /*! \brief Matrix packets (indices + vals) for each channel */
     std::vector<aligned_packet_t> channel_packets_;
     /*! \brief Internal copy of the dense vector */
-    aligned_val_t vector_;
+    aligned_dense_vec_t vector_;
     /*! \brief Internal copy of mask */
-    aligned_val_t mask_;
+    aligned_dense_vec_t mask_;
     /*! \brief The argument index of mask to be used in setArg */
     uint32_t arg_idx_mask_;
     /*! \brief The kernel results */
-    aligned_val_t results_;
+    aligned_dense_vec_t results_;
     /*! \brief The sparse matrix using float data type*/
     CSRMatrix<float> csr_matrix_float_;
     /*! \brief The sparse matrix */
@@ -162,12 +162,12 @@ public:
     /*!
      * \brief Send the dense vector from host to device.
      */
-    void send_vector_host_to_device(aligned_val_t &vector);
+    void send_vector_host_to_device(aligned_dense_vec_t &vector);
 
     /*!
      * \brief Send the mask from host to device.
      */
-    void send_mask_host_to_device(aligned_val_t &mask);
+    void send_mask_host_to_device(aligned_dense_vec_t &mask);
 
     /*!
      * \brief Run the module.
@@ -177,7 +177,7 @@ public:
     /*!
      * \brief Send the dense vector from device to host.
      */
-    aligned_val_t send_vector_device_to_host() {
+    aligned_dense_vec_t send_vector_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->vector_;
@@ -187,7 +187,7 @@ public:
      * \brief Send the mask from device to host.
      * \return The mask.
      */
-    aligned_val_t send_mask_device_to_host() {
+    aligned_dense_vec_t send_mask_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->mask_;
@@ -197,7 +197,7 @@ public:
      * \brief Send the results from device to host.
      * \return The results.
      */
-    aligned_val_t send_results_device_to_host() {
+    aligned_dense_vec_t send_results_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->results_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
         return this->results_;
@@ -452,7 +452,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligned_val_t &vector) {
+void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligned_dense_vec_t &vector) {
     this->vector_.assign(vector.begin(), vector.end());
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
@@ -471,7 +471,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
 
 
 template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_val_t &mask) {
+void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
     this->mask_.assign(mask.begin(), mask.end());
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();

@@ -141,6 +141,23 @@ std::string add_kernel_to_makefile(std::string kernel_name) {
 // Project folder name
 const std::string proj_folder_name = "proj";
 
+
+//------------------------------------------
+// Utilities
+//------------------------------------------
+
+template <typename sparse_vec_t, typename dense_vec_t>
+dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector, uint32_t range) {
+    int nnz = sparse_vector[0].index;
+    dense_vec_t dense_vector(range);
+    std::fill(dense_vector.begin(), dense_vector.end(), 0);
+    for (int i = 1; i < nnz + 1; i++) {
+        dense_vector[sparse_vector[i].index] = sparse_vector[i].val;
+    }
+    return dense_vector;
+}
+
+
 } // namespace graphblas
 
 #endif // __GRAPHBLAS_GLOBAL_H
