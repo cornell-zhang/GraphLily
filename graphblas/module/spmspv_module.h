@@ -257,8 +257,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_he
     header << "const unsigned int NUM_PORT_PER_BANK = 2;" << std::endl;
     header << "const unsigned int NUM_BANK = NUM_PE" << ";" << std::endl;
     header << "const unsigned int NUM_LANE = NUM_BANK * NUM_PORT_PER_BANK" << ";" << std::endl;
-    header << "const unsigned int PE_ID_NBITS = "   << log2(graphblas::pack_size) << ";" << std::endl;
-    header << "const unsigned int BANK_ID_NBITS = " << log2(graphblas::pack_size) << ";" << std::endl;
+    header << "const unsigned int PE_ID_NBITS = "   << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
+    header << "const unsigned int BANK_ID_NBITS = " << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
     header << "const unsigned int BANK_ID_MASK = (1 << BANK_ID_NBITS) - 1" << ";" << std::endl;
     header << "const unsigned int TILE_SIZE = " << this->out_buffer_len_ << ";" << std::endl;
     header << "const unsigned int BANK_SIZE = TILE_SIZE / NUM_BANK" << ";" << std::endl;

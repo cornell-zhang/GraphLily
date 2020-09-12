@@ -73,6 +73,18 @@ std::string dtype_to_str() {
     return str;
 }
 
+// used to calculate BANK_ID_NBITS
+unsigned int log2(unsigned int x) {
+    switch (x) {
+        case    1: return 0;
+        case    2: return 1;
+        case    4: return 2;
+        case    8: return 3;
+        case   16: return 4;
+        default  : return 0;
+    }
+}
+
 // Semiring type
 enum SemiRingType {
     kMulAdd = 0,

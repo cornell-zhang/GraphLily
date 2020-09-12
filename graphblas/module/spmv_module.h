@@ -16,7 +16,6 @@
 using graphblas::io::CSRMatrix;
 using graphblas::io::SpMVDataFormatter;
 
-
 namespace graphblas {
 namespace module {
 
@@ -259,9 +258,15 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
     header << "const unsigned int NUM_PORT_PER_BANK = 2;" << std::endl;
     header << "const unsigned int NUM_BANK_PER_HBM_CHANNEL = NUM_PE_PER_HBM_CHANNEL/NUM_PORT_PER_BANK"
            << ";" << std::endl;
+    header << "const unsigned int BANK_ID_NBITS = " << graphblas::log2(graphblas::pack_size/2)
+           << ";" << std::endl;
+    header << "const unsigned int BANK_ID_MASK = (1 << BANK_ID_NBITS) - 1" << ";" << std::endl;
     header << "const unsigned int OUT_BUFFER_LEN = " << this->out_buffer_len_ << ";" << std::endl;
     header << "const unsigned int VECTOR_BUFFER_LEN = " << this->vector_buffer_len_ << ";" << std::endl;
     header << "const unsigned int MAX_NUM_PARTITION = " << this->max_num_partitions_ << ";" << std::endl;
+    header << "const unsigned int ARBITER_LATENCY = 6" << ";" << std::endl;
+    header << "const unsigned int FWD_DISTANCE = ARBITER_LATENCY + 2" << ";" << std::endl;
+    header << "const unsigned int ROTATE_FWD_DISTANCE = ARBITER_LATENCY + 9" << ";" << std::endl;
     // Data types
     header << "typedef unsigned int INDEX_T;" << std::endl;
     header << "typedef " << this->val_t_str_ << " VAL_T;" << std::endl;

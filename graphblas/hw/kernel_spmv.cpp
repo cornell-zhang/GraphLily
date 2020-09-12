@@ -2,27 +2,60 @@
 #include <ap_fixed.h>
 #include <assert.h>
 #include <iostream>
+#include <iomanip>
 
 #include "./kernel_spmv.h"
 
+//------------------------------------------------------------
+// line tracing swtiches
+//------------------------------------------------------------
 
-unsigned int log2(unsigned int x) {
-    switch (x) {
-        case    1: return 0;
-        case    2: return 1;
-        case    4: return 2;
-        case    8: return 3;
-        case   16: return 4;
-        default  : return 0;
+#ifndef __SYNTHESIS__
+bool line_tracing_PE_R = false;
+bool line_tracing_PE_A = false;
+bool line_tracing_PE_stages = false;
+bool line_tracing_PE = true;
+#endif
+
+//------------------------------------------------------------
+// functions used for line tracing
+//------------------------------------------------------------
+
+#ifndef __SYNTHESIS__
+
+// to calculate total progress
+template<typename T, const unsigned int ARRAY_SIZE>
+T array_sum(T array[ARRAY_SIZE]) {
+    T result = 0;
+    for (size_t i = 0; i < ARRAY_SIZE; i++) {
+        result += array[i];
     }
+    return result;
 }
 
-bool bool_array_and(bool array[NUM_PE_PER_HBM_CHANNEL]) {
+#endif
+
+//----------------------------------------------------
+// Hardware Manipulating Helper Functions
+//----------------------------------------------------
+
+// force a register
+template<class T>
+T HLS_REG(T in){
+#pragma HLS pipeline
+#pragma HLS inline off
+#pragma HLS interface port=return register
+    return in;
+}
+
+
+
+bool bool_array_and(bool array1[NUM_PE_PER_HBM_CHANNEL],bool array2[NUM_PE_PER_HBM_CHANNEL]) {
     // #pragma HLS INLINE off
     bool result = true;
     for (int i = 0; i < NUM_PE_PER_HBM_CHANNEL; i++) {
         #pragma HLS UNROLL
-        result = result & array[i];
+        result = result && (array1[i] && array2[i]);
     }
     return result;
 }
@@ -39,34 +72,32 @@ unsigned int unsigned_array_max(unsigned int array[NUM_PE_PER_HBM_CHANNEL]) {
 
 // Cyclic partitioning
 unsigned int get_bank_idx(unsigned int full_addr) {
-    return full_addr & ((1 << log2(NUM_BANK_PER_HBM_CHANNEL)) - 1);
+    return full_addr & BANK_ID_MASK;
 }
 
 // Cyclic partitioning
 unsigned int get_bank_address(unsigned int full_addr) {
-    return full_addr >> log2(NUM_BANK_PER_HBM_CHANNEL);
+    return full_addr >> BANK_ID_NBITS;
 }
 
 template <typename T>
-void array_shift_left(T array[NUM_PE_PER_HBM_CHANNEL], unsigned int rotate) {
-    T array_swap[NUM_PE_PER_HBM_CHANNEL];
+void array_shift_left(
+    T array[NUM_PE_PER_HBM_CHANNEL],
+    T array_swap[NUM_PE_PER_HBM_CHANNEL],
+    unsigned int rotate) {
     #pragma HLS ARRAY_PARTITION variable=array_swap complete
 
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
         array_swap[PE_idx] = array[(PE_idx + rotate) % NUM_PE_PER_HBM_CHANNEL];
     }
-    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
-        #pragma HLS UNROLL
-        array[PE_idx] = array_swap[PE_idx];
-    }
+
 }
 
 template <typename T>
-void array_shift_right(T array[NUM_PE_PER_HBM_CHANNEL], unsigned int rotate) {
+void array_shift_right(T array[NUM_PE_PER_HBM_CHANNEL],unsigned int rotate) {
     T array_swap[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=array_swap complete
-
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
         array_swap[PE_idx] = array[(PE_idx + NUM_PE_PER_HBM_CHANNEL - rotate) % NUM_PE_PER_HBM_CHANNEL];
@@ -77,28 +108,27 @@ void array_shift_right(T array[NUM_PE_PER_HBM_CHANNEL], unsigned int rotate) {
     }
 }
 
-void crossbar(VAL_T vector_uram_one_channel[VECTOR_BUFFER_LEN/NUM_BANK_PER_HBM_CHANNEL + 1][NUM_BANK_PER_HBM_CHANNEL],
-              INDEX_T in_address[NUM_PE_PER_HBM_CHANNEL],
-              bool in_valid[NUM_PE_PER_HBM_CHANNEL],
-              VAL_T out_data[NUM_PE_PER_HBM_CHANNEL],
-              bool out_valid[NUM_PE_PER_HBM_CHANNEL],
-              unsigned int rotate) {
-    #pragma HLS INLINE
+void crossbar_arbiter(
+            // request address
+            INDEX_T in_address[NUM_PE_PER_HBM_CHANNEL],
+            bool in_valid[NUM_PE_PER_HBM_CHANNEL],
+            // arbitration results
+            unsigned int bank_idx_to_PE_idx[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK],
+            unsigned int bank_address[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK],
+            unsigned int bank_num_valid_requests[NUM_BANK_PER_HBM_CHANNEL],
+            // grant PEs
+            bool out_valid[NUM_PE_PER_HBM_CHANNEL],
+            // priority roatae
+            unsigned int rotate) {
+    #pragma HLS pipeline II=1
+    #pragma HLS latency min=ARBITER_LATENCY max=ARBITER_LATENCY
+    assert(rotate < NUM_PE_PER_HBM_CHANNEL);
 
-    unsigned int bank_idx_to_PE_idx[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK];
-    #pragma HLS ARRAY_PARTITION variable=bank_idx_to_PE_idx complete dim=0
-
-    unsigned int bank_address[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK];
-    #pragma HLS ARRAY_PARTITION variable=bank_address complete dim=0
-
-    unsigned int bank_num_valid_requests[NUM_BANK_PER_HBM_CHANNEL];
-    #pragma HLS ARRAY_PARTITION variable=bank_num_valid_requests complete
-
+    // reset arbitration results
     for (int bank_idx = 0; bank_idx < NUM_BANK_PER_HBM_CHANNEL; bank_idx++) {
         #pragma HLS UNROLL
         bank_num_valid_requests[bank_idx] = 0;
     }
-
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
         out_valid[PE_idx] = false;
@@ -110,19 +140,34 @@ void crossbar(VAL_T vector_uram_one_channel[VECTOR_BUFFER_LEN/NUM_BANK_PER_HBM_C
     unsigned int in_bank_address[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=in_bank_address complete dim=1
 
-    assert(rotate < NUM_PE_PER_HBM_CHANNEL);
+    bool in_valid_temp[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=in_valid_temp complete dim=1
 
-    array_shift_left<bool>(in_valid, rotate);
-    array_shift_left<unsigned int>(in_address, rotate);
+    unsigned int in_address_temp[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=in_address_temp complete dim=1
+
+    // reset arbiter results
+    loop_reset_crossbar:
+    for (int bank_idx = 0; bank_idx < NUM_BANK_PER_HBM_CHANNEL; bank_idx++) {
+        #pragma HLS UNROLL
+        for (int port_idx = 0; port_idx < NUM_PORT_PER_BANK; port_idx++) {
+            #pragma HLS UNROLL
+            bank_idx_to_PE_idx[bank_idx][port_idx] = 0;
+            bank_address[bank_idx][port_idx] = 0;
+        }
+    }
+
+    array_shift_left<bool>(in_valid, in_valid_temp, rotate);
+    array_shift_left<unsigned int>(in_address, in_address_temp, rotate);
 
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
-        in_bank_idx[PE_idx] = get_bank_idx(in_address[PE_idx]);
+        in_bank_idx[PE_idx] = get_bank_idx(in_address_temp[PE_idx]);
     }
 
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
-        in_bank_address[PE_idx] = get_bank_address(in_address[PE_idx]);
+        in_bank_address[PE_idx] = get_bank_address(in_address_temp[PE_idx]);
     }
 
     loop_crossbar_bank_idx:
@@ -130,32 +175,118 @@ void crossbar(VAL_T vector_uram_one_channel[VECTOR_BUFFER_LEN/NUM_BANK_PER_HBM_C
         #pragma HLS UNROLL
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
-            if (in_valid[PE_idx] && (in_bank_idx[PE_idx] == bank_idx)) {
+            if (in_valid_temp[PE_idx] && (in_bank_idx[PE_idx] == bank_idx)) {
+                // just an alias
                 unsigned int port_idx = bank_num_valid_requests[bank_idx];
+
+                // if there is idle port to assign to this PE
                 if (port_idx < NUM_PORT_PER_BANK) {
+                    // generate arbitration results
                     bank_idx_to_PE_idx[bank_idx][port_idx] = PE_idx;
                     bank_address[bank_idx][port_idx] = in_bank_address[PE_idx];
                     bank_num_valid_requests[bank_idx]++;
+                    // grant PEs
                     out_valid[PE_idx] = true;
                 }
             }
         }
     }
 
-    array_shift_right<bool>(in_valid, rotate);
-    array_shift_right<unsigned int>(in_address, rotate);
-
     array_shift_right<bool>(out_valid, rotate);
+    // line tracing
+    #ifndef __SYNTHESIS__
+    if(line_tracing_PE_A) {
+        for (int b = 0; b < NUM_BANK_PER_HBM_CHANNEL; b++) {
+            for (unsigned int p = 0; p < NUM_PORT_PER_BANK; p++) {
+                std::cout   << "[INFO kernel_spmv] Arbiter: Bank[" << b << "](" << std::setw(1) << bank_num_valid_requests[b] << "), "
+                            << "Port[" << p <<"],"
+                            << "Addr: " << std::setw(5) << ((p < bank_num_valid_requests[b]) ? std::to_string(bank_address[b][p]) : "-----") << ", "
+                            << "to PE[" << std::setw(2) << ((p < bank_num_valid_requests[b]) ? std::to_string(bank_idx_to_PE_idx[b][p]) : "--") << "], "
+                            << std::endl << std::flush;
+            }
+        }
+        std::cout << std::endl;
+    }
+    #endif
 
+
+
+}
+
+void crossbar_read(
+            // URAM
+            VAL_T vector_uram_one_channel[VECTOR_BUFFER_LEN/NUM_BANK_PER_HBM_CHANNEL + 1][NUM_BANK_PER_HBM_CHANNEL],
+            // arbitration results
+            unsigned int bank_idx_to_PE_idx[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK],
+            unsigned int bank_address[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK],
+            unsigned int bank_num_valid_requests[NUM_BANK_PER_HBM_CHANNEL],
+            // response
+            VAL_T out_data[NUM_PE_PER_HBM_CHANNEL],
+            // priority rotate
+            unsigned int rotate) {
+    #pragma HLS inline
+
+    assert(rotate < NUM_PE_PER_HBM_CHANNEL);
+
+    unsigned int local_bank_idx_to_PE_idx[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK];
+    unsigned int local_bank_address[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK];
+    unsigned int local_bank_num_valid_requests[NUM_BANK_PER_HBM_CHANNEL];
+    #pragma HLS array_partition variable=local_bank_idx_to_PE_idx complete dim=0
+    #pragma HLS array_partition variable=local_bank_address complete dim=0
+    #pragma HLS array_partition variable=local_out_dbank_num_valid_requestsata_temp complete dim=0
+
+    VAL_T out_data_temp[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS array_partition variable=out_data_temp complete dim=0
+    // reset output
+    for (int pe_idx = 0; pe_idx < NUM_PE_PER_HBM_CHANNEL; pe_idx++) {
+        #pragma HLS UNROLL
+        out_data_temp[pe_idx] = 0;
+    }
+
+    // input pilpeline
+    for (int bank_idx = 0; bank_idx < NUM_BANK_PER_HBM_CHANNEL; bank_idx++) {
+        #pragma HLS UNROLL
+        local_bank_num_valid_requests[bank_idx] =
+            HLS_REG<unsigned int>(
+                HLS_REG<unsigned int>(
+                    HLS_REG<unsigned int>(
+                        HLS_REG<unsigned int>(bank_num_valid_requests[bank_idx]))));
+        for (unsigned int port_idx = 0; port_idx < NUM_PORT_PER_BANK; port_idx++) {
+            #pragma HLS UNROLL
+            local_bank_idx_to_PE_idx[bank_idx][port_idx] =
+                HLS_REG<unsigned int>(
+                    HLS_REG<unsigned int>(
+                        HLS_REG<unsigned int>(
+                            HLS_REG<unsigned int>(bank_idx_to_PE_idx[bank_idx][port_idx]))));
+            local_bank_address[bank_idx][port_idx] =
+                HLS_REG<unsigned int>(
+                    HLS_REG<unsigned int>(
+                        HLS_REG<unsigned int>(
+                            HLS_REG<unsigned int>(bank_address[bank_idx][port_idx]))));
+        }
+    }
+
+    // first get read data
     for (int bank_idx = 0; bank_idx < NUM_BANK_PER_HBM_CHANNEL; bank_idx++) {
         #pragma HLS UNROLL
         for (unsigned int port_idx = 0; port_idx < NUM_PORT_PER_BANK; port_idx++) {
             #pragma HLS UNROLL
-            if (port_idx < bank_num_valid_requests[bank_idx]) {
-                out_data[bank_idx_to_PE_idx[bank_idx][port_idx]] =
-                    vector_uram_one_channel[bank_address[bank_idx][port_idx]][bank_idx];
+            if (port_idx < local_bank_num_valid_requests[bank_idx]) {
+                out_data_temp[local_bank_idx_to_PE_idx[bank_idx][port_idx]] =
+                    vector_uram_one_channel[local_bank_address[bank_idx][port_idx]][bank_idx];
             }
         }
+    }
+
+    // then send read data out
+    for (int pe_idx = 0; pe_idx < NUM_PE_PER_HBM_CHANNEL; pe_idx++) {
+        #pragma HLS UNROLL
+        out_data[pe_idx] =
+            HLS_REG<VAL_T>(
+                HLS_REG<VAL_T>(
+                    HLS_REG<VAL_T>(
+                        HLS_REG<VAL_T>(out_data_temp[pe_idx]))));
+
     }
 
     array_shift_right<VAL_T>(out_data, rotate);
@@ -246,142 +377,292 @@ static void read_vector_ddr_to_uram(const PACKED_VAL_T *vector,
 }
 
 
-static void compute_spmv_one_channel(hls::stream<INDEX_T> indices_stream_one_PE[NUM_PE_PER_HBM_CHANNEL],
+static void compute_spmv_one_channel(hls::stream<INDEX_T> indices_stream_one_PE[NUM_PE_PER_HBM_CHANNEL], // first element is size
                                      hls::stream<VAL_T> vals_stream_one_PE[NUM_PE_PER_HBM_CHANNEL],
                                      VAL_T vector_uram_one_channel[VECTOR_BUFFER_LEN/NUM_BANK_PER_HBM_CHANNEL + 1][NUM_BANK_PER_HBM_CHANNEL],
                                      hls::stream<VAL_T> out_stream_one_channel[NUM_PE_PER_HBM_CHANNEL]) {
+    // used to measure PE progress
     int size[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=size complete
-
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
         size[PE_idx] = indices_stream_one_PE[PE_idx].read();
     }
+    int fetch_cnt[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=fetch_cnt complete
+    int process_cnt[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=process_cnt complete
+    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
+        #pragma HLS UNROLL
+        fetch_cnt[PE_idx] = 0;
+        process_cnt[PE_idx] = 0;
+    }
+    // PE finish flags
+    bool all_fetched[NUM_PE_PER_HBM_CHANNEL];
+    // This needs to be frowarded
+    bool all_processed[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=all_fetched complete
+    #pragma HLS ARRAY_PARTITION variable=all_processed complete
+    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
+        #pragma HLS UNROLL
+        all_fetched[PE_idx] = false;
+        all_processed[PE_idx] = false;
+    }
 
+    // column id
     INDEX_T index[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=index complete
-
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
-        index[PE_idx] = indices_stream_one_PE[PE_idx].read();
+        // index[PE_idx] = indices_stream_one_PE[PE_idx].read();
+        index[PE_idx] = 0;
     }
 
+    // URAM read request valid
     bool in_valid[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=in_valid complete
-
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
-        in_valid[PE_idx] = (index[PE_idx] != IDX_MARKER);
+        in_valid[PE_idx] = false;
     }
 
+    // nnz from matrix
     VAL_T val[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=val complete
 
-    bool finished[NUM_PE_PER_HBM_CHANNEL];
-    #pragma HLS ARRAY_PARTITION variable=finished complete
-
-    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
-        #pragma HLS UNROLL
-        finished[PE_idx] = false;
-    }
-
+    // URAM read data (nnz from vector)
     VAL_T vector_data[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=vector_data complete
 
-    bool out_valid[NUM_PE_PER_HBM_CHANNEL];
-    #pragma HLS ARRAY_PARTITION variable=out_valid complete
-
+    // PE local accumulative register
     VAL_T tmp_out[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=tmp_out complete
-
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
         tmp_out[PE_idx] = 0;
     }
 
-    bool fifo_empty[NUM_PE_PER_HBM_CHANNEL];
-    #pragma HLS ARRAY_PARTITION variable=fifo_empty complete
-
+    // fetch failed flag
+    bool F_valid[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=F_valid complete
     for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
         #pragma HLS UNROLL
-        fifo_empty[PE_idx] = false;
+        F_valid[PE_idx] = false;
     }
 
+    // arbitration results
+    unsigned int bank_idx_to_PE_idx[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK];
+    unsigned int bank_address[NUM_BANK_PER_HBM_CHANNEL][NUM_PORT_PER_BANK];
+    unsigned int bank_num_valid_requests[NUM_BANK_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=bank_idx_to_PE_idx complete dim=0
+    #pragma HLS ARRAY_PARTITION variable=bank_address complete dim=0
+    #pragma HLS ARRAY_PARTITION variable=bank_num_valid_requests complete dim=0
+
+    // arbiter grant signal
+    bool out_valid[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=out_valid complete
+
+    // forwarding switch
+    // This needs to be frowarded
+    bool resend[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=resend complete
+    for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
+        #pragma HLS UNROLL
+        resend[PE_idx] = false;
+    }
+
+    // operator of MAC
     bool write[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=write complete
 
+    // operator of MAC
     bool accumulate[NUM_PE_PER_HBM_CHANNEL];
     #pragma HLS ARRAY_PARTITION variable=accumulate complete
 
+    // forwarding channel
+    // These need to be frowarded
+    INDEX_T index_fwd[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=index_fwd complete
+    VAL_T   val_fwd[NUM_PE_PER_HBM_CHANNEL];
+    #pragma HLS ARRAY_PARTITION variable=val_fwd   complete
+
+    // aribiter priority rotation
     unsigned int rotate = 0;
+    // This needs to be frowarded
+    unsigned int next_rotate = 0;
+
+    // used for line tracing
+    #ifndef __SYNTHESIS__
+        int round = 0;
+        bool input_success_ltr[NUM_PE_PER_HBM_CHANNEL];
+        VAL_T tmp_out_ltr[NUM_PE_PER_HBM_CHANNEL];
+    #endif
 
     loop_compute_spmv_one_channel:
-    while (!bool_array_and(finished)) {
+    // all_processed is forwarded from P
+    while (!bool_array_and(all_fetched,all_processed)) {
+        #pragma HLS dependence variable=all_processed   distance=FWD_DISTANCE           inter RAW true
+        #pragma HLS dependence variable=resend          distance=FWD_DISTANCE           inter RAW true
+        #pragma HLS dependence variable=index_fwd       distance=FWD_DISTANCE           inter RAW true
+        #pragma HLS dependence variable=val_fwd         distance=FWD_DISTANCE           inter RAW true
+        #pragma HLS dependence variable=next_rotate     distance=FWD_DISTANCE           inter RAW true
         #pragma HLS PIPELINE II=1
 
-        crossbar(vector_uram_one_channel, index, in_valid, vector_data, out_valid, rotate);
-        rotate++;
-        if (rotate >= NUM_PE_PER_HBM_CHANNEL) rotate -= NUM_PE_PER_HBM_CHANNEL;
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_PE) {
+            std::cout   << "[" << array_sum<int,NUM_PE_PER_HBM_CHANNEL>(process_cnt)
+                        << "/" << array_sum<int,NUM_PE_PER_HBM_CHANNEL>(size)
+                        << "]\t"
+                        << "Round " << round
+                        << std::endl;
+            round ++;
+        }
+        #endif
 
+        // stage F (fetch)
+        rotate = next_rotate;
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
-            if (!finished[PE_idx] && (index[PE_idx] == IDX_MARKER) && !fifo_empty[PE_idx]) {
-                write[PE_idx] = true;
+            all_fetched[PE_idx] = (fetch_cnt[PE_idx] >= size[PE_idx]);
+
+            // no need to do anything
+            if (all_fetched[PE_idx] && all_processed[PE_idx]) {
+                F_valid[PE_idx] = false;
+                index[PE_idx] = 0; // a dummy number
+                val[PE_idx] = 0; // a dummy number
+                in_valid[PE_idx] = false;
+            // need to either resend or fetch or wait for the resent ones to be arbitrated
+            } else {
+                // resend is forwarded from P.
+                if(resend[PE_idx]) {
+                    F_valid[PE_idx] = true;
+                    index[PE_idx] = index_fwd[PE_idx];
+                    val[PE_idx] = val_fwd[PE_idx];
+                    in_valid[PE_idx] = true;
+                // normal fetch
+                } else if(!all_fetched[PE_idx]) {
+                    INDEX_T Fidx;
+                    VAL_T   Fval;
+                    bool Fidx_rd_success = indices_stream_one_PE[PE_idx].read_nb(Fidx);
+                    bool Fval_rd_success = vals_stream_one_PE[PE_idx].read_nb(Fval);
+                    if (Fidx_rd_success && Fval_rd_success) {
+                        F_valid[PE_idx] = true;
+                        index[PE_idx] = Fidx;
+                        val[PE_idx] = Fval;
+                        in_valid[PE_idx] = (Fidx != IDX_MARKER);
+                        fetch_cnt[PE_idx] ++;
+                    } else {
+                        F_valid[PE_idx] = false;
+                        index[PE_idx] = 0; // a dummy number
+                        val[PE_idx] = 0; // a dummy number
+                        in_valid[PE_idx] = false;
+                    }
+
+                    // used for line tracing
+                    #ifndef __SYNTHESIS__
+                        input_success_ltr[PE_idx] = Fidx_rd_success && Fval_rd_success;
+                    #endif
+                // wait for the resent ones to be arbitrated, fill in with dummies
+                } else {
+                    F_valid[PE_idx] = false;
+                    index[PE_idx] = 0; // a dummy number
+                    val[PE_idx] = 0; // a dummy number
+                    in_valid[PE_idx] = false;
+                }
+            }
+
+
+        }
+        // -------- end of stage F
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_PE_stages) {
+            std::cout << "F" << std::flush;
+        }
+        #endif
+
+        // stage A (arbiter)
+        crossbar_arbiter(
+            index,
+            in_valid,
+            bank_idx_to_PE_idx,
+            bank_address,
+            bank_num_valid_requests,
+            out_valid,
+            rotate
+        );
+        // -------- end of stage A
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_PE_stages) {
+            std::cout << "A" << std::flush;
+        }
+        #endif
+
+        // stage P (post_arbiter)
+        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
+            #pragma HLS UNROLL
+            all_processed[PE_idx] = (process_cnt[PE_idx] >= size[PE_idx]);
+
+            // activate forwarding when read will fail
+            if (F_valid[PE_idx] && (!out_valid[PE_idx]) && in_valid[PE_idx]) {
+                resend[PE_idx] = true;
+                index_fwd[PE_idx] = index[PE_idx];
+                val_fwd[PE_idx] = val[PE_idx];
+            } else {
+                resend[PE_idx] = false;
+            }
+
+            // select MAC operator
+            if(F_valid[PE_idx]) {
+                // need to write
+                write[PE_idx] = !in_valid[PE_idx];
+                // need to accumulate
+                accumulate[PE_idx] = out_valid[PE_idx];
+                // if a value will be consumed; increment process_cnt
+                if(write[PE_idx] || accumulate[PE_idx]) process_cnt[PE_idx] ++;
             } else {
                 write[PE_idx] = false;
-            }
-            if (!finished[PE_idx] && out_valid[PE_idx] && !fifo_empty[PE_idx]) {
-                accumulate[PE_idx] = true;
-            } else {
                 accumulate[PE_idx] = false;
             }
         }
-
-        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
-            #pragma HLS UNROLL
-            // consume a value; decrement size
-            if ((out_valid[PE_idx] || (index[PE_idx] == IDX_MARKER)) && !fifo_empty[PE_idx]) {
-                size[PE_idx]--;
-            }
+        // update priority rotate
+        next_rotate = (rotate + 1) % NUM_PE_PER_HBM_CHANNEL;
+        // -------- end of stage P
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_PE_stages) {
+            std::cout << "P" << std::flush;
         }
+        #endif
 
-        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
-            #pragma HLS UNROLL
-            if (size[PE_idx] <= 0) {
-                finished[PE_idx] = true;
-            }
+        // stage R (uram_read)
+        crossbar_read(
+            vector_uram_one_channel,
+            bank_idx_to_PE_idx,
+            bank_address,
+            bank_num_valid_requests,
+            vector_data,
+            rotate
+        );
+        // -------- end of stage R
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_PE_stages) {
+            std::cout << "R" << std::flush;
         }
+        #endif
 
+        // stage C (commit)
         for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
             #pragma HLS UNROLL
-            if (finished[PE_idx]) {
-                fifo_empty[PE_idx] = false;
-                index[PE_idx] = 0; // a dummy number
-                in_valid[PE_idx] = false;
-            } else if (out_valid[PE_idx] || (index[PE_idx] == IDX_MARKER) || fifo_empty[PE_idx]) {
-                if (indices_stream_one_PE[PE_idx].read_nb(index[PE_idx])) {
-                    fifo_empty[PE_idx] = false;
-                    in_valid[PE_idx] = (index[PE_idx] != IDX_MARKER);
-                } else {
-                    fifo_empty[PE_idx] = true;
-                    in_valid[PE_idx] = false;
-                }
-            } else {
-                fifo_empty[PE_idx] = false;
-                index[PE_idx] = index[PE_idx];
-                in_valid[PE_idx] = true;
-            }
-        }
 
-        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
-            #pragma HLS UNROLL
-            if (write[PE_idx] || accumulate[PE_idx]) {
-                val[PE_idx] = vals_stream_one_PE[PE_idx].read();
-            }
-        }
+            // used for line tracing
+            #ifndef __SYNTHESIS__
+                tmp_out_ltr[PE_idx] = tmp_out[PE_idx];
+            #endif
 
-        for (int PE_idx = 0; PE_idx < NUM_PE_PER_HBM_CHANNEL; PE_idx++) {
-            #pragma HLS UNROLL
             if (write[PE_idx]) {
                 out_stream_one_channel[PE_idx] << tmp_out[PE_idx];
                 tmp_out[PE_idx] = 0;
@@ -396,10 +677,47 @@ static void compute_spmv_one_channel(hls::stream<INDEX_T> indices_stream_one_PE[
 #endif
             }
         }
+        // -------- end of stage C
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_PE_stages) {
+            std::cout << "C" << std::endl << std::flush;
+        }
+        #endif
+
+
+        // line tracing
+        #ifndef __SYNTHESIS__
+        if(line_tracing_PE) {
+            // PE states
+            for (size_t k = 0; k < NUM_PE_PER_HBM_CHANNEL; k++) {
+                bool display_value = input_success_ltr[k] || !out_valid[k];
+                bool is_marker = (index[k] == IDX_MARKER);
+                std::cout << "PE [" << std::setw(2) << k << "] {"
+                                    << ""  << std::setw(4) << (all_processed[k]     ?  "----" :  std::to_string(process_cnt[k]))                                       << ""  << ""
+                                    << "} {"
+                                    << ""  << std::setw(2) << (resend[k]            ? "R>" : (input_success_ltr[k] ? "->" : "--"))                              << ""  << "|"
+                                    << ""  << std::setw(9) << (display_value        ? std::to_string((float)val[k])                                     : "--") << ""  << "|"
+                                    << ""  << std::setw(9) << (display_value        ? std::to_string((float)vector_data[k])                             : "--") << ""  << "|"
+                                    << "[" << std::setw(5) << (display_value        ? (!is_marker ? std::to_string(index[k])                : "-EOR-")   : "--") << ""  << ""
+                                    << "(" << std::setw(2) << (display_value        ? (!is_marker ? std::to_string(index[k] & BANK_ID_MASK) : "..")      : "--") << ")]"<< "|"
+                                    << ""  << std::setw(9) << (!all_processed[k]    ? std::to_string((float)tmp_out_ltr[k])                             : "--") << ""  << "|"
+                                    << ""  << std::setw(9) << (!all_processed[k]    ? std::to_string((float)tmp_out[k])                                 : "--") << ""
+                                    << "} {"
+                                    << (index[k] == IDX_MARKER  ? "Rm" :
+                                            in_valid[k]         ? "Rv" : " ." ) << ":"
+                                    << (!out_valid[k]           ?  "x" :  "o" ) << "|"
+                                    << (write[k]                ? "Wc" :
+                                            accumulate[k]       ? "Ac" : " ." ) << "|"
+                                    << "}";
+                std::cout << std::endl << std::flush;
+            }
+        }
+        #endif
     }
 }
 
-
+// might need pipelining here
 static void write_out_bram_one_PE(hls::stream<VAL_T> &s,
                                   VAL_T out_bram_one_PE[OUT_BUFFER_LEN/NUM_PE_TOTAL + 1],
                                   unsigned int PE_idx,
@@ -945,6 +1263,7 @@ void kernel_spmv(
         PACKED_VAL_T tmp_mask;
 #endif
 
+        // might need pipelining here
         loop_write_to_out_ddr:
         for (int i = 0; i < vsize; i++) {
             #pragma HLS PIPELINE II=1

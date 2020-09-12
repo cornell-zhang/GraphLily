@@ -849,6 +849,70 @@ static void execution_spmspv(
 }
 
 //----------------------------------------------------
+// bram access used for checkout results
+//----------------------------------------------------
+
+void bram_access_read_2ports(
+    // real read ports
+    INDEX_T rd_addr[NUM_LANE],
+    VAL_T   rd_data[NUM_LANE],
+    // bram
+    VAL_T bram[NUM_BANK][BANK_SIZE]
+){
+    // #pragma HLS pipeline II=1
+    #pragma HLS inline
+
+    // pipeline registers (_local means local to bram)
+    INDEX_T rd_addr_local[NUM_LANE];
+    #pragma HLS array_partition variable=rd_addr_local complete
+
+    // input pipeline
+    loop_rb_inpp_abresult_unroll:
+    for (unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
+        #pragma HLS unroll
+        for (unsigned int PTid = 0; PTid < NUM_PORT_PER_BANK; PTid++) {
+            #pragma HLS unroll
+            rd_addr_local[BKid * NUM_PORT_PER_BANK + PTid] =
+                HLS_REG<INDEX_T>(
+                    HLS_REG<INDEX_T>(
+                        HLS_REG<INDEX_T>(
+                            HLS_REG<INDEX_T>(
+                                HLS_REG<INDEX_T>(rd_addr[BKid * NUM_PORT_PER_BANK + PTid])))));
+        }
+    }
+
+    // read access logic
+    VAL_T rd_data_local[NUM_LANE];
+    #pragma HLS array_partition variable=rd_data_local complete
+
+    // first get read data
+    loop_rd_get_data_unroll:
+    for(unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
+        #pragma HLS unroll
+        for (unsigned int PTid = 0; PTid < NUM_PORT_PER_BANK; PTid++) {
+            #pragma HLS unroll
+            INDEX_T sbbk_addr = rd_addr_local[BKid * NUM_PORT_PER_BANK + PTid] >> BANK_ID_NBITS;
+            rd_data_local[BKid * NUM_PORT_PER_BANK + PTid] = bram[BKid][sbbk_addr];
+        }
+    }
+
+    // output pipeline
+    loop_rb_outpp_vpresp_unroll:
+    for(unsigned int BKid = 0; BKid < NUM_BANK; BKid++){
+        #pragma HLS unroll
+        for (unsigned int PTid = 0; PTid < NUM_PORT_PER_BANK; PTid++) {
+            #pragma HLS unroll
+            rd_data[BKid * NUM_PORT_PER_BANK + PTid] =
+                HLS_REG<VAL_T>(
+                    HLS_REG<VAL_T>(
+                        HLS_REG<VAL_T>(
+                            HLS_REG<VAL_T>(
+                                HLS_REG<VAL_T>(rd_data_local[BKid * NUM_PORT_PER_BANK + PTid])))));
+        }
+    }
+}
+
+//----------------------------------------------------
 // change results to sparse
 //----------------------------------------------------
 
@@ -862,51 +926,38 @@ static void checkout_results(
     hls::stream<unsigned int> &Nnnz_no_mask
 ) {
     unsigned int local_Nnnz_no_mask = 0;
+    INDEX_T index_arr[NUM_LANE];
+    VAL_T data_arr[NUM_LANE];
+    #pragma HLS array_partition variable=index_arr complete
+    #pragma HLS array_partition variable=data_arr complete
+
     loop_over_dense_data_pipeline:
     for (unsigned int round_cnt = 0; round_cnt < BANK_SIZE / NUM_PORT_PER_BANK; round_cnt ++) {
         #pragma HLS pipeline II=1
+        #pragma HLS latency min=31 max=31
         unsigned int local_Nnnz_inc = 0;
 
-        loop_banks_unroll:
+        loop_before_read_banks_unroll:
         for (unsigned int Bank_id = 0; Bank_id < NUM_BANK; Bank_id++) {
             #pragma HLS unroll
-            loop_ports_unroll:
+            loop_before_read_ports_unroll:
             for (unsigned int Port_id = 0; Port_id < NUM_PORT_PER_BANK; Port_id++) {
                 #pragma HLS unroll
-                INDEX_T index = Bank_id + (round_cnt * NUM_PORT_PER_BANK + Port_id) * NUM_BANK;
-                VAL_T data = 0;
-                // pipeline the control signal
-                bool BRAM_RD_ENABLE_local =
-                    HLS_REG<bool>(
-                        HLS_REG<bool>(
-                            HLS_REG<bool>(
-                                HLS_REG<bool>(
-                                    HLS_REG<bool>(round_cnt < BANK_SIZE / NUM_PORT_PER_BANK)))));
-                if(BRAM_RD_ENABLE_local) {
-                    // input pipeline to BRAM
-                    INDEX_T bank_id_bram_local =
-                        HLS_REG<INDEX_T>(
-                            HLS_REG<INDEX_T>(
-                                HLS_REG<INDEX_T>(
-                                    HLS_REG<INDEX_T>(
-                                        HLS_REG<INDEX_T>(Bank_id)))));
-                    INDEX_T sub_bank_addr_bram_local =
-                        HLS_REG<INDEX_T>(
-                                HLS_REG<INDEX_T>(
-                                    HLS_REG<INDEX_T>(
-                                        HLS_REG<INDEX_T>(
-                                            HLS_REG<INDEX_T>(round_cnt * NUM_PORT_PER_BANK + Port_id)))));
-                    // output pipeline from BRAM
-                    data =
-                        HLS_REG<VAL_T>(
-                            HLS_REG<VAL_T>(
-                                HLS_REG<VAL_T>(
-                                    HLS_REG<VAL_T>(
-                                        HLS_REG<VAL_T>(dense_data[bank_id_bram_local][sub_bank_addr_bram_local])))));
-                }
-                if(data) {
-                    nnz_streams[Bank_id * NUM_PORT_PER_BANK + Port_id].write(data);
-                    idx_streams[Bank_id * NUM_PORT_PER_BANK + Port_id].write(index);
+                index_arr[Bank_id * NUM_PORT_PER_BANK + Port_id] = Bank_id + (round_cnt * NUM_PORT_PER_BANK + Port_id) * NUM_BANK;
+            }
+        }
+
+        bram_access_read_2ports(index_arr,data_arr,dense_data);
+
+        loop_after_read_banks_unroll:
+        for (unsigned int Bank_id = 0; Bank_id < NUM_BANK; Bank_id++) {
+            #pragma HLS unroll
+            loop_after_read_ports_unroll:
+            for (unsigned int Port_id = 0; Port_id < NUM_PORT_PER_BANK; Port_id++) {
+                #pragma HLS unroll
+                if(data_arr[Bank_id * NUM_PORT_PER_BANK + Port_id]) {
+                    nnz_streams[Bank_id * NUM_PORT_PER_BANK + Port_id].write(data_arr[Bank_id * NUM_PORT_PER_BANK + Port_id]);
+                    idx_streams[Bank_id * NUM_PORT_PER_BANK + Port_id].write(index_arr[Bank_id * NUM_PORT_PER_BANK + Port_id]);
                     local_Nnnz_inc ++;
                 }
             }
