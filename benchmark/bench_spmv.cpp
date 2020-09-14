@@ -1,0 +1,101 @@
+#include <iostream>
+#include <chrono>
+
+#include "graphblas/io/data_loader.h"
+#include "graphblas/module/spmv_module.h"
+
+
+template <typename data_t>
+void verify(std::vector<float, aligned_allocator<float>> &reference_results,
+            std::vector<data_t, aligned_allocator<data_t>> &kernel_results) {
+    if (!(reference_results.size() == kernel_results.size())) {
+        std::cout << "Size mismatch!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    float epsilon = 0.0001;
+    for (size_t i = 0; i < reference_results.size(); i++) {
+        if (abs(float(kernel_results[i]) - reference_results[i]) > epsilon) {
+            std::cout << "Error: Result mismatch"
+                      << std::endl;
+            std::cout << "i = " << i
+                      << " Reference result = " << reference_results[i]
+                      << " Kernel result = " << kernel_results[i]
+                      << std::endl;
+            // exit(EXIT_FAILURE);
+        }
+    }
+}
+
+
+void bench_spmv(uint32_t num_channels, std::string bitstream, std::string dataset) {
+    graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
+    using matrix_data_t = unsigned int;
+    using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
+    uint32_t out_buffer_len = 320 * 1024;
+    uint32_t vector_buffer_len= 64 * 1024;
+    graphblas::module::SpMVModule<matrix_data_t, vector_data_t> spmv(semiring,
+                                                                     num_channels,
+                                                                     out_buffer_len,
+                                                                     vector_buffer_len);
+
+    std::string target = "hw";
+    spmv.set_target(target);
+    spmv.set_mask_type(graphblas::kMaskWriteToZero);
+    spmv.set_up_runtime(bitstream);
+
+    std::string csr_float_npz_path = dataset;
+    CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
+    for (auto &x : csr_matrix.adj_data) x = 1;
+
+    graphblas::io::util_round_csr_matrix_dim(csr_matrix,
+                                             num_channels * graphblas::pack_size,
+                                             graphblas::pack_size);
+
+    std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
+    std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % 2);});
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> vector(vector_float.begin(),
+                                                                        vector_float.end());
+
+    std::vector<float, aligned_allocator<float>> mask_float(csr_matrix.num_cols);
+    std::generate(mask_float.begin(), mask_float.end(), [&](){return float(rand() % 2);});
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> mask(mask_float.begin(), mask_float.end());
+
+    std::vector<vector_data_t, aligned_allocator<vector_data_t>> kernel_results;
+    std::vector<float, aligned_allocator<float>> reference_results;
+
+    spmv.load_and_format_matrix(csr_matrix);
+    spmv.send_matrix_host_to_device();
+    spmv.send_vector_host_to_device(vector);
+    spmv.send_mask_host_to_device(mask);
+    spmv.run();
+
+    uint32_t num_runs = 10;
+    auto t1 = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < num_runs; i++) {
+        spmv.run();
+    }
+    auto t2 = std::chrono::high_resolution_clock::now();
+    float average_time_in_sec = float(std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count())
+        / 1000000 / num_runs;
+    std::cout << "average_time: " << average_time_in_sec * 1000 << " ms" << std::endl;
+
+    uint32_t nnz = spmv.get_nnz();
+    double throughput = nnz * (sizeof(unsigned int) + sizeof(unsigned int)); // indices + values
+    throughput /= 1000;                // to KB
+    throughput /= 1000;                // to MB
+    throughput /= 1000;                // to GB
+    throughput /= average_time_in_sec; // to GB/s
+    std::cout << "Memory THROUGHPUT = " << throughput << " GB/s" << std::endl;
+    std::cout << "Compute THROUGHPUT = " << throughput / (sizeof(unsigned int) + sizeof(unsigned int))
+              << " GOPS" << std::endl;
+
+    // kernel_results = spmv.send_results_device_to_host();
+    // reference_results = spmv.compute_reference_results(vector_float, mask_float);
+    // verify<vector_data_t>(reference_results, kernel_results);
+    // std::cout << "SpMV passed" << std::endl;
+}
+
+
+int main(int argc, char *argv[]) {
+    bench_spmv(strtol(argv[1], NULL, 10), argv[2], argv[3]);
+}

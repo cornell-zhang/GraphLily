@@ -24,8 +24,8 @@ void kernel_assign_vector_sparse(
     *       new_frontier will be generated
     */
 #pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem0
-#pragma HLS INTERFACE m_axi port=inout offset=slave bundle=gmem1
-#pragma HLS INTERFACE m_axi port=new_frontier offset=slave bundle=gmem2
+#pragma HLS INTERFACE m_axi port=inout offset=slave bundle=gmem0
+#pragma HLS INTERFACE m_axi port=new_frontier offset=slave bundle=gmem0
 
 #pragma HLS INTERFACE s_axilite port=mask bundle=control
 #pragma HLS INTERFACE s_axilite port=inout bundle=control

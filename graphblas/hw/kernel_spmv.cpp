@@ -11,10 +11,10 @@
 //------------------------------------------------------------
 
 #ifndef __SYNTHESIS__
-bool line_tracing_PE_R = false;
-bool line_tracing_PE_A = false;
-bool line_tracing_PE_stages = false;
-bool line_tracing_PE = true;
+static bool line_tracing_PE_R = false;
+static bool line_tracing_PE_A = false;
+static bool line_tracing_PE_stages = false;
+static bool line_tracing_PE = true;
 #endif
 
 //------------------------------------------------------------
@@ -861,9 +861,9 @@ void kernel_spmv(
 // #pragma HLS INTERFACE m_axi port=channel_15_partition_indptr offset=slave bundle=gmem16
 
 #pragma HLS INTERFACE m_axi port=vector offset=slave bundle=gmem17
-#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem18
+#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem17
 #if defined(USE_MASK)
-#pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem19
+#pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem17
 #endif
 
 #pragma HLS INTERFACE s_axilite port=channel_0_matrix bundle=control

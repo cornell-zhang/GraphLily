@@ -14,7 +14,7 @@ void kernel_add_scalar_vector_dense(
     VAL_T val                // The value to be added
 ) {
 #pragma HLS INTERFACE m_axi port=in offset=slave bundle=gmem0
-#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem0
 
 #pragma HLS INTERFACE s_axilite port=in bundle=control
 #pragma HLS INTERFACE s_axilite port=out bundle=control

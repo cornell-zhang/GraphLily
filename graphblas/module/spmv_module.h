@@ -240,7 +240,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::_get_kernel_config(SemiRingType s
     this->num_channels_ = num_channels;
     this->out_buffer_len_ = out_buffer_len;
     this->vector_buffer_len_ = vector_buffer_len;
-    this->max_num_partitions_ = 1024;
+    this->max_num_partitions_ = 256;
 }
 
 
@@ -319,12 +319,12 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
     }
     // DDR
     for (size_t i = 0; i < this->num_channels_; i++) {
-        ini << "sp=kernel_spmv_1.channel_" << i << "_partition_indptr:DDR[1]" << std::endl;
+        ini << "sp=kernel_spmv_1.channel_" << i << "_partition_indptr:DDR[0]" << std::endl;
     }
-    ini << "sp=kernel_spmv_1.vector:DDR[1]" << std::endl;
-    ini << "sp=kernel_spmv_1.out:DDR[1]" << std::endl;
+    ini << "sp=kernel_spmv_1.vector:DDR[0]" << std::endl;
+    ini << "sp=kernel_spmv_1.out:DDR[0]" << std::endl;
     if (this->use_mask_) {
-        ini << "sp=kernel_spmv_1.mask:DDR[1]" << std::endl;
+        ini << "sp=kernel_spmv_1.mask:DDR[0]" << std::endl;
     }
     ini.close();
 }
@@ -402,7 +402,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     for (size_t c = 0; c < this->num_channels_; c++) {
         channel_partition_indptr_ext[c].obj = this->channel_partition_indptr_[c].data();
         channel_partition_indptr_ext[c].param = 0;
-        channel_partition_indptr_ext[c].flags = graphblas::DDR[1];
+        channel_partition_indptr_ext[c].flags = graphblas::DDR[0];
         channel_packets_ext[c].obj = this->channel_packets_[c].data();
         channel_packets_ext[c].param = 0;
         channel_packets_ext[c].flags = graphblas::HBM[c];
@@ -426,7 +426,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     cl_mem_ext_ptr_t results_ext;
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
-    results_ext.flags = graphblas::DDR[1];
+    results_ext.flags = graphblas::DDR[0];
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
         sizeof(val_t) * this->csr_matrix_.num_rows,
@@ -462,7 +462,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphblas::DDR[1];
+    vector_ext.flags = graphblas::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -481,7 +481,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphblas::DDR[1];
+    mask_ext.flags = graphblas::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,

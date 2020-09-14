@@ -14,7 +14,7 @@ void kernel_assign_vector_dense(
     VAL_T val                  // The value to be assigned to the inout vector
 ) {
 #pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem0
-#pragma HLS INTERFACE m_axi port=inout offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=inout offset=slave bundle=gmem0
 
 #pragma HLS INTERFACE s_axilite port=mask bundle=control
 #pragma HLS INTERFACE s_axilite port=inout bundle=control

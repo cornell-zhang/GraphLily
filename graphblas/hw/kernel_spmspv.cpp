@@ -13,9 +13,9 @@
 
 #ifndef __SYNTHESIS__
 
-bool line_tracing_DL = false;
-bool line_tracing_PE = false;
-bool line_tracing_kernel = true;
+static bool line_tracing_DL = false;
+static bool line_tracing_PE = false;
+static bool line_tracing_kernel = true;
 
 #endif
 
@@ -1129,7 +1129,7 @@ void kernel_spmspv(
 #if defined(USE_MASK)
     #pragma HLS INTERFACE m_axi port=mask_ddr         offset=slave bundle=gmem2
 #endif
-    #pragma HLS INTERFACE m_axi port=result_ddr       offset=slave bundle=gmem3
+    #pragma HLS INTERFACE m_axi port=result_ddr       offset=slave bundle=gmem2
 
     #pragma HLS INTERFACE s_axilite port=mat_dwi_ddr      bundle=control
     #pragma HLS INTERFACE s_axilite port=mat_idxptr_ddr   bundle=control
@@ -1153,7 +1153,8 @@ void kernel_spmspv(
     static VAL_T bram[NUM_BANK][BANK_SIZE];
     #pragma HLS array_partition variable=bram complete dim=1
     // *************  Pipelining BRAM ***************
-    #pragma HLS resource variable=bram core=RAM_2P_BRAM latency=4
+    // #pragma HLS resource variable=bram core=RAM_2P_BRAM latency=4
+    #pragma HLS RESOURCE variable=bram core=XPM_MEMORY uram latency=4
 
     unsigned int result_nnz_cnt_localreg = 0;
     unsigned int vec_nnz_total = vec_dit_ddr[0].index;
