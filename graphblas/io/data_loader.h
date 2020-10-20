@@ -97,7 +97,7 @@ struct CSCMatrix {
     uint32_t num_cols;
     /*! \brief The non-zero data of the sparse matrix */
     std::vector<data_type> adj_data;
-    /*! \brief The column indices of the sparse matrix */
+    /*! \brief The row indices of the sparse matrix */
     std::vector<uint32_t> adj_indices;
     /*! \brief The index pointers of the sparse matrix */
     std::vector<uint32_t> adj_indptr;

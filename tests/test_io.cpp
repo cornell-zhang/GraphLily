@@ -1,7 +1,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
-#include <cassert>
+#include <gtest/gtest.h>
 
 #include "graphblas/io/data_loader.h"
 #include "graphblas/io/data_formatter.h"
@@ -11,23 +11,14 @@ using namespace graphblas::io;
 
 template<typename T>
 void check_vector_equal(std::vector<T> const& vec1, std::vector<T> const& vec2) {
-    if (!(vec1.size() == vec2.size())) {
-        std::cout << "Size mismatch!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-    if (!(std::equal(vec1.begin(), vec1.end(), vec2.begin()))) {
-        std::cout << "Value mismatch!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    ASSERT_EQ(vec1.size(), vec2.size());
+    ASSERT_TRUE(std::equal(vec1.begin(), vec1.end(), vec2.begin()));
 }
 
 
 template<typename T, uint32_t pack_size>
 void check_packed_vector_equal(std::vector<T> const& vec1, std::vector<T> const& vec2) {
-    if (!(vec1.size() == vec2.size())) {
-        std::cout << "Size mismatch!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    ASSERT_EQ(vec1.size(), vec2.size());
     auto predicate = [](T a, T b) {
         for (uint32_t i = 0; i < pack_size; i++) {
             if (a.data[i] != b.data[i]) {
@@ -36,57 +27,7 @@ void check_packed_vector_equal(std::vector<T> const& vec1, std::vector<T> const&
         }
         return true;
     };
-    if (!(std::equal(vec1.begin(), vec1.end(), vec2.begin(), predicate))) {
-        std::cout << "Value mismatch!" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-}
-
-
-void test_create_csr_matrix() {
-    uint32_t num_rows = 5;
-    uint32_t num_cols = 5;
-    std::vector<float> adj_data = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-    std::vector<uint32_t> adj_indices = {0, 1, 2, 3, 0, 2, 1, 3, 2};
-    std::vector<uint32_t> adj_indptr = {0, 4, 6, 7, 8, 9};
-
-    CSRMatrix<float> csr_matrix = create_csr_matrix(num_rows, num_cols, adj_data, adj_indices, adj_indptr);
-
-    assert(csr_matrix.num_rows == num_rows);
-    assert(csr_matrix.num_cols == num_cols);
-    check_vector_equal<float>(csr_matrix.adj_data, adj_data);
-    check_vector_equal<uint32_t>(csr_matrix.adj_indices, adj_indices);
-    check_vector_equal<uint32_t>(csr_matrix.adj_indptr, adj_indptr);
-
-    std::cout << "test_create_csr_matrix passed" << std::endl;
-}
-
-
-void test_load_csr_matrix_from_float_npz() {
-    CSRMatrix<float> csr_matrix = load_csr_matrix_from_float_npz("../test_data/eye_10_csr_float32.npz");
-
-    assert(csr_matrix.num_rows == 10);
-    assert(csr_matrix.num_cols == 10);
-    check_vector_equal<float>(csr_matrix.adj_data, std::vector<float>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
-    check_vector_equal<uint32_t>(csr_matrix.adj_indices, std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
-    check_vector_equal<uint32_t>(csr_matrix.adj_indptr, std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
-
-    std::cout << "test_load_csr_matrix_from_float_npz passed" << std::endl;
-}
-
-
-void test_csr_matrix_convert_from_float() {
-    CSRMatrix<float> csr_matrix_float = load_csr_matrix_from_float_npz("../test_data/eye_10_csr_float32.npz");
-    CSRMatrix<int> csr_matrix_int = csr_matrix_convert_from_float<int>(csr_matrix_float);
-
-    assert(csr_matrix_int.num_rows == 10);
-    assert(csr_matrix_int.num_cols == 10);
-    check_vector_equal<int>(csr_matrix_int.adj_data, std::vector<int>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
-    check_vector_equal<uint32_t>(csr_matrix_int.adj_indices, std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
-    check_vector_equal<uint32_t>(csr_matrix_int.adj_indptr, std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
-
-    std::cout << "test_csr_matrix_convert_from_float passed" << std::endl;
-
+    ASSERT_TRUE(std::equal(vec1.begin(), vec1.end(), vec2.begin(), predicate));
 }
 
 
@@ -118,34 +59,76 @@ const static CSRMatrix<float> csr_matrix_2 = {
 };
 
 
-void test_util_round_csr_matrix_dim() {
-    CSRMatrix<float> M = csr_matrix_1;
-    assert(M.num_rows == 4);
-    assert(M.num_cols == 4);
+TEST(DataLoader, CreateCSRMatrix) {
+    uint32_t num_rows = 5;
+    uint32_t num_cols = 5;
+    std::vector<float> adj_data = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+    std::vector<uint32_t> adj_indices = {0, 1, 2, 3, 0, 2, 1, 3, 2};
+    std::vector<uint32_t> adj_indptr = {0, 4, 6, 7, 8, 9};
+    CSRMatrix<float> csr_matrix = create_csr_matrix(num_rows, num_cols, adj_data, adj_indices, adj_indptr);
+    ASSERT_EQ(csr_matrix.num_rows, num_rows);
+    ASSERT_EQ(csr_matrix.num_cols, num_cols);
+    check_vector_equal<float>(csr_matrix.adj_data, adj_data);
+    check_vector_equal<uint32_t>(csr_matrix.adj_indices, adj_indices);
+    check_vector_equal<uint32_t>(csr_matrix.adj_indptr, adj_indptr);
+}
 
+
+TEST(DataLoader, LoadCSRMatrixFromFloatNpz) {
+    CSRMatrix<float> csr_matrix = load_csr_matrix_from_float_npz("../test_data/eye_10_csr_float32.npz");
+    ASSERT_EQ(csr_matrix.num_rows, uint32_t(10));
+    ASSERT_EQ(csr_matrix.num_cols, uint32_t(10));
+    check_vector_equal<float>(csr_matrix.adj_data, std::vector<float>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+    check_vector_equal<uint32_t>(csr_matrix.adj_indices, std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+    check_vector_equal<uint32_t>(csr_matrix.adj_indptr, std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
+}
+
+
+TEST(DataLoader, CSRMatrixConvertFromFloat) {
+    CSRMatrix<float> csr_matrix_float = load_csr_matrix_from_float_npz("../test_data/eye_10_csr_float32.npz");
+    CSRMatrix<int> csr_matrix_int = csr_matrix_convert_from_float<int>(csr_matrix_float);
+    ASSERT_EQ(csr_matrix_int.num_rows, uint32_t(10));
+    ASSERT_EQ(csr_matrix_int.num_cols, uint32_t(10));
+    check_vector_equal<int>(csr_matrix_int.adj_data, std::vector<int>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+    check_vector_equal<uint32_t>(csr_matrix_int.adj_indices, std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+    check_vector_equal<uint32_t>(csr_matrix_int.adj_indptr, std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
+}
+
+
+TEST(DataLoader, CSR2CSC) {
+    CSRMatrix<float> csr_matrix = csr_matrix_1;
+    CSCMatrix<float> csc_matrix = csr2csc<float>(csr_matrix);
+    ASSERT_EQ(csc_matrix.num_rows, uint32_t(4));
+    ASSERT_EQ(csc_matrix.num_cols, uint32_t(4));
+    check_vector_equal<float>(csc_matrix.adj_data, std::vector<float>{1, 5, 2, 7, 3, 6, 4, 8});
+    check_vector_equal<uint32_t>(csc_matrix.adj_indices, std::vector<uint32_t>{0, 1, 0, 2, 0, 1, 0, 3});
+    check_vector_equal<uint32_t>(csc_matrix.adj_indptr, std::vector<uint32_t>{0, 2, 4, 6, 8,});
+}
+
+
+TEST(DataFormatter, RoundCSRMatrixDim) {
+    CSRMatrix<float> M = csr_matrix_1;
+    ASSERT_EQ(M.num_rows, uint32_t(4));
+    ASSERT_EQ(M.num_cols, uint32_t(4));
     uint32_t row_divisor = 3;
     uint32_t col_divisor = 5;
     util_round_csr_matrix_dim(M, row_divisor, col_divisor);
-    assert(M.num_rows == 6);
-    assert(M.num_cols == 5);
-
-    std::cout << "test_util_round_csr_matrix_dim passed" << std::endl;
+    ASSERT_EQ(M.num_rows, uint32_t(6));
+    ASSERT_EQ(M.num_cols, uint32_t(5));
 }
 
 
-void test_util_normalize_csr_matrix_by_outdegree() {
+TEST(DataFormatter, NormalizeCSRMatrixByOutdegree) {
     CSRMatrix<float> M = csr_matrix_1;
     util_normalize_csr_matrix_by_outdegree(M);
-    assert(M.adj_data[0] == 0.5);
-    assert(M.adj_data[1] == 0.5);
-    assert(M.adj_data[2] == 0.5);
-    assert(M.adj_data[3] == 0.5);
-
-    std::cout << "test_util_normalize_csr_matrix_by_outdegree passed" << std::endl;
+    ASSERT_EQ(M.adj_data[0], 0.5);
+    ASSERT_EQ(M.adj_data[1], 0.5);
+    ASSERT_EQ(M.adj_data[2], 0.5);
+    ASSERT_EQ(M.adj_data[3], 0.5);
 }
 
 
-void test_util_convert_csr_to_dds() {
+TEST(DataFormatter, ConvertCSR2DDS) {
     CSRMatrix<float> M = csr_matrix_1;
     uint32_t num_cols_per_partition = 3;
     uint32_t num_col_partitions = (M.num_cols + num_cols_per_partition - 1) / num_cols_per_partition;
@@ -176,12 +159,10 @@ void test_util_convert_csr_to_dds() {
     check_vector_equal<uint32_t>(partitioned_indices[1], reference_partition_2_indices);
     check_vector_equal<uint32_t>(partitioned_indptr[0], reference_partition_1_indptr);
     check_vector_equal<uint32_t>(partitioned_indptr[1], reference_partition_2_indptr);
-
-    std::cout << "test_util_convert_csr_to_dds passed" << std::endl;
 }
 
 
-void test_util_reorder_rows_ascending_nnz() {
+TEST(DataFormatter, ReorderRowsAscendingNnz) {
     CSRMatrix<float> M = csr_matrix_1;
     std::vector<float> reordered_data;
     std::vector<uint32_t> reordered_indices;
@@ -207,12 +188,10 @@ void test_util_reorder_rows_ascending_nnz() {
     check_vector_equal<float>(reordered_data, reference_reordered_data);
     check_vector_equal<uint32_t>(reordered_indices, reference_reordered_indices);
     check_vector_equal<uint32_t>(reordered_indptr, reference_reordered_indptr);
-
-    std::cout << "test_util_reorder_rows_ascending_nnz passed" << std::endl;
 }
 
 
-void test_util_pack_rows() {
+TEST(DataFormatter, PackRows) {
     CSRMatrix<float> M = csr_matrix_1;
     const uint32_t num_hbm_channels = 2;
     const uint32_t num_PEs_per_hbm_channel = 2;
@@ -251,28 +230,23 @@ void test_util_pack_rows() {
         packed_indices[1], reference_packed_indices_channel_2);
     check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
         packed_indptr[1], reference_packed_indptr_channel_2);
-
-    std::cout << "test_util_pack_rows passed" << std::endl;
 }
 
 
-void test_spmv_data_formatter_col_partitioning() {
+TEST(DataFormatter, CSR2CPSRColPartitioning) {
     CSRMatrix<float> M = csr_matrix_2;
     const uint32_t out_buffer_len = 4;
     const uint32_t vector_buffer_len = 4;
     const uint32_t num_hbm_channels = 2;
     const uint32_t num_PEs_per_hbm_channel = 2;
-    typedef struct packed_data_type_ {float data[num_PEs_per_hbm_channel];} packed_data_type;
-    typedef struct packed_index_type_ {uint32_t data[num_PEs_per_hbm_channel];} packed_index_type;
     float val_marker = std::numeric_limits<float>::infinity();
     unsigned int idx_marker = std::numeric_limits<unsigned int>::max();
 
-    SpMVDataFormatter<float, num_PEs_per_hbm_channel, packed_data_type, packed_index_type> formatter(M);
-    formatter.format_pad_marker_end_of_row(out_buffer_len,
-                                           vector_buffer_len,
-                                           num_hbm_channels,
-                                           val_marker,
-                                           idx_marker);
+    CPSRMatrix<float, num_PEs_per_hbm_channel> cpsr_matrix = csr2cpsr<float, num_PEs_per_hbm_channel>(M,
+        val_marker, idx_marker, out_buffer_len, vector_buffer_len, num_hbm_channels);
+
+    using packed_data_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_data_type;
+    using packed_index_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_index_type;
 
     std::vector<packed_data_type> reference_data_col_partition_1_channel_1 =
         {{1,5}, {2,6}, {3,val_marker}, {4,0}, {val_marker,0}};
@@ -288,43 +262,38 @@ void test_spmv_data_formatter_col_partitioning() {
     auto reference_indices_col_partition_2_channel_2 = reference_indices_col_partition_1_channel_2;
 
     check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_data(0, 0, 0), reference_data_col_partition_1_channel_1);
+        cpsr_matrix.get_packed_data(0, 0, 0), reference_data_col_partition_1_channel_1);
     check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_indices(0, 0, 0), reference_indices_col_partition_1_channel_1);
+        cpsr_matrix.get_packed_indices(0, 0, 0), reference_indices_col_partition_1_channel_1);
     check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_data(0, 0, 1), reference_data_col_partition_1_channel_2);
+        cpsr_matrix.get_packed_data(0, 0, 1), reference_data_col_partition_1_channel_2);
     check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_indices(0, 0, 1), reference_indices_col_partition_1_channel_2);
+        cpsr_matrix.get_packed_indices(0, 0, 1), reference_indices_col_partition_1_channel_2);
     check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_data(0, 1, 0), reference_data_col_partition_2_channel_1);
+        cpsr_matrix.get_packed_data(0, 1, 0), reference_data_col_partition_2_channel_1);
     check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_indices(0, 1, 0), reference_indices_col_partition_2_channel_1);
+        cpsr_matrix.get_packed_indices(0, 1, 0), reference_indices_col_partition_2_channel_1);
     check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_data(0, 1, 1), reference_data_col_partition_2_channel_2);
+        cpsr_matrix.get_packed_data(0, 1, 1), reference_data_col_partition_2_channel_2);
     check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_indices(0, 1, 1), reference_indices_col_partition_2_channel_2);
-
-    std::cout << "test_spmv_data_formatter_col_partitioning passed" << std::endl;
+        cpsr_matrix.get_packed_indices(0, 1, 1), reference_indices_col_partition_2_channel_2);
 }
 
 
-void test_spmv_data_formatter_row_partitioning() {
+TEST(DataFormatter, CSR2CPSRRowPartitioning) {
     CSRMatrix<float> M = csr_matrix_1;
     const uint32_t out_buffer_len = 2;
     const uint32_t vector_buffer_len = 4;
     const uint32_t num_hbm_channels = 1;
     const uint32_t num_PEs_per_hbm_channel = 2;
-    typedef struct packed_data_type_ {float data[num_PEs_per_hbm_channel];} packed_data_type;
-    typedef struct packed_index_type_ {uint32_t data[num_PEs_per_hbm_channel];} packed_index_type;
     float val_marker = std::numeric_limits<float>::infinity();
     unsigned int idx_marker = std::numeric_limits<unsigned int>::max();
 
-    SpMVDataFormatter<float, num_PEs_per_hbm_channel, packed_data_type, packed_index_type> formatter(M);
-    formatter.format_pad_marker_end_of_row(out_buffer_len,
-                                           vector_buffer_len,
-                                           num_hbm_channels,
-                                           val_marker,
-                                           idx_marker);
+    CPSRMatrix<float, num_PEs_per_hbm_channel> cpsr_matrix = csr2cpsr<float, num_PEs_per_hbm_channel>(M,
+        val_marker, idx_marker, out_buffer_len, vector_buffer_len, num_hbm_channels);
+
+    using packed_data_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_data_type;
+    using packed_index_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_index_type;
 
     std::vector<packed_data_type> reference_data_row_partition_1 =
         {{1,5}, {2,6}, {3,val_marker}, {4,0}, {val_marker,0}};
@@ -336,47 +305,17 @@ void test_spmv_data_formatter_row_partitioning() {
         {{1,3}, {idx_marker,idx_marker}};
 
     check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_data(0, 0, 0), reference_data_row_partition_1);
+        cpsr_matrix.get_packed_data(0, 0, 0), reference_data_row_partition_1);
     check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_indices(0, 0, 0), reference_indices_row_partition_1);
+        cpsr_matrix.get_packed_indices(0, 0, 0), reference_indices_row_partition_1);
     check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_data(1, 0, 0), reference_data_row_partition_2);
+        cpsr_matrix.get_packed_data(1, 0, 0), reference_data_row_partition_2);
     check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
-        formatter.get_packed_indices(1, 0, 0), reference_indices_row_partition_2);
-
-    std::cout << "test_spmv_data_formatter_row_partitioning passed" << std::endl;
+        cpsr_matrix.get_packed_indices(1, 0, 0), reference_indices_row_partition_2);
 }
 
 
-void test_csr2csc() {
-    CSRMatrix<float> csr_matrix = csr_matrix_1;
-    CSCMatrix<float> csc_matrix = csr2csc<float>(csr_matrix);
-
-    assert(csc_matrix.num_rows == 4);
-    assert(csc_matrix.num_cols == 4);
-    check_vector_equal<float>(csc_matrix.adj_data, std::vector<float>{1, 5, 2, 7, 3, 6, 4, 8});
-    check_vector_equal<uint32_t>(csc_matrix.adj_indices, std::vector<uint32_t>{0, 1, 0, 2, 0, 1, 0, 3});
-    check_vector_equal<uint32_t>(csc_matrix.adj_indptr, std::vector<uint32_t>{0, 2, 4, 6, 8,});
-
-    std::cout << "test_csr2csc passed" << std::endl;
-}
-
-
-int main(int argc, char *argv[]) {
-    // Test data loader
-    test_create_csr_matrix();
-    test_load_csr_matrix_from_float_npz();
-    test_csr_matrix_convert_from_float();
-
-    // Test data formatter
-    test_util_round_csr_matrix_dim();
-    test_util_normalize_csr_matrix_by_outdegree();
-    test_util_convert_csr_to_dds();
-    test_util_reorder_rows_ascending_nnz();
-    test_util_pack_rows();
-    test_spmv_data_formatter_col_partitioning();
-    test_spmv_data_formatter_row_partitioning();
-
-    // test csr2csc
-    test_csr2csc();
+int main(int argc, char ** argv) {
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
