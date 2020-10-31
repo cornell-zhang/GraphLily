@@ -21,8 +21,6 @@ private:
     using packed_val_t = struct {vector_data_t data[graphblas::pack_size];};
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
-    /*! \brief String representation of the data type */
-    std::string vector_data_t_str_;
     /*! \brief Internal copy of the input vector */
     aligned_dense_vec_t in_;
     /*! \brief Internal copy of the output vector */
@@ -34,9 +32,7 @@ public:
     cl::Buffer out_buf;
 
 public:
-    eWiseAddModule() : BaseModule("kernel_add_scalar_vector_dense") {
-        this->vector_data_t_str_ = graphblas::dtype_to_str<vector_data_t>();
-    }
+    eWiseAddModule() : BaseModule("kernel_add_scalar_vector_dense") {}
 
     /*!
      * \brief Send the input vector from host to device.
@@ -46,7 +42,7 @@ public:
     /*!
      * \brief Allocate the output buffer.
      */
-    void allocate_out_buf(uint32_t length);
+    void allocate_out_buf(uint32_t len);
 
     /*!
      * \brief Bind the input buffer to an existing buffer.
@@ -66,10 +62,10 @@ public:
 
     /*!
      * \brief Run the module.
-     * \param length The length of the in/out vector.
+     * \param len The length of the in/out vector.
      * \param val The value to be added.
      */
-    void run(uint32_t length, vector_data_t val);
+    void run(uint32_t len, vector_data_t val);
 
     /*!
      * \brief Send the output vector from device to host.
@@ -84,13 +80,13 @@ public:
     /*!
      * \brief Compute reference results.
      * \param in The inout vector.
-     * \param length The length of the mask/inout vector.
+     * \param len The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
-     * \return Teh output vector.
+     * \return The output vector.
      */
     graphblas::aligned_dense_float_vec_t
     compute_reference_results(graphblas::aligned_dense_float_vec_t const &in,
-                              uint32_t length,
+                              uint32_t len,
                               float val);
 
     void generate_kernel_header() override;
@@ -106,8 +102,7 @@ void eWiseAddModule<vector_data_t>::generate_kernel_header() {
     system(command.c_str());
     std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Data types
-    header << "typedef " << this->vector_data_t_str_ << " VAL_T;" << std::endl;
-    header << "const unsigned int PACK_SIZE = " << graphblas::pack_size << ";" << std::endl;
+    header << "const unsigned PACK_SIZE = " << graphblas::pack_size << ";" << std::endl;
     header << "typedef struct {VAL_T data[PACK_SIZE];}" << " PACKED_VAL_T;" << std::endl;
     header.close();
 }
@@ -146,8 +141,8 @@ void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_dense_vec_t &
 
 
 template<typename vector_data_t>
-void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t length) {
-    this->out_.resize(length);
+void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
+    this->out_.resize(len);
     cl_mem_ext_ptr_t out_ext;
     out_ext.obj = this->out_.data();
     out_ext.param = 0;
@@ -165,9 +160,9 @@ void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t length) {
 
 
 template<typename vector_data_t>
-void eWiseAddModule<vector_data_t>::run(uint32_t length, vector_data_t val) {
+void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
-    OCL_CHECK(err, err = this->kernel_.setArg(2, length));
+    OCL_CHECK(err, err = this->kernel_.setArg(2, len));
     // To avoid runtime error of invalid scalar argument size
     if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
         OCL_CHECK(err, err = this->kernel_.setArg(3, 8, (void*)&val));
@@ -181,10 +176,10 @@ void eWiseAddModule<vector_data_t>::run(uint32_t length, vector_data_t val) {
 
 template<typename vector_data_t> graphblas::aligned_dense_float_vec_t
 eWiseAddModule<vector_data_t>::compute_reference_results(graphblas::aligned_dense_float_vec_t const &in,
-                                                         uint32_t length,
+                                                         uint32_t len,
                                                          float val) {
-    graphblas::aligned_dense_float_vec_t out(length);
-    for (uint32_t i = 0; i < length; i++) {
+    graphblas::aligned_dense_float_vec_t out(len);
+    for (uint32_t i = 0; i < len; i++) {
         out[i] = in[i] + val;
     }
     return out;

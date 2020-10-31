@@ -21,8 +21,6 @@ private:
     using aligned_mask_t = std::vector<sparse_vector_data_t, aligned_allocator<sparse_vector_data_t>>;
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
-    /*! \brief String representation of the data type */
-    std::string vector_data_t_str_;
     /*! \brief Internal copy of mask */
     aligned_mask_t mask_;
     /*! \brief Internal copy of inout */
@@ -30,7 +28,7 @@ private:
     /*! \brief Internal copy of new_frontier */
     aligned_mask_t new_frontier_;
     /*! \brief Working mode. 0 for BFS, 1 for SSSP */
-    unsigned int mode_;
+    unsigned mode_;
 
 public:
     // Device buffers
@@ -39,15 +37,13 @@ public:
     cl::Buffer new_frontier_buf;
 
 public:
-    AssignVectorSparseModule() : BaseModule("kernel_assign_vector_sparse") {
-        this->vector_data_t_str_ = graphblas::dtype_to_str<vector_data_t>();
-    }
+    AssignVectorSparseModule() : BaseModule("kernel_assign_vector_sparse") {}
 
     /*!
      * \brief Set the working mode.
      * \param mode The working mode. 0 for BFS, 1 for SSSP.
      */
-    void set_mode(unsigned int mode) {
+    void set_mode(unsigned mode) {
         if (mode > 1) {
             std::cerr << "Invalid mode configuration" << std::endl;
             exit(EXIT_FAILURE);
@@ -92,7 +88,7 @@ public:
 
     /*!
      * \brief Run the module.
-     * \param length The length of the mask/inout vector.
+     * \param len The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
     void run(vector_data_t val);
@@ -131,7 +127,7 @@ public:
      * \brief Compute reference results.
      * \param mask The mask vector.
      * \param inout The inout vector.
-     * \param length The length of the mask/inout vector.
+     * \param len The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
     void compute_reference_results(graphblas::aligned_sparse_float_vec_t &mask,
@@ -152,10 +148,9 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::generate_kern
     system(command.c_str());
     std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Data types
-    header << "typedef " << this->vector_data_t_str_ << " VAL_T;" << std::endl;\
-    header << "typedef unsigned int" << " INDEX_T;" << std::endl;
-    header << "const unsigned int BATCH_SIZE = " << 128 << ";" << std::endl;
-    header << "typedef struct {INDEX_T index; VAL_T val;}" << " VI_T;" << std::endl;
+    header << "typedef unsigned IDX_T;" << std::endl;
+    header << "const unsigned BATCH_SIZE = " << 128 << ";" << std::endl;
+    header << "typedef struct {IDX_T index; VAL_T val;}" << " VI_T;" << std::endl;
     header.close();
 }
 

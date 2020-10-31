@@ -16,9 +16,9 @@ namespace app {
 class BFS : public app::ModuleCollection {
 private:
     // modules
-    using matrix_data_t = unsigned int;
-    using vector_data_t = unsigned int;
-    using index_val_t = struct {graphblas::index_t index; vector_data_t val;};
+    using matrix_data_t = unsigned;
+    using vector_data_t = unsigned;
+    using index_val_t = struct {graphblas::idx_t index; vector_data_t val;};
     graphblas::module::SpMVModule<matrix_data_t, vector_data_t> *SpMV_;
     graphblas::module::AssignVectorDenseModule<vector_data_t> *DenseAssign_;
     graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t> *SpMSpV_;
@@ -29,25 +29,25 @@ private:
     // SpMV kernel configuration
     static const graphblas::SemiRingType semiring_ = graphblas::kLogicalAndOr;
     uint32_t num_channels_;
-    uint32_t out_buffer_len_;
-    uint32_t vector_buffer_len_;
+    uint32_t out_buf_len_;
+    uint32_t vec_buf_len_;
 
 public:
-    BFS(uint32_t num_channels, uint32_t out_buffer_len, uint32_t vector_buffer_len) {
+    BFS(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_len) {
         this->num_channels_ = num_channels;
-        this->out_buffer_len_ = out_buffer_len;
-        this->vector_buffer_len_ = vector_buffer_len;
+        this->out_buf_len_ = out_buf_len
+        this->vec_buf_len_ = vec_buf_len;
         this->SpMV_ = new graphblas::module::SpMVModule<matrix_data_t, vector_data_t>(semiring_,
                                                                                       this->num_channels_,
-                                                                                      this->out_buffer_len_,
-                                                                                      this->vector_buffer_len_);
+                                                                                      this->out_buf_len_,
+                                                                                      this->vec_buf_len_);
         this->SpMV_->set_mask_type(graphblas::kMaskWriteToZero);
         this->add_module(this->SpMV_);
         this->DenseAssign_ = new graphblas::module::AssignVectorDenseModule<vector_data_t>();
         this->DenseAssign_->set_mask_type(graphblas::kMaskWriteToOne);
         this->add_module(this->DenseAssign_);
         this->SpMSpV_ = new graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>(
-            semiring_, out_buffer_len);
+            semiring_, out_buf_len);
         this->SpMSpV_->set_mask_type(graphblas::kMaskWriteToZero);
         this->add_module(this->SpMSpV_);
         this->SparseAssign_ = new graphblas::module::AssignVectorSparseModule<vector_data_t, index_val_t>();
@@ -78,7 +78,6 @@ public:
         this->SpMSpV_->send_matrix_host_to_device();
     }
 
-
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
     aligned_dense_vec_t run_pull_only(uint32_t source, uint32_t num_iterations) {
         aligned_dense_vec_t input(this->matrix_num_rows_, 0);
@@ -105,7 +104,7 @@ public:
         // The sparse input vector
         aligned_sparse_vec_t spmspv_input(2);
         index_val_t head;
-        graphblas::index_t nnz = 1; // one source vertex
+        graphblas::idx_t nnz = 1; // one source vertex
         head.index = nnz;
         spmspv_input[0] = head;
         spmspv_input[1] = {source, 1};
@@ -136,7 +135,7 @@ public:
         // The sparse input vector
         aligned_sparse_vec_t spmspv_input(2);
         index_val_t head;
-        graphblas::index_t nnz = 1; // one source vertex
+        graphblas::idx_t nnz = 1; // one source vertex
         head.index = nnz;
         spmspv_input[0] = head;
         spmspv_input[1] = {source, 1};

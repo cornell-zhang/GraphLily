@@ -31,9 +31,9 @@ void _compile_impl(T* t) {
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
+    t->link_kernel_code();
     t->generate_kernel_header();
     t->generate_kernel_ini();
-    t->link_kernel_code();
     t->generate_makefile();
     command = "cd " + graphblas::proj_folder_name + "; " + "make build";
     std::cout << command << std::endl;
@@ -161,8 +161,28 @@ public:
 
 
 void BaseModule::link_kernel_code() {
-    std::string command = "cp " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
-                        + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
+    std::string command = "cp " + graphblas::root_path + "/graphblas/hw/" + "util.h"
+                                + " " + graphblas::proj_folder_name + "/" + "util.h";
+    std::cout << command << std::endl;
+    system(command.c_str());
+
+    command = "cp " + graphblas::root_path + "/graphblas/hw/" + "shuffle.h"
+                    + " " + graphblas::proj_folder_name + "/" + "shuffle.h";
+    std::cout << command << std::endl;
+    system(command.c_str());
+
+    command = "cp " + graphblas::root_path + "/graphblas/hw/" + "pe.h"
+                    + " " + graphblas::proj_folder_name + "/" + "pe.h";
+    std::cout << command << std::endl;
+    system(command.c_str());
+
+    command = "cp " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
+                    + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
+    std::cout << command << std::endl;
+    system(command.c_str());
+
+    command = "cp " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".h"
+                    + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h";
     std::cout << command << std::endl;
     system(command.c_str());
 }

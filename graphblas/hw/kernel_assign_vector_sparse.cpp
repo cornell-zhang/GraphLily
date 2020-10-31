@@ -7,11 +7,11 @@
 extern "C" {
 
 void kernel_assign_vector_sparse(
-    const VI_T *mask,          // The sparse mask vector. The index field of the first element is the length.
-    VAL_T *inout,              // The inout vector
-    VI_T  *new_frontier,       // The new frontier. The index field of the first element is the length.
-    const unsigned int  mode,  // Working mode. 0 for BFS, 1 for SSSP
-    VAL_T val                  // The value to be assigned to the inout vector
+    const VI_T *mask,      // The sparse mask vector. The index field of the first element is the length.
+    VAL_T *inout,          // The inout vector
+    VI_T  *new_frontier,   // The new frontier. The index field of the first element is the length.
+    const unsigned  mode,  // Working mode. 0 for BFS, 1 for SSSP
+    VAL_T val              // The value to be assigned to the inout vector
 ) {
     /*
     *   working mode description:
@@ -38,31 +38,30 @@ void kernel_assign_vector_sparse(
 #pragma HLS DATA_PACK variable=mask
 #pragma HLS DATA_PACK variable=new_frontier
 
-
     // local buffer
-    VAL_T   local_inout_buf[BATCH_SIZE];
-    VI_T    local_mask_buf[BATCH_SIZE];
-    VI_T    local_nf_buf[BATCH_SIZE];
+    VAL_T local_inout_buf[BATCH_SIZE];
+    VI_T  local_mask_buf[BATCH_SIZE];
+    VI_T  local_nf_buf[BATCH_SIZE];
     #pragma HLS DATA_PACK variable=local_mask_buf
     #pragma HLS DATA_PACK variable=local_nf_buf
 
     INDEX_T length = mask[0].index;
-    unsigned int num_batches = (length + BATCH_SIZE - 1) / BATCH_SIZE;
-    unsigned int remain = length;
+    unsigned num_batches = (length + BATCH_SIZE - 1) / BATCH_SIZE;
+    unsigned remain = length;
 
-    unsigned int nf_length = 0;
+    unsigned nf_length = 0;
 
     loop_over_batches:
-    for (unsigned int batch_cnt = 0; batch_cnt < num_batches; batch_cnt++) {
+    for (unsigned batch_cnt = 0; batch_cnt < num_batches; batch_cnt++) {
         #pragma HLS pipeline off
 
-        unsigned int batch_nf_length = 0;
+        unsigned batch_nf_length = 0;
 
         // read stage
         loop_read_inout_val:
-        for (unsigned int i = 0; i < BATCH_SIZE; i++) {
+        for (unsigned i = 0; i < BATCH_SIZE; i++) {
             #pragma HLS pipeline II=1
-            if(i < remain) {
+            if (i < remain) {
                 INDEX_T midx = mask[i + 1 + batch_cnt * BATCH_SIZE].index;
                 VAL_T mval = mask[i + 1 + batch_cnt * BATCH_SIZE].val;
                 local_mask_buf[i].index = midx;
@@ -76,15 +75,15 @@ void kernel_assign_vector_sparse(
 
         // process stage
         loop_process:
-        for (unsigned int i = 0; i < BATCH_SIZE; i++) {
+        for (unsigned i = 0; i < BATCH_SIZE; i++) {
             #pragma HLS pipeline II=1
-            if(i < remain) {
+            if (i < remain) {
                 switch (mode) {
-                case 0: // BFS
+                case 0:  // BFS
                     local_inout_buf[i] = val;
                     break;
-                case 1: // SSSP
-                    if(local_inout_buf[i] > local_mask_buf[i].val) {
+                case 1:  // SSSP
+                    if (local_inout_buf[i] > local_mask_buf[i].val) {
                         // #ifndef __SYNTHESIS__
                         //     std::cout << "[INFO kernel_assign_vector_sparse] Update at "
                         //         << local_mask_buf[i].index << " "
@@ -109,17 +108,17 @@ void kernel_assign_vector_sparse(
 
         // wirte inout
         loop_write_inout_val:
-        for (unsigned int i = 0; i < BATCH_SIZE; i++) {
+        for (unsigned i = 0; i < BATCH_SIZE; i++) {
             #pragma HLS pipeline II=1
-            if(i < remain) {
+            if (i < remain) {
                 inout[local_mask_buf[i].index] = local_inout_buf[i];
             }
         }
 
         // wirte new_frontier
-        if(mode == 1) {
+        if (mode == 1) {
             loop_write_new_frontier:
-            for (unsigned int i = 0; i < batch_nf_length; i++) {
+            for (unsigned i = 0; i < batch_nf_length; i++) {
                 #pragma HLS pipeline II=1
                 new_frontier[i + 1 + nf_length] = local_nf_buf[i];
             }
@@ -134,13 +133,12 @@ void kernel_assign_vector_sparse(
     }
 
     // attach head to new_frontier
-    if(mode == 1) {
+    if (mode == 1) {
         VI_T nf_head;
         nf_head.index = nf_length;
         nf_head.val = 0;
         new_frontier[0] = nf_head;
     }
-
 }
 
 } // extern "C"

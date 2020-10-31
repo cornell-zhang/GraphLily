@@ -10,7 +10,7 @@ extern "C" {
 void kernel_assign_vector_dense(
     const PACKED_VAL_T *mask,  // The mask vector
     PACKED_VAL_T *inout,       // The inout vector
-    unsigned int length,       // The length of the mask/inout vector
+    unsigned length,           // The length of the mask/inout vector
     VAL_T val                  // The value to be assigned to the inout vector
 ) {
 #pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem0
@@ -27,7 +27,7 @@ void kernel_assign_vector_dense(
 #pragma HLS DATA_PACK variable=inout
 
     assert(length % PACK_SIZE == 0);
-    unsigned int size = length / PACK_SIZE;
+    unsigned size = length / PACK_SIZE;
     PACKED_VAL_T tmp_mask;
     PACKED_VAL_T tmp_inout;
 

@@ -195,123 +195,145 @@ TEST(DataFormatter, PackRows) {
     CSRMatrix<float> M = csr_matrix_1;
     const uint32_t num_hbm_channels = 2;
     const uint32_t num_PEs_per_hbm_channel = 2;
-    typedef struct packed_data_type_ {float data[num_PEs_per_hbm_channel];} packed_data_type;
-    typedef struct packed_index_type_ {uint32_t data[num_PEs_per_hbm_channel];} packed_index_type;
+    typedef struct packed_val_t_ {float data[num_PEs_per_hbm_channel];} packed_val_t;
+    typedef struct packed_idx_t_ {uint32_t data[num_PEs_per_hbm_channel];} packed_idx_t;
 
-    std::vector<packed_data_type> packed_data[num_hbm_channels];
-    std::vector<packed_index_type> packed_indices[num_hbm_channels];
-    std::vector<packed_index_type> packed_indptr[num_hbm_channels];
+    std::vector<packed_val_t> packed_data[num_hbm_channels];
+    std::vector<packed_idx_t> packed_indices[num_hbm_channels];
+    std::vector<packed_idx_t> packed_indptr[num_hbm_channels];
 
-    util_pack_rows<float, packed_data_type, packed_index_type>(M.adj_data,
-                                                               M.adj_indices,
-                                                               M.adj_indptr,
-                                                               num_hbm_channels,
-                                                               num_PEs_per_hbm_channel,
-                                                               packed_data,
-                                                               packed_indices,
-                                                               packed_indptr);
+    util_pack_rows<float, packed_val_t, packed_idx_t>(M.adj_data,
+                                                             M.adj_indices,
+                                                             M.adj_indptr,
+                                                             num_hbm_channels,
+                                                             num_PEs_per_hbm_channel,
+                                                             packed_data,
+                                                             packed_indices,
+                                                             packed_indptr);
 
-    std::vector<packed_data_type> reference_packed_data_channel_1 = {{1,5}, {2,6}, {3,0}, {4,0}};
-    std::vector<packed_index_type> reference_packed_indices_channel_1 = {{0,0}, {1,2}, {2,0}, {3,0}};
-    std::vector<packed_index_type> reference_packed_indptr_channel_1 = {{0,0}, {4,2}};
-    std::vector<packed_data_type> reference_packed_data_channel_2 = {{7,8}};
-    std::vector<packed_index_type> reference_packed_indices_channel_2 = {{1,3}};
-    std::vector<packed_index_type> reference_packed_indptr_channel_2 = {{0,0}, {1,1}};
+    std::vector<packed_val_t> reference_packed_data_channel_1 = {{1,5}, {2,6}, {3,0}, {4,0}};
+    std::vector<packed_idx_t> reference_packed_indices_channel_1 = {{0,0}, {1,2}, {2,0}, {3,0}};
+    std::vector<packed_idx_t> reference_packed_indptr_channel_1 = {{0,0}, {4,2}};
+    std::vector<packed_val_t> reference_packed_data_channel_2 = {{7,8}};
+    std::vector<packed_idx_t> reference_packed_indices_channel_2 = {{1,3}};
+    std::vector<packed_idx_t> reference_packed_indptr_channel_2 = {{0,0}, {1,1}};
 
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         packed_data[0], reference_packed_data_channel_1);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         packed_indices[0], reference_packed_indices_channel_1);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         packed_indptr[0], reference_packed_indptr_channel_1);
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         packed_data[1], reference_packed_data_channel_2);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         packed_indices[1], reference_packed_indices_channel_2);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         packed_indptr[1], reference_packed_indptr_channel_2);
 }
 
 
 TEST(DataFormatter, CSR2CPSRColPartitioning) {
     CSRMatrix<float> M = csr_matrix_2;
-    const uint32_t out_buffer_len = 4;
-    const uint32_t vector_buffer_len = 4;
+    const uint32_t out_buf_len = 4;
+    const uint32_t vec_buf_len = 4;
     const uint32_t num_hbm_channels = 2;
     const uint32_t num_PEs_per_hbm_channel = 2;
     float val_marker = std::numeric_limits<float>::infinity();
-    unsigned int idx_marker = std::numeric_limits<unsigned int>::max();
+    unsigned idx_marker = std::numeric_limits<unsigned>::max();
 
     CPSRMatrix<float, num_PEs_per_hbm_channel> cpsr_matrix = csr2cpsr<float, num_PEs_per_hbm_channel>(M,
-        val_marker, idx_marker, out_buffer_len, vector_buffer_len, num_hbm_channels);
+        val_marker, idx_marker, out_buf_len, vec_buf_len, num_hbm_channels);
 
-    using packed_data_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_data_type;
-    using packed_index_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_index_type;
+    using packed_val_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_val_t;
+    using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
 
-    std::vector<packed_data_type> reference_data_col_partition_1_channel_1 =
+    std::vector<packed_val_t> reference_data_col_partition_1_channel_1 =
         {{1,5}, {2,6}, {3,val_marker}, {4,0}, {val_marker,0}};
-    std::vector<packed_index_type> reference_indices_col_partition_1_channel_1 =
+    std::vector<packed_idx_t> reference_indices_col_partition_1_channel_1 =
         {{0,0}, {1,2}, {2,idx_marker}, {3,0}, {idx_marker,0}};
-    std::vector<packed_data_type> reference_data_col_partition_1_channel_2 =
+    std::vector<packed_idx_t> reference_indptr_col_partition_1_channel_1 =
+        {{0,0}, {5,3}}; // a marker is inserted to the end of each row
+    std::vector<packed_val_t> reference_data_col_partition_1_channel_2 =
         {{7,8}, {val_marker,val_marker}};
-    std::vector<packed_index_type> reference_indices_col_partition_1_channel_2 =
+    std::vector<packed_idx_t> reference_indices_col_partition_1_channel_2 =
         {{1,3}, {idx_marker,idx_marker}};
+    std::vector<packed_idx_t> reference_indptr_col_partition_1_channel_2 =
+        {{0,0}, {2,2}};
     auto reference_data_col_partition_2_channel_1 = reference_data_col_partition_1_channel_1;
     auto reference_indices_col_partition_2_channel_1 = reference_indices_col_partition_1_channel_1;
+    auto reference_indptr_col_partition_2_channel_1 = reference_indptr_col_partition_1_channel_1;
     auto reference_data_col_partition_2_channel_2 = reference_data_col_partition_1_channel_2;
     auto reference_indices_col_partition_2_channel_2 = reference_indices_col_partition_1_channel_2;
+    auto reference_indptr_col_partition_2_channel_2 = reference_indptr_col_partition_1_channel_2;
 
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(0, 0, 0), reference_data_col_partition_1_channel_1);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_indices(0, 0, 0), reference_indices_col_partition_1_channel_1);
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indptr(0, 0, 0), reference_indptr_col_partition_1_channel_1);
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(0, 0, 1), reference_data_col_partition_1_channel_2);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_indices(0, 0, 1), reference_indices_col_partition_1_channel_2);
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indptr(0, 0, 1), reference_indptr_col_partition_1_channel_2);
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(0, 1, 0), reference_data_col_partition_2_channel_1);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_indices(0, 1, 0), reference_indices_col_partition_2_channel_1);
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indptr(0, 1, 0), reference_indptr_col_partition_2_channel_1);
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(0, 1, 1), reference_data_col_partition_2_channel_2);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_indices(0, 1, 1), reference_indices_col_partition_2_channel_2);
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indptr(0, 1, 1), reference_indptr_col_partition_2_channel_2);
 }
 
 
 TEST(DataFormatter, CSR2CPSRRowPartitioning) {
     CSRMatrix<float> M = csr_matrix_1;
-    const uint32_t out_buffer_len = 2;
-    const uint32_t vector_buffer_len = 4;
+    const uint32_t out_buf_len = 2;
+    const uint32_t vec_buf_len = 4;
     const uint32_t num_hbm_channels = 1;
     const uint32_t num_PEs_per_hbm_channel = 2;
     float val_marker = std::numeric_limits<float>::infinity();
-    unsigned int idx_marker = std::numeric_limits<unsigned int>::max();
+    unsigned idx_marker = std::numeric_limits<unsigned>::max();
 
     CPSRMatrix<float, num_PEs_per_hbm_channel> cpsr_matrix = csr2cpsr<float, num_PEs_per_hbm_channel>(M,
-        val_marker, idx_marker, out_buffer_len, vector_buffer_len, num_hbm_channels);
+        val_marker, idx_marker, out_buf_len, vec_buf_len, num_hbm_channels);
 
-    using packed_data_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_data_type;
-    using packed_index_type = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_index_type;
+    using packed_val_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_val_t;
+    using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
 
-    std::vector<packed_data_type> reference_data_row_partition_1 =
+    std::vector<packed_val_t> reference_data_row_partition_1 =
         {{1,5}, {2,6}, {3,val_marker}, {4,0}, {val_marker,0}};
-    std::vector<packed_index_type> reference_indices_row_partition_1 =
+    std::vector<packed_idx_t> reference_indices_row_partition_1 =
         {{0,0}, {1,2}, {2,idx_marker}, {3,0}, {idx_marker,0}};
-    std::vector<packed_data_type> reference_data_row_partition_2 =
+    std::vector<packed_idx_t> reference_indptr_row_partition_1 =
+        {{0,0}, {5,3}}; // a marker is inserted to the end of each row
+    std::vector<packed_val_t> reference_data_row_partition_2 =
         {{7,8}, {val_marker,val_marker}};
-    std::vector<packed_index_type> reference_indices_row_partition_2 =
+    std::vector<packed_idx_t> reference_indices_row_partition_2 =
         {{1,3}, {idx_marker,idx_marker}};
+    std::vector<packed_idx_t> reference_indptr_row_partition_2 =
+        {{0,0}, {2,2}};
 
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(0, 0, 0), reference_data_row_partition_1);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_indices(0, 0, 0), reference_indices_row_partition_1);
-    check_packed_vector_equal<packed_data_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indptr(0, 0, 0), reference_indptr_row_partition_1);
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(1, 0, 0), reference_data_row_partition_2);
-    check_packed_vector_equal<packed_index_type, num_PEs_per_hbm_channel>(
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_indices(1, 0, 0), reference_indices_row_partition_2);
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indptr(1, 0, 0), reference_indptr_row_partition_2);
 }
 
 

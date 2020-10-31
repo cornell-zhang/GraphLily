@@ -5,9 +5,9 @@
 
 
 void bench_bfs(uint32_t num_channels, std::string bitstream, std::string dataset) {
-    uint32_t out_buffer_len = 320 * 1024;
-    uint32_t vector_buffer_len= 64 * 1024;
-    graphblas::app::BFS bfs(num_channels, out_buffer_len, vector_buffer_len);
+    uint32_t out_buf_len = 320 * 1024;
+    uint32_t vec_buf_len = 64 * 1024;
+    graphblas::app::BFS bfs(num_channels, out_buf_len, vec_buf_len);
 
     std::string target = "hw";
     bfs.set_target(target);
@@ -30,13 +30,13 @@ void bench_bfs(uint32_t num_channels, std::string bitstream, std::string dataset
     std::cout << "average_time_in_sec = " << average_time_in_sec << std::endl;
 
     uint32_t nnz = bfs.get_nnz();
-    double throughput = num_iterations * nnz * sizeof(unsigned int); // indices
+    double throughput = num_iterations * nnz * sizeof(unsigned); // indices
     throughput /= 1000;                // to KB
     throughput /= 1000;                // to MB
     throughput /= 1000;                // to GB
     throughput /= average_time_in_sec; // to GB/s
     // std::cout << "Memory THROUGHPUT = " << throughput << " GB/s" << std::endl;
-    std::cout << "Compute THROUGHPUT = " << throughput / sizeof(unsigned int) << " GOPS" << std::endl;
+    std::cout << "Compute THROUGHPUT = " << throughput / sizeof(unsigned) << " GOPS" << std::endl;
 }
 
 

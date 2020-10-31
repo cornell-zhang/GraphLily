@@ -23,8 +23,6 @@ private:
 
     /*! \brief The mask type */
     graphblas::MaskType mask_type_;
-    /*! \brief String representation of the data type */
-    std::string vector_data_t_str_;
     /*! \brief Internal copy of mask */
     aligned_dense_vec_t mask_;
     /*! \brief Internal copy of inout */
@@ -36,9 +34,7 @@ public:
     cl::Buffer inout_buf;
 
 public:
-    AssignVectorDenseModule() : BaseModule("kernel_assign_vector_dense") {
-        this->vector_data_t_str_ = graphblas::dtype_to_str<vector_data_t>();
-    }
+    AssignVectorDenseModule() : BaseModule("kernel_assign_vector_dense") {}
 
     /*!
      * \brief Set the mask type.
@@ -81,10 +77,10 @@ public:
 
     /*!
      * \brief Run the module.
-     * \param length The length of the mask/inout vector.
+     * \param len The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
-    void run(uint32_t length, vector_data_t val);
+    void run(uint32_t len, vector_data_t val);
 
     /*!
      * \brief Send the mask from device to host.
@@ -110,12 +106,12 @@ public:
      * \brief Compute reference results.
      * \param mask The mask vector.
      * \param inout The inout vector.
-     * \param length The length of the mask/inout vector.
+     * \param len The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
     void compute_reference_results(graphblas::aligned_dense_float_vec_t &mask,
                                    graphblas::aligned_dense_float_vec_t &inout,
-                                   uint32_t length,
+                                   uint32_t len,
                                    float val);
 
     void generate_kernel_header() override;
@@ -131,8 +127,7 @@ void AssignVectorDenseModule<vector_data_t>::generate_kernel_header() {
     system(command.c_str());
     std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Data types
-    header << "typedef " << this->vector_data_t_str_ << " VAL_T;" << std::endl;
-    header << "const unsigned int PACK_SIZE = " << graphblas::pack_size << ";" << std::endl;
+    header << "const unsignedK_SIZE = " << graphblas::pack_size << ";" << std::endl;
     header << "typedef struct {VAL_T data[PACK_SIZE];}" << " PACKED_VAL_T;" << std::endl;
     // Mask
     switch (this->mask_type_) {
@@ -202,9 +197,9 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::run(uint32_t length, vector_data_t val) {
+void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
-    OCL_CHECK(err, err = this->kernel_.setArg(2, length));
+    OCL_CHECK(err, err = this->kernel_.setArg(2, len));
     // To avoid runtime error of invalid scalar argument size
     if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
         OCL_CHECK(err, err = this->kernel_.setArg(3, 8, (void*)&val));
@@ -219,16 +214,16 @@ void AssignVectorDenseModule<vector_data_t>::run(uint32_t length, vector_data_t 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphblas::aligned_dense_float_vec_t &mask,
                                                                        graphblas::aligned_dense_float_vec_t &inout,
-                                                                       uint32_t length,
+                                                                       uint32_t len,
                                                                        float val) {
     if (this->mask_type_ == graphblas::kMaskWriteToZero) {
-        for (size_t i = 0; i < length; i++) {
+        for (size_t i = 0; i < len; i++) {
             if (mask[i] == 0) {
                 inout[i] = val;
             }
         }
     } else if (this->mask_type_ == graphblas::kMaskWriteToOne) {
-        for (size_t i = 0; i < length; i++) {
+        for (size_t i = 0; i < len; i++) {
             if (mask[i] != 0) {
                 inout[i] = val;
             }

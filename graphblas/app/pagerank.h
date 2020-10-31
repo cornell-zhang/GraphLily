@@ -24,18 +24,18 @@ private:
     // SpMV kernel configuration
     static const graphblas::SemiRingType semiring_ = graphblas::kMulAdd;
     uint32_t num_channels_;
-    uint32_t out_buffer_len_;
-    uint32_t vector_buffer_len_;
+    uint32_t out_buf_len_;
+    uint32_t vec_buf_len_;
 
 public:
-    PageRank(uint32_t num_channels, uint32_t out_buffer_len, uint32_t vector_buffer_len) {
+    PageRank(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_len) {
         this->num_channels_ = num_channels;
-        this->out_buffer_len_ = out_buffer_len;
-        this->vector_buffer_len_ = vector_buffer_len;
+        this->out_buf_len_ = out_buf_len
+        this->vec_buf_len_ = vec_buf_len;
         this->SpMV_ = new graphblas::module::SpMVModule<matrix_data_t, vector_data_t>(semiring_,
                                                                                       this->num_channels_,
-                                                                                      this->out_buffer_len_,
-                                                                                      this->vector_buffer_len_);
+                                                                                      this->out_buf_len_,
+                                                                                      this->vec_buf_len_);
         this->SpMV_->set_mask_type(graphblas::kNoMask);
         this->add_module(this->SpMV_);
         this->eWiseAdd_ = new graphblas::module::eWiseAddModule<vector_data_t>();

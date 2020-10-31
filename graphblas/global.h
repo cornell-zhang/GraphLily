@@ -54,37 +54,6 @@ const int HBM[MAX_HBM_CHANNEL_COUNT] = {
 
 const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 
-// Data type
-template<typename dtype>
-std::string dtype_to_str() {
-    std::string str;
-    if (std::is_same<dtype, unsigned int>::value) {
-        str = "unsigned int";
-    } else if (std::is_same<dtype, int>::value) {
-        str = "int";
-    } else if (std::is_same<dtype, float>::value) {
-        str = "float";
-    } else if (std::is_same<dtype, ap_ufixed<32, 1>>::value) {
-        str = "ap_ufixed<32, 1>";
-    } else {
-        std::cerr << "Data type is not supported" << std::endl;
-        exit(EXIT_FAILURE);
-    }
-    return str;
-}
-
-// used to calculate BANK_ID_NBITS
-unsigned int log2(unsigned int x) {
-    switch (x) {
-        case    1: return 0;
-        case    2: return 1;
-        case    4: return 2;
-        case    8: return 3;
-        case   16: return 4;
-        default  : return 0;
-    }
-}
-
 // Semiring type
 enum SemiRingType {
     kMulAdd = 0,
@@ -100,22 +69,24 @@ enum MaskType {
 };
 
 // Data types
-typedef uint32_t index_t;
+using val_t = ap_ufixed<32, 16, AP_RND, AP_SAT>;
+typedef uint32_t idx_t;
 const uint32_t idx_marker = 0xffffffff;
-const uint32_t pack_size = 16;
-typedef struct {index_t data[pack_size];} packed_index_t;
+const uint32_t pack_size = 8;
+typedef struct {idx_t data[pack_size];} packed_idx_t;
 
-typedef struct {index_t index; float val;} index_float_t;
+typedef struct {idx_t index; float val;} index_float_t;
 
 using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
 using aligned_sparse_float_vec_t = std::vector<index_float_t, aligned_allocator<index_float_t>>;
 
 const uint32_t UINT_INF = 0xffffffff;
 
+// Kernel configuration
+const uint32_t num_hbm_channels = 8;
+
 // Makefile for synthesizing xclbin
 const std::string makefile_prologue =
-    "COMMON_REPO = $(GRAPHBLAS_ROOT_PATH)\n"
-    "\n"
     "DEVICE = /opt/xilinx/platforms/" + device_name + "/" + device_name + ".xpfm\n"
     "\n"
     "TEMP_DIR := ./_x.$(TARGET)\n"
@@ -153,11 +124,11 @@ std::string add_kernel_to_makefile(std::string kernel_name) {
 // Project folder name
 const std::string proj_folder_name = "proj";
 
-
 //------------------------------------------
 // Utilities
 //------------------------------------------
 
+// convert a sparse vector to dense
 template <typename sparse_vec_t, typename dense_vec_t>
 dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector, uint32_t range) {
     int nnz = sparse_vector[0].index;
@@ -169,6 +140,17 @@ dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector, u
     return dense_vector;
 }
 
+// used to calculate BANK_ID_NBITS
+unsigned log2(unsigned x) {
+    switch (x) {
+        case    1: return 0;
+        case    2: return 1;
+        case    4: return 2;
+        case    8: return 3;
+        case   16: return 4;
+        default  : return 0;
+    }
+}
 
 } // namespace graphblas
 

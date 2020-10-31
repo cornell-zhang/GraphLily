@@ -20,7 +20,7 @@ using graphblas::io::SpMSpVDataFormatter;
 namespace graphblas {
 namespace module {
 
-unsigned int log2(unsigned int x) {
+unsigned log2(unsigned x) {
     switch (x) {
         case    1: return 0;
         case    2: return 1;
@@ -41,30 +41,27 @@ private:
     /*! \brief The semiring */
     SemiRingType semiring_;
     /*! \brief The length of output buffer of the kernel */
-    uint32_t out_buffer_len_;
+    uint32_t out_buf_len_;
     /*! \brief The number of row partitions */
     uint32_t num_row_partitions_;
     /*! \brief The number of packets */
     uint32_t num_packets_;
 
     // using val_t = vector_data_t;
-    // using index_val_t = struct {val_t val; index_t index;};
-    using packet_t = struct {graphblas::index_t indices[graphblas::pack_size]; matrix_data_t vals[graphblas::pack_size];};
+    // using index_val_t = struct {val_t val; idx_t index;};
+    using packet_t = struct {graphblas::idx_t indices[graphblas::pack_size]; matrix_data_t vals[graphblas::pack_size];};
 
-    using aligned_index_t = std::vector<graphblas::index_t, aligned_allocator<graphblas::index_t>>;
+    using aligned_idx_t = std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>>;
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
     using aligned_sparse_vec_t = std::vector<index_val_t, aligned_allocator<index_val_t>>;
     using aligned_packet_t = std::vector<packet_t, aligned_allocator<packet_t>>;
 
-    // String representation of the data type
-    std::string val_t_str_;
-
     /*! \brief Matrix packets (indices + vals) */
     aligned_packet_t channel_packets_;
     /*! \brief Matrix indptr */
-    aligned_index_t channel_indptr_;
+    aligned_idx_t channel_indptr_;
     /*! \brief Matrix partptr */
-    aligned_index_t channel_partptr_;
+    aligned_idx_t channel_partptr_;
     /*! \brief Internal copy of the sparse vector.
                The index field of the first element is the non-zero count of the vector */
     aligned_sparse_vec_t vector_;
@@ -98,16 +95,16 @@ private:
     /*!
      * \brief Get the kernel configuration.
      * \param semiring The semiring.
-     * \param out_buffer_len The length of output buffer.
+     * \param out_buf_len The length of output buffer.
      */
     void _get_kernel_config(SemiRingType semiring,
-                            uint32_t out_buffer_len);
+                            uint32_t out_buf_len);
 
 public:
     SpMSpVModule(SemiRingType semiring,
-                 uint32_t out_buffer_len) : BaseModule("kernel_spmspv") {
+                 uint32_t out_buf_len) : BaseModule("kernel_spmspv") {
         this->_check_data_type();
-        this->_get_kernel_config(semiring, out_buffer_len);
+        this->_get_kernel_config(semiring, out_buf_len);
     }
 
     /*!
@@ -233,15 +230,14 @@ public:
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_check_data_type() {
     assert((std::is_same<matrix_data_t, vector_data_t>::value));
-    this->val_t_str_ = graphblas::dtype_to_str<vector_data_t>();
 }
 
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_get_kernel_config(SemiRingType semiring,
-                                                                                 uint32_t out_buffer_len) {
+                                                                                 uint32_t out_buf_len) {
     this->semiring_ = semiring;
-    this->out_buffer_len_ = out_buffer_len;
+    this->out_buf_len_ = out_buf_len;
 }
 
 
@@ -252,37 +248,36 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_he
     system(command.c_str());
     std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Kernel configuration
-    header << "const unsigned int PACKET_SIZE = " << graphblas::pack_size << ";" << std::endl;
-    header << "const unsigned int NUM_PE = " << graphblas::pack_size << ";" << std::endl;
-    header << "const unsigned int NUM_PORT_PER_BANK = 2;" << std::endl;
-    header << "const unsigned int NUM_BANK = NUM_PE" << ";" << std::endl;
-    header << "const unsigned int NUM_LANE = NUM_BANK * NUM_PORT_PER_BANK" << ";" << std::endl;
-    header << "const unsigned int PE_ID_NBITS = "   << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
-    header << "const unsigned int BANK_ID_NBITS = " << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
-    header << "const unsigned int BANK_ID_MASK = (1 << BANK_ID_NBITS) - 1" << ";" << std::endl;
-    header << "const unsigned int TILE_SIZE = " << this->out_buffer_len_ << ";" << std::endl;
-    header << "const unsigned int BANK_SIZE = TILE_SIZE / NUM_BANK" << ";" << std::endl;
-    header << "const unsigned int ARBITER_LATENCY = 6" << ";" << std::endl;
-    header << "const unsigned int FWD_DISTANCE = ARBITER_LATENCY + 1" << ";" << std::endl;
+    header << "const unsignedKET_SIZE = " << graphblas::pack_size << ";" << std::endl;
+    header << "const unsigned_PE = " << graphblas::pack_size << ";" << std::endl;
+    header << "const unsigned_PORT_PER_BANK = 2;" << std::endl;
+    header << "const unsigned_BANK = NUM_PE" << ";" << std::endl;
+    header << "const unsigned_LANE = NUM_BANK * NUM_PORT_PER_BANK" << ";" << std::endl;
+    header << "const unsignedID_NBITS = "   << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
+    header << "const unsignedK_ID_NBITS = " << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
+    header << "const unsignedK_ID_MASK = (1 << BANK_ID_NBITS) - 1" << ";" << std::endl;
+    header << "const unsignedE_SIZE = " << this->out_buf_len_ << ";" << std::endl;
+    header << "const unsignedK_SIZE = TILE_SIZE / NUM_BANK" << ";" << std::endl;
+    header << "const unsignedITER_LATENCY = 6" << ";" << std::endl;
+    header << "const unsigned_DISTANCE = ARBITER_LATENCY + 1" << ";" << std::endl;
 
     // Data types
-    header << "typedef unsigned int INDEX_T;" << std::endl;
-    header << "typedef " << this->val_t_str_ << " VAL_T;" << std::endl;
+    header << "typedef unsigned IDX_T;" << std::endl;
 
     header <<  "typedef struct {"
-                  "INDEX_T index; VAL_T data;"
+                  "IDX_T index; VAL_T data;"
                 "}" << " DIT_T;" << std::endl;
 
     header <<  "typedef struct {"
-                  "INDEX_T indexpkt[PACKET_SIZE];"
+                  "IDX_T indexpkt[PACKET_SIZE];"
                   "VAL_T datapkt[PACKET_SIZE];"
                 "}" << " PACKED_DWI_T;" << std::endl;
 
-    header <<  "template<typename index_t>"
+    header <<  "template<typename idx_t>"
                 "struct rd_req {"
                   "bool valid;"
                   "bool zero;"
-                  "index_t addr;"
+                  "idx_t addr;"
                 "};" << std::endl;
 
     header <<  "template<typename data_t>"
@@ -291,13 +286,13 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_he
                   "data_t data;"
                 "};" << std::endl;
 
-    header <<  "template<typename data_t, typename index_t>"
+    header <<  "template<typename data_t, typename idx_t>"
                 "struct wr_req {"
                   "data_t data;"
-                  "index_t addr;"
+                  "idx_t addr;"
                 "};" << std::endl;
 
-    header <<  "template<typename index_t>"
+    header <<  "template<typename idx_t>"
                 "struct arbiter_result {"
                   "ap_uint<PE_ID_NBITS> virtual_port_id;"
                   "bool bank_idle;"
@@ -368,9 +363,9 @@ template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::load_and_format_matrix(CSCMatrix<float> const &csc_matrix_float) {
     this->csc_matrix_float_ = csc_matrix_float;
     this->csc_matrix_ = graphblas::io::csc_matrix_convert_from_float<matrix_data_t>(csc_matrix_float);
-    SpMSpVDataFormatter<matrix_data_t,index_t,packet_t>
+    SpMSpVDataFormatter<matrix_data_t, idx_t, packet_t>
         formatter(this->csc_matrix_);
-    formatter.format(this->out_buffer_len_,graphblas::pack_size);
+    formatter.format(this->out_buf_len_, graphblas::pack_size);
     this->num_row_partitions_ = formatter.num_row_partitions();
     this->num_packets_ = formatter.num_packets_total();
 
@@ -431,12 +426,12 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
         &err));
     OCL_CHECK(err, this->channel_indptr_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(index_t) * (this->get_num_cols() + 1) * this->num_row_partitions_ ,
+        sizeof(idx_t) * (this->get_num_cols() + 1) * this->num_row_partitions_ ,
         &channel_indptr_ext,
         &err));
     OCL_CHECK(err, this->channel_partptr_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(index_t) * (this->num_row_partitions_ + 1),
+        sizeof(idx_t) * (this->num_row_partitions_ + 1),
         &channel_partptr_ext,
         &err));
 
@@ -453,7 +448,6 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
         sizeof(index_val_t) * (this->get_num_rows() + 1),
         &results_ext,
         &err));
-
 
     // Set arguments
     /*
@@ -558,8 +552,8 @@ template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 graphblas::aligned_sparse_float_vec_t
 SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector) {
     // measure dimensions
-    unsigned int vec_nnz_total = vector[0].index;
-    unsigned int num_rows = this->csc_matrix_.num_rows;
+    unsigned vec_nnz_total = vector[0].index;
+    unsigned num_rows = this->csc_matrix_.num_rows;
 
     // create result container
     aligned_sparse_float_vec_t reference_results;
@@ -570,22 +564,22 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     // indices of active columns are stored in vec_idx
     // number of active columns = vec_nnz_total
     // loop over all active columns
-    for (unsigned int active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
-        index_t current_colid = vector[active_colid + 1].index;
+    for (unsigned active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
+        idx_t current_colid = vector[active_colid + 1].index;
         // slice out the current column out of the active columns
-        index_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
-        index_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
-        index_t current_collen = col_id_end - col_id_start;
+        idx_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
+        idx_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
+        idx_t current_collen = col_id_end - col_id_start;
         matrix_data_t current_col[current_collen];
-        index_t current_row_ids[current_collen];
-        for (unsigned int i = 0; i < current_collen; i++) {
+        idx_t current_row_ids[current_collen];
+        for (unsigned i = 0; i < current_collen; i++) {
             current_col[i] = this->csc_matrix_.adj_data[i + col_id_start];
             current_row_ids[i] = this->csc_matrix_.adj_indices[i + col_id_start];
         }
 
         // loop over all nnzs in the current column
-        for (unsigned int mat_element_id = 0; mat_element_id < current_collen; mat_element_id++) {
-            index_t current_row_id = current_row_ids[mat_element_id];
+        for (unsigned mat_element_id = 0; mat_element_id < current_collen; mat_element_id++) {
+            idx_t current_row_id = current_row_ids[mat_element_id];
             vector_data_t nnz_from_mat = current_col[mat_element_id];
             vector_data_t nnz_from_vec = vector[active_colid + 1].val;
             switch (this->semiring_) {
@@ -603,7 +597,7 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     }
 
     // checkout results
-    index_t nnz_cnt = 0;
+    idx_t nnz_cnt = 0;
     reference_results.clear();
     for (size_t obid = 0; obid < num_rows; obid++) {
         if(output_buffer[obid]) {
@@ -628,8 +622,8 @@ graphblas::aligned_sparse_float_vec_t
 SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
                                                                                    graphblas::aligned_dense_float_vec_t &mask) {
     // measure dimensions
-    unsigned int vec_nnz_total = vector[0].index;
-    unsigned int num_rows = this->csc_matrix_.num_rows;
+    unsigned vec_nnz_total = vector[0].index;
+    unsigned num_rows = this->csc_matrix_.num_rows;
 
     // create result container
     aligned_sparse_float_vec_t reference_results;
@@ -640,22 +634,21 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     // indices of active columns are stored in vec_idx
     // number of active columns = vec_nnz_total
     // loop over all active columns
-    for (unsigned int active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
-        index_t current_colid = vector[active_colid + 1].index;
+    for (unsigned active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
+        idx_t current_colid = vector[active_colid + 1].index;
         // slice out the current column out of the active columns
-        index_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
-        index_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
-        index_t current_collen = col_id_end - col_id_start;
+        idx_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
+        idx_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
+        idx_t current_collen = col_id_end - col_id_start;
         matrix_data_t current_col[current_collen];
-        index_t current_row_ids[current_collen];
-        for (unsigned int i = 0; i < current_collen; i++) {
+        idx_t current_row_ids[current_collen];
+        for (unsigned i = 0; i < current_collen; i++) {
             current_col[i] = this->csc_matrix_.adj_data[i + col_id_start];
             current_row_ids[i] = this->csc_matrix_.adj_indices[i + col_id_start];
         }
-
         // loop over all nnzs in the current column
-        for (unsigned int mat_element_id = 0; mat_element_id < current_collen; mat_element_id++) {
-            index_t current_row_id = current_row_ids[mat_element_id];
+        for (unsigned mat_element_id = 0; mat_element_id < current_collen; mat_element_id++) {
+            idx_t current_row_id = current_row_ids[mat_element_id];
             vector_data_t nnz_from_mat = current_col[mat_element_id];
             vector_data_t nnz_from_vec = vector[active_colid + 1].val;
             switch (this->semiring_) {
@@ -673,7 +666,7 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     }
 
     // checkout results
-    index_t nnz_cnt = 0;
+    idx_t nnz_cnt = 0;
     reference_results.clear();
     for (size_t obid = 0; obid < num_rows; obid++) {
         bool do_write = false;
@@ -701,7 +694,7 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     index_float_t reference_head;
     reference_head.val = 0;
     reference_head.index = nnz_cnt;
-    reference_results.insert(reference_results.begin(),reference_head);
+    reference_results.insert(reference_results.begin(), reference_head);
     return reference_results;
 }
 

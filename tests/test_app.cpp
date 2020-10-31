@@ -44,9 +44,9 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 void test_bfs() {
     uint32_t num_channels = 8;
-    uint32_t out_buffer_len = 1024;
-    uint32_t vector_buffer_len = 1024;
-    graphblas::app::BFS bfs(num_channels, out_buffer_len, vector_buffer_len);
+    uint32_t out_buf_len = 1024;
+    uint32_t vec_buf_len4;
+    graphblas::app::BFS bfs(num_channels, out_buf_len, vec_buf_len);
 
     bfs.set_target(target);
     bfs.compile();
@@ -63,24 +63,24 @@ void test_bfs() {
     auto reference_results = bfs.compute_reference_results(source, num_iterations);
 
     auto kernel_results = bfs.run_pull_only(source, num_iterations);
-    verify<unsigned int>(reference_results, kernel_results);
+    verify<unsigned>(reference_results, kernel_results);
     std::cout << "BFS test pull-only passed" << std::endl;
 
     kernel_results = bfs.run_push_only(source, num_iterations);
-    verify<unsigned int>(reference_results, kernel_results);
+    verify<unsigned>(reference_results, kernel_results);
     std::cout << "BFS test push-only passed" << std::endl;
 
     kernel_results = bfs.run_pull_push(source, num_iterations);
-    verify<unsigned int>(reference_results, kernel_results);
+    verify<unsigned>(reference_results, kernel_results);
     std::cout << "BFS test pull-push passed" << std::endl;
 }
 
 
 void test_pagerank() {
     uint32_t num_channels = 8;
-    uint32_t out_buffer_len = 1024;
-    uint32_t vector_buffer_len = 1024;
-    graphblas::app::PageRank pagerank(num_channels, out_buffer_len, vector_buffer_len);
+    uint32_t out_buf_len = 1024;
+    uint32_t vec_buf_len4;
+    graphblas::app::PageRank pagerank(num_channels, out_buf_len, vec_buf_len);
 
     float damping = 0.9;
     uint32_t num_iterations = 10;

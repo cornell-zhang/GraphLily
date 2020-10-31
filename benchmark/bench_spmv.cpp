@@ -29,14 +29,14 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 void bench_spmv(uint32_t num_channels, std::string bitstream, std::string dataset) {
     graphblas::SemiRingType semiring = graphblas::kLogicalAndOr;
-    using matrix_data_t = unsigned int;
-    using vector_data_t = unsigned int; // Use unsigned int to work around the issue with std::vector<bool>
-    uint32_t out_buffer_len = 320 * 1024;
-    uint32_t vector_buffer_len= 64 * 1024;
+    using matrix_data_t = unsigned;
+    using vector_data_t = unsigned; // Use unsigned to work around the issue with std::vector<bool>
+    uint32_t out_buf_len = 320 * 1024;
+    uint32_t vec_buf_len = 64 * 1024;
     graphblas::module::SpMVModule<matrix_data_t, vector_data_t> spmv(semiring,
                                                                      num_channels,
-                                                                     out_buffer_len,
-                                                                     vector_buffer_len);
+                                                                     out_buf_len,
+                                                                     vec_buf_len);
 
     std::string target = "hw";
     spmv.set_target(target);
@@ -80,13 +80,13 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
     std::cout << "average_time: " << average_time_in_sec * 1000 << " ms" << std::endl;
 
     uint32_t nnz = spmv.get_nnz();
-    double throughput = nnz * (sizeof(unsigned int) + sizeof(unsigned int)); // indices + values
+    double throughput = nnz * (sizeof(unsigned) + sizeof(unsigned)); // indices + values
     throughput /= 1000;                // to KB
     throughput /= 1000;                // to MB
     throughput /= 1000;                // to GB
     throughput /= average_time_in_sec; // to GB/s
     std::cout << "Memory THROUGHPUT = " << throughput << " GB/s" << std::endl;
-    std::cout << "Compute THROUGHPUT = " << throughput / (sizeof(unsigned int) + sizeof(unsigned int))
+    std::cout << "Compute THROUGHPUT = " << throughput / (sizeof(unsigned) + sizeof(unsigned))
               << " GOPS" << std::endl;
 
     // kernel_results = spmv.send_results_device_to_host();
