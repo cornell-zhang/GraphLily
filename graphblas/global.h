@@ -54,11 +54,33 @@ const int HBM[MAX_HBM_CHANNEL_COUNT] = {
 
 const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 
-// Semiring type
-enum SemiRingType {
+// Data types
+using val_t = ap_ufixed<32, 16, AP_RND, AP_SAT>;
+typedef uint32_t idx_t;
+const uint32_t idx_marker = 0xffffffff;
+const uint32_t pack_size = 8;
+typedef struct {idx_t data[pack_size];} packed_idx_t;
+
+typedef struct {idx_t index; float val;} index_float_t;
+typedef struct {idx_t index; val_t val;} index_val_t;
+
+using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
+using aligned_sparse_float_vec_t = std::vector<index_float_t, aligned_allocator<index_float_t>>;
+
+const uint32_t UINT_INF = 0xffffffff;
+const val_t UFIXED_INF = 65535;
+
+// Semiring definition
+enum OperationType {
     kMulAdd = 0,
     kLogicalAndOr = 1,
     kAddMin = 2,
+};
+
+struct SemiringType {
+    OperationType op;
+    val_t zero;
+    val_t one;
 };
 
 // Mask type
@@ -68,19 +90,9 @@ enum MaskType {
     kMaskWriteToOne = 2,
 };
 
-// Data types
-using val_t = ap_ufixed<32, 16, AP_RND, AP_SAT>;
-typedef uint32_t idx_t;
-const uint32_t idx_marker = 0xffffffff;
-const uint32_t pack_size = 8;
-typedef struct {idx_t data[pack_size];} packed_idx_t;
-
-typedef struct {idx_t index; float val;} index_float_t;
-
-using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
-using aligned_sparse_float_vec_t = std::vector<index_float_t, aligned_allocator<index_float_t>>;
-
-const uint32_t UINT_INF = 0xffffffff;
+const SemiringType ArithmeticSemiring = {kMulAdd, 0, 1};
+const SemiringType LogicalSemiring = {kLogicalAndOr, 0, 1};
+const SemiringType TropicalSemiring = {kAddMin, 1, UFIXED_INF};
 
 // Kernel configuration
 const uint32_t num_hbm_channels = 8;

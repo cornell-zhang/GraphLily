@@ -24,6 +24,18 @@ void clean_proj_folder() {
     system(command.c_str());
 }
 
+// convert sparse vector to dense vector
+template<typename SparseDataT, typename DenseDataT>
+std::vector<DenseDataT, aligned_allocator<DenseDataT>>
+convert_vector_sparse_to_dense(std::vector<SparseDataT, aligned_allocator<SparseDataT>> sparse_vec,
+                               uint32_t dense_size,
+                               DenseDataT zero) {
+    std::vector<DenseDataT, aligned_allocator<DenseDataT>> dense_vec(dense_size,zero);
+    for (size_t i = 1; i < sparse_vec[0].index + 1; i++)  {
+        dense_vec[sparse_vec[i].index] = sparse_vec[i].val;
+    }
+    return dense_vec;
+}
 
 template <typename data_t>
 void verify(std::vector<float, aligned_allocator<float>> &reference_results,
@@ -49,7 +61,7 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 void _test_spmv_module(graphblas::module::SpMVModule<graphblas::val_t, graphblas::val_t> &module,
-                       graphblas::SemiRingType semiring,
+                       graphblas::SemiringType semiring,
                        graphblas::MaskType mask_type,
                        CSRMatrix<float> const &csr_matrix) {
     module.set_semiring(semiring);
@@ -108,121 +120,97 @@ TEST(SpMV, MultipleCases) {
     // for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
     for (auto &x : csr_matrix.adj_data) x = 1.0;
 
-    _test_spmv_module(module, graphblas::kMulAdd, graphblas::kNoMask, csr_matrix);
-    _test_spmv_module(module, graphblas::kLogicalAndOr, graphblas::kNoMask, csr_matrix);
-    _test_spmv_module(module, graphblas::kMulAdd, graphblas::kMaskWriteToZero, csr_matrix);
-    _test_spmv_module(module, graphblas::kLogicalAndOr, graphblas::kMaskWriteToZero, csr_matrix);
-    _test_spmv_module(module, graphblas::kMulAdd, graphblas::kMaskWriteToOne, csr_matrix);
-    _test_spmv_module(module, graphblas::kLogicalAndOr, graphblas::kMaskWriteToOne, csr_matrix);
+    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kNoMask, csr_matrix);
+    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kNoMask, csr_matrix);
+    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToZero, csr_matrix);
+    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kMaskWriteToZero, csr_matrix);
+    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToOne, csr_matrix);
+    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kMaskWriteToOne, csr_matrix);
 
     clean_proj_folder();
 }
 
+void _test_spmspv_module(graphblas::module::SpMSpVModule<graphblas::val_t,
+                                                         graphblas::val_t,
+                                                         graphblas::index_val_t> &module,
+                         graphblas::SemiringType semiring,
+                         graphblas::MaskType mask_type,
+                         CSCMatrix<float> const &csc_matrix,
+                         float vector_sparsity) {
+    // data types
+    using aligned_sparse_vec_t = std::vector<graphblas::index_val_t, aligned_allocator<graphblas::index_val_t>>;
+    using aligned_dense_vec_t = std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>>;
+    module.config_kernel(semiring,mask_type);
 
-// template<typename matrix_data_t, typename vector_data_t, graphblas::SemiRingType semiring>
-// void test_spmspv_module() {
-//     // data types
-//     using index_val_t = struct {graphblas::idx_t index; vector_data_t val;};
-//     using aligned_sparse_vec_t = std::vector<index_val_t, aligned_allocator<index_val_t>>;
-//     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
+    // generate vector
+    unsigned vector_length = csc_matrix.num_cols;
+    unsigned vector_nnz_cnt = (unsigned)floor(vector_length * (1 - vector_sparsity));
+    unsigned vector_indices_increment = vector_length / vector_nnz_cnt;
 
-//     // vector sparsity 99%
-//     float vector_sparsity = 0.99;
+    graphblas::aligned_sparse_float_vec_t vector_float(vector_nnz_cnt);
+    for (size_t i = 0; i < vector_nnz_cnt; i++) {
+        vector_float[i].val = (float)(rand() % 10) / 10;
+        vector_float[i].index = i * vector_indices_increment;
+    }
+    graphblas::index_float_t vector_head;
+    vector_head.index = vector_nnz_cnt;
+    vector_head.val = 0;
+    vector_float.insert(vector_float.begin(), vector_head);
+    aligned_sparse_vec_t vector(vector_float.size());
+    for (size_t i = 0; i < vector[0].index + 1; i++) {
+        vector[i].index = vector_float[i].index;
+        vector[i].val = vector_float[i].val;
+    }
 
-//     // output buffer size (MUST DIVIDE 32)
-//     uint32_t out_buf_len = 128;
+    // generate mask
+    unsigned mask_length = csc_matrix.num_rows;
+    graphblas::aligned_dense_float_vec_t mask_float(mask_length,0);
+    for (size_t i = 0; i < mask_length; i++) {
+        mask_float[i] = (float)(rand() % 2);
+    }
+    aligned_dense_vec_t mask;
+    std::copy(mask_float.begin(), mask_float.end(), std::back_inserter(mask));
 
-//     // matrix data path
-//     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
-//                                      "data/sparse_matrix_graph/dense_1K_csr_float32.npz";
+    aligned_sparse_vec_t kernel_results(csc_matrix.num_rows + 1);
+    graphblas::aligned_dense_float_vec_t reference_results(csc_matrix.num_rows + 1);
 
-//     // load matrix
-//     CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
-//     CSCMatrix<float> csc_matrix = graphblas::io::csr2csc(csr_matrix);
+    // run the kernel
+    module.load_and_format_matrix(csc_matrix);
+    module.send_matrix_host_to_device();
+    module.send_mask_host_to_device(mask);
+    module.send_vector_host_to_device(vector);
+    module.run();
+    kernel_results = module.send_results_device_to_host();
+    reference_results = module.compute_reference_results(vector_float, mask_float);
 
-//     // generate vector
-//     unsigned vector_length = csc_matrix.num_cols;
-//     unsigned vector_nnz_cnt = (unsigned)floor(vector_length * (1 - vector_sparsity));
-//     unsigned vector_indices_increment = vector_length / vector_nnz_cnt;
+    aligned_dense_vec_t kernel_results_dense = convert_vector_sparse_to_dense<graphblas::index_val_t, graphblas::val_t>(kernel_results, vector_length, semiring.zero);
+    verify<graphblas::val_t>(reference_results, kernel_results_dense);
 
-//     graphblas::aligned_sparse_float_vec_t vector_float(vector_nnz_cnt);
-//     for (size_t i = 0; i < vector_nnz_cnt; i++) {
-//         vector_float[i].val = (float)(rand() % 10) / 10;
-//         vector_float[i].index = i * vector_indices_increment;
-//     }
-//     graphblas::index_float_t vector_head;
-//     vector_head.index = vector_nnz_cnt;
-//     vector_head.val = 0;
-//     vector_float.insert(vector_float.begin(), vector_head);
-//     aligned_sparse_vec_t vector(vector_float.size());
-//     for (size_t i = 0; i < vector[0].index + 1; i++) {
-//         vector[i].index = vector_float[i].index;
-//         vector[i].val = vector_float[i].val;
-//     }
+}
 
-//     // generate mask
-//     unsigned mask_length = csc_matrix.num_rows;
-//     graphblas::aligned_dense_float_vec_t mask_float(mask_length,0);
-//     for (size_t i = 0; i < mask_length; i++) {
-//         mask_float[i] = (float)(rand() % 2);
-//     }
-//     aligned_dense_vec_t mask;
-//     std::copy(mask_float.begin(), mask_float.end(), std::back_inserter(mask));
+TEST(SpMSpV, MultipleCases) {
+    uint32_t out_buf_len = 512;
+    graphblas::module::SpMSpVModule<graphblas::val_t, graphblas::val_t, graphblas::index_val_t> module(out_buf_len);
+    module.set_target(target);
+    module.compile();
+    module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-//     aligned_sparse_vec_t kernel_results(csc_matrix.num_rows + 1);
-//     graphblas::aligned_sparse_float_vec_t reference_results(csc_matrix.num_rows + 1);
+    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+                                     "data/sparse_matrix_graph/dense_1K_csr_float32.npz";
+    CSCMatrix<float> csc_matrix = graphblas::io::csr2csc(graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path));
 
-//     /*----------------------------- No mask -------------------------------*/
-//     {
-//     graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>
-//         module(semiring, out_buf_len);
+    // for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
+    for (auto &x : csc_matrix.adj_data) x = 1.0;
 
-//     module.set_target(target);
-//     module.set_mask_type(graphblas::kNoMask);
-//     module.compile();
-//     module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-//     module.load_and_format_matrix(csc_matrix);
-//     module.send_matrix_host_to_device();
-//     module.send_vector_host_to_device(vector);
-//     module.run();
-//     kernel_results = module.send_results_device_to_host();
-//     reference_results = module.compute_reference_results(vector_float);
-//     aligned_dense_vec_t kernel_results_dense =
-//         graphblas::convert_sparse_vec_to_dense_vec<aligned_sparse_vec_t, aligned_dense_vec_t>(
-//             kernel_results, csc_matrix.num_rows);
-//     graphblas::aligned_dense_float_vec_t reference_results_dense =
-//         graphblas::convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
-//             reference_results, csc_matrix.num_rows);
-//     verify<vector_data_t>(reference_results_dense, kernel_results_dense);
-//     std::cout << "SpMSpV test with no mask passed" << std::endl;
-//     }
+    _test_spmspv_module(module, graphblas::ArithmeticSemiring, graphblas::kNoMask,          csc_matrix, 0.99);
+    _test_spmspv_module(module, graphblas::LogicalSemiring,    graphblas::kNoMask,          csc_matrix, 0.99);
+    _test_spmspv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToZero, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphblas::LogicalSemiring,    graphblas::kMaskWriteToZero, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToOne,  csc_matrix, 0.99);
+    _test_spmspv_module(module, graphblas::LogicalSemiring,    graphblas::kMaskWriteToOne,  csc_matrix, 0.99);
 
-//     /*----------------------------- With mask -------------------------------*/
-//     {
-//     graphblas::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>
-//         module2(semiring, out_buf_len);
-//     module2.set_target(target);
-//     module2.set_mask_type(graphblas::kMaskWriteToZero);
-//     module2.compile();
-//     module2.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-//     module2.load_and_format_matrix(csc_matrix);
-//     module2.send_matrix_host_to_device();
-//     module2.send_mask_host_to_device(mask);
-//     module2.send_vector_host_to_device(vector);
-//     module2.run();
-//     kernel_results = module2.send_results_device_to_host();
-//     reference_results = module2.compute_reference_results(vector_float, mask_float);
-//     aligned_dense_vec_t kernel_results_dense =
-//         graphblas::convert_sparse_vec_to_dense_vec<aligned_sparse_vec_t, aligned_dense_vec_t>(
-//             kernel_results, csc_matrix.num_rows);
-//     graphblas::aligned_dense_float_vec_t reference_results_dense =
-//         graphblas::convert_sparse_vec_to_dense_vec<graphblas::aligned_sparse_float_vec_t, graphblas::aligned_dense_float_vec_t>(
-//             reference_results, csc_matrix.num_rows);
-//     verify<vector_data_t>(reference_results_dense, kernel_results_dense);
-//     std::cout << "SpMSpV test with mask passed" << std::endl;
-//     }
-// }
-
+    clean_proj_folder();
+}
 
 // void test_assign_vector_dense_module() {
 //     using vector_data_t = unsigned;

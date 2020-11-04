@@ -419,13 +419,13 @@ void kernel_spmv(
 
     VAL_T Zero;
     switch (Op) {
-    case MulAdd:
+    case MULADD:
         Zero = MulAddZero;
         break;
-    case AndOr:
+    case ANDOR:
         Zero = AndOrZero;
         break;
-    case AddMin:
+    case ADDMIN:
         Zero = AddMinZero;
         break;
     default:
@@ -651,20 +651,20 @@ void kernel_spmv(
         loop_write_to_out_ddr:
         for (int i = 0; i < vsize; i++) {
             #pragma HLS PIPELINE II=1
-            if (mask_type != NoMask) {
+            if (mask_type != NOMASK) {
                 tmp_mask = mask[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE];
             }
             for (int k = 0; k < PACK_SIZE; k++) {
                 #pragma HLS UNROLL
-                if (mask_type == NoMask) {
+                if (mask_type == NOMASK) {
                     tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
-                } else if (mask_type == WriteToZero) {
+                } else if (mask_type == WRITETOZERO) {
                     if (tmp_mask.data[k] == 0) {
                         tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
                     } else {
                         tmp_out.data[k] = 0;
                     }
-                } else if (mask_type == WriteToOne) {
+                } else if (mask_type == WRITETOONE) {
                     if (tmp_mask.data[k] == 0) {
                         tmp_out.data[k] = 0;
                     } else {

@@ -24,13 +24,13 @@ ValT pe_mul_alu(ValT a, ValT b, ValT z, OpT op, bool en) {
     #pragma HLS latency min=2 max=2
     ValT out;
     switch (op) {
-        case MulAdd:
+        case MULADD:
             out = a * b;
             break;
-        case AndOr:
+        case ANDOR:
             out = a && b;
             break;
-        case AddMin:
+        case ADDMIN:
             out = a + b;
             break;
         default:
@@ -48,13 +48,13 @@ ValT pe_add_alu(ValT a, ValT b, ValT z, OpT op, bool en) {
     // #pragma HLS latency min=0 max=0
     ValT out;
     switch (op) {
-        case MulAdd:
+        case MULADD:
             out = a + b;
             break;
-        case AndOr:
+        case ANDOR:
             out = a || b;
             break;
-        case AddMin:
+        case ADDMIN:
             out = MIN(a, b);
             break;
         default:

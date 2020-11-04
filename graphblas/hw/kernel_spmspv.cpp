@@ -1,1261 +1,546 @@
-#include <hls_stream.h>
+#include "./kernel_spmspv.h"
+
 #include <ap_fixed.h>
-#include <ap_int.h>
-#include <assert.h>
+#include <hls_stream.h>
 #include <iostream>
 #include <iomanip>
 
-#include "./kernel_spmspv.h"
-
-//------------------------------------------------------------
-// line tracing swtiches
-//------------------------------------------------------------
+#include "./shuffle.h"
+#include "./pe.h"
 
 #ifndef __SYNTHESIS__
-
-static bool line_tracing_DL = false;
-static bool line_tracing_PE = false;
-static bool line_tracing_kernel = true;
-
+static bool line_tracing_spmspv = true;
 #endif
 
-
-//------------------------------------------------------------
-// functions used for line tracing
-//------------------------------------------------------------
-
-#ifndef __SYNTHESIS__
-
-// to calculate total progress
-template<typename T, const unsigned int ARRAY_SIZE>
-T array_sum(T array[ARRAY_SIZE]) {
-    T result = 0;
-    for (size_t i = 0; i < ARRAY_SIZE; i++) {
-        result += array[i];
-    }
-    return result;
-}
-
-#endif
-
-//----------------------------------------------------
-// Hardware Manipulating Helper Functions
-//----------------------------------------------------
-
-// force a register
-template<class T>
-T HLS_REG(T in){
-#pragma HLS pipeline
-#pragma HLS inline off
-#pragma HLS interface port=return register
-    return in;
-}
-
-
-//------------------------------------------------------------
-// array shift functions
-//------------------------------------------------------------
-
-template <typename T, const unsigned int ARRAY_SIZE>
-void array_shift_left(T array[ARRAY_SIZE],T array_dest[ARRAY_SIZE], unsigned int rotate) {
-    #pragma HLS inline
-    // #pragma HLS latency min=0 max=0
-    #pragma HLS array_partition variable=array complete
-    #pragma HLS array_partition variable=array_dest complete
-    for (int i = 0; i < ARRAY_SIZE; i++) {
-        #pragma HLS UNROLL
-        array_dest[i] = array[(i + rotate) % ARRAY_SIZE];
-    }
-}
-
-//------------------------------------------------------------
-// array add functions
-//------------------------------------------------------------
-
-template <typename INDEX_T, const unsigned int ARRAY_SIZE, const unsigned int MAX>
-void array_cyclic_add(arbiter_result<INDEX_T> array[ARRAY_SIZE], unsigned int inc) {
-    #pragma HLS inline
-    // #pragma HLS latency min=0 max=0
-    #pragma HLS array_partition variable=array complete
-    for (unsigned int i = 0; i < ARRAY_SIZE; i++) {
-        #pragma HLS unroll
-        if(!array[i].bank_idle) {
-            array[i].virtual_port_id = (array[i].virtual_port_id + inc) % MAX;
-        }
-    }
-}
-
-//------------------------------------------------------------
-// bool array reduction functions
-//------------------------------------------------------------
-
-// reduction and
-template <const unsigned int ARRAY_SIZE>
-bool bool_array_and_reduction(bool array1[ARRAY_SIZE],bool array2[ARRAY_SIZE]) {
-    #pragma HLS latency min=0 max=0
-    bool result = true;
-    for (unsigned int i = 0; i < ARRAY_SIZE; i++) {
-        #pragma HLS unroll
-        result = result && (array1[i] && array2[i]);
-    }
-    return result;
-}
-
-// reduction or
-template <const unsigned int ARRAY_SIZE>
-bool bool_array_or_reduction(bool array[ARRAY_SIZE]) {
-    #pragma HLS latency min=0 max=0
-    bool result = false;
-    for (unsigned int i = 0; i < ARRAY_SIZE; i++) {
-        #pragma HLS unroll
-        result = result || array[i];
-    }
-    return result;
-}
-
-
-//------------------------------------------------------------
-// bram access network (BAN) functions
-//------------------------------------------------------------
-
-// arbiter logic
-void bram_access_arbiter(
-    // virtual ports
-    rd_req<INDEX_T> requests[NUM_PE],
-    // arbitering results (used for write)
-    arbiter_result<INDEX_T> rd_arbiter_results[NUM_BANK],
-    // grant PE (used to grant PEs)
-    bool granted[NUM_PE],
-    // rotate priority
-    unsigned int rotate_priority
-){
-    #pragma HLS latency min=ARBITER_LATENCY max=ARBITER_LATENCY
-    #pragma HLS pipeline II=1
-
-    rd_req<INDEX_T> requests_temp[NUM_PE];
-    #pragma HLS array_partition variable=requests_temp complete
-
-    bool good_req[NUM_PE];
-    #pragma HLS array_partition variable=good_req complete
-
-    // change to the correct priority
-    array_shift_left<rd_req<INDEX_T>,NUM_PE>(requests,requests_temp,rotate_priority);
-
-    // find out requests to be arbitered
-    loop_ab_check_req_unroll:
-    for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
-        #pragma HLS unroll
-        good_req[VPid] = (requests_temp[VPid].valid) && (!requests_temp[VPid].zero);
-    }
-
-    // arbiter
-
-    loop_ab_logic_unroll:
-    for(unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
-        #pragma HLS unroll
-        bool found = false;
-        INDEX_T chosen_port = 0;
-
-        loop_ab_logic_encoder_unroll:
-        for(unsigned int VPid_plus_1 = NUM_PE; VPid_plus_1 > 0; VPid_plus_1 --) {
-            #pragma HLS unroll
-            if(good_req[VPid_plus_1 - 1] && ((requests_temp[VPid_plus_1 - 1].addr & BANK_ID_MASK) == BKid)) {
-                chosen_port = VPid_plus_1 - 1;
-                found = true;
-            }
-        }
-
-        if(!found) {
-            rd_arbiter_results[BKid].bank_idle = true;
-            rd_arbiter_results[BKid].virtual_port_id = 0;
-        } else {
-            rd_arbiter_results[BKid].bank_idle = false;
-            rd_arbiter_results[BKid].virtual_port_id = chosen_port;
-        }
-
-    }
-
-    // adjust airbiter results back
-    array_cyclic_add<INDEX_T,NUM_BANK,NUM_PE>(rd_arbiter_results,rotate_priority);
-
-    // grant PEs
-    loop_grant_PE_unroll:
-    for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
-        #pragma HLS unroll
-        // count zero requests and granted requests
-        INDEX_T bkid = requests[VPid].addr & BANK_ID_MASK;
-        granted[VPid] = (!rd_arbiter_results[bkid].bank_idle) && (rd_arbiter_results[bkid].virtual_port_id == VPid);
-    }
-}
-
-
-void bram_access_read(
-    // virtual ports
-    rd_req<INDEX_T> requests[NUM_PE],
-    rd_resp<VAL_T> responses[NUM_PE],
-    // bram
-    VAL_T bram[NUM_BANK][BANK_SIZE],
-    // arbitering results (used for write)
-    arbiter_result<INDEX_T> rd_arbiter_results[NUM_BANK],
-    bool granted_PE[NUM_PE]
-){
-    #pragma HLS inline
-
-    // pipeline registers (_local means local to bram)
-    rd_req<INDEX_T> requests_local[NUM_PE];
-    rd_resp<VAL_T> responses_local[NUM_PE];
-    arbiter_result<INDEX_T> rd_arbiter_results_local[NUM_BANK];
-    bool granted_PE_local[NUM_PE];
-    #pragma HLS array_partition variable=requests_local complete
-    #pragma HLS array_partition variable=response_local complete
-    #pragma HLS array_partition variable=rd_arbiter_results_local complete
-    #pragma HLS array_partition variable=granted_PE_local complete
-
-    // input pipeline
-    loop_rb_inpp_abresult_unroll:
-    for (unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
-        #pragma HLS unroll
-        rd_arbiter_results_local[BKid] =
-            HLS_REG< arbiter_result<INDEX_T> >(
-                HLS_REG< arbiter_result<INDEX_T> >(
-                    HLS_REG< arbiter_result<INDEX_T> >(
-                        HLS_REG< arbiter_result<INDEX_T> >(
-                            HLS_REG< arbiter_result<INDEX_T> >(rd_arbiter_results[BKid])))));
-    }
-    loop_rb_inpp_vpreq_unroll:
-    for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
-        #pragma HLS unroll
-        requests_local[VPid] =
-            HLS_REG< rd_req<INDEX_T> >(
-                HLS_REG< rd_req<INDEX_T> >(
-                    HLS_REG< rd_req<INDEX_T> >(
-                        HLS_REG< rd_req<INDEX_T> >(
-                            HLS_REG< rd_req<INDEX_T> >(requests[VPid])))));
-        granted_PE_local[VPid] =
-            HLS_REG< bool >(
-                HLS_REG< bool >(
-                    HLS_REG< bool >(
-                        HLS_REG< bool >(
-                            HLS_REG< bool >(granted_PE[VPid])))));
-    }
-
-    // read access logic
-    VAL_T rd_data_local[NUM_BANK];
-    #pragma HLS array_partition variable=rd_data_local complete
-
-    // first get read data
-    loop_rd_get_data_unroll:
-    for(unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
-        #pragma HLS unroll
-        if(!rd_arbiter_results_local[BKid].bank_idle) {
-            INDEX_T vpid = rd_arbiter_results_local[BKid].virtual_port_id;
-            rd_data_local[BKid] = bram[BKid][requests_local[vpid].addr >> BANK_ID_NBITS];
-        } else {
-            rd_data_local[BKid] = 0;
-        }
-    }
-
-    // then send data back to vritual ports
-    loop_rd_port_resp_unroll:
-    for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
-        #pragma HLS unroll
-        if(granted_PE_local[VPid]){
-            responses_local[VPid].data = rd_data_local[requests_local[VPid].addr & BANK_ID_MASK];
-            responses_local[VPid].valid = 1;
-        } else {
-            responses_local[VPid].data = 0;
-            responses_local[VPid].valid = 0;
-        }
-    }
-
-    // output pipeline
-    loop_rb_outpp_vpresp_unroll:
-    for(unsigned int VPid = 0; VPid < NUM_PE; VPid++){
-        #pragma HLS unroll
-        responses[VPid] =
-            HLS_REG< rd_resp<VAL_T> >(
-                HLS_REG< rd_resp<VAL_T> >(
-                    HLS_REG< rd_resp<VAL_T> >(
-                        HLS_REG< rd_resp<VAL_T> >(
-                            HLS_REG< rd_resp<VAL_T> >(responses_local[VPid])))));
-    }
-}
-
-// write logic
-void bram_access_write(
-    // virtual ports
-    wr_req<VAL_T,INDEX_T> requests[NUM_PE],
-    // bram
-    VAL_T bram[NUM_PE][BANK_SIZE],
-    // arbitering results from read
-    arbiter_result<INDEX_T> arbiter_results_from_rd[NUM_BANK]
-){
-    #pragma HLS inline
-    // pipeline registers (_local means local to bram)
-    wr_req<VAL_T,INDEX_T> requests_local[NUM_PE];
-    arbiter_result<INDEX_T> arbiter_results_from_rd_local[NUM_BANK];
-    #pragma HLS array_partition variable=requests_local complete
-    #pragma HLS array_partition variable=arbiter_results_from_rd_local complete
-
-    // input pipeline
-    loop_wb_inpp_vpreq_unroll:
-    for (unsigned int VPid = 0; VPid < NUM_PE; VPid++) {
-        #pragma HLS unroll
-        requests_local[VPid] =
-            HLS_REG< wr_req<VAL_T,INDEX_T> >(
-                HLS_REG< wr_req<VAL_T,INDEX_T> >(
-                    HLS_REG< wr_req<VAL_T,INDEX_T> >(
-                        HLS_REG< wr_req<VAL_T,INDEX_T> >(
-                            HLS_REG< wr_req<VAL_T,INDEX_T> >(requests[VPid])))));
-    }
-    loop_wb_inpp_abresults_unroll:
-    for (unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
-        #pragma HLS unroll
-        arbiter_results_from_rd_local[BKid] =
-            HLS_REG< arbiter_result<INDEX_T> >(
-                HLS_REG< arbiter_result<INDEX_T> >(
-                    HLS_REG< arbiter_result<INDEX_T> >(
-                        HLS_REG< arbiter_result<INDEX_T> >(
-                            HLS_REG< arbiter_result<INDEX_T> >(arbiter_results_from_rd[BKid])))));
-    }
-
-    // write access logic
-    loop_wr_logic_unroll:
-    for(unsigned int BKid = 0; BKid < NUM_PE; BKid++) {
-        #pragma HLS unroll
-        INDEX_T vpid = arbiter_results_from_rd_local[BKid].virtual_port_id;
-        if(!arbiter_results_from_rd_local[BKid].bank_idle) {
-            bram[BKid][requests_local[vpid].addr >> BANK_ID_NBITS] = requests_local[vpid].data;
-        }
-    }
-}
-
-//----------------------------------------------------
-// Data Loader
-//----------------------------------------------------
-
-static void DL_spmspv(
-    // bram buffers
-    const PACKED_DWI_T mat_dwi[],
-    const INDEX_T mat_idxptr[],
-    const DIT_T vec_dit[],
-    // stream buffers (DL->PE)
-    hls::stream<VAL_T> nnz_from_mat_stream[],
-    hls::stream<INDEX_T> current_row_id_stream[],
-    hls::stream<VAL_T> &nnz_from_vec_stream,
-    hls::stream<INDEX_T> &current_collen_stream,
-    // column count
-    unsigned int vec_nnz_total,
-    // mat size
-    const unsigned int num_columns,
-    // tile count
-    unsigned int tile_cnt,
-    // tile base
-    INDEX_T tile_base
+// vector loader for spmspv
+static void load_vector_from_gmem(
+    // vector data, row_id
+    VEC_PKT_T *vector,
+    // number of non-zeros
+    IDX_T vec_num_nnz,
+    // fifo
+    hls::stream<VL_O_T> &VL_to_ML_stream
 ) {
-    // calculate mat_idxptr base address
-    unsigned int idxptr_base = tile_cnt * (num_columns + 1);
-
-    // line tracing
-    #ifndef __SYNTHESIS__
-    if(line_tracing_DL) {
-        std::cout << "[INFO kernel_spmspv] DL idxptr base: " << std::setw(5) << idxptr_base << std::endl;
+    loop_over_vector_values:
+    for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_num_nnz; vec_nnz_cnt++) {
+        #pragma HLS pipeline II=1
+        VL_O_T instruction_to_ml;
+        instruction_to_ml.current_column_id = vector[vec_nnz_cnt + 1].index;
+        instruction_to_ml.vector_value = vector[vec_nnz_cnt + 1].val;
+        VL_to_ML_stream.write(instruction_to_ml);
     }
-    #endif
 
+}
+
+// data loader for spmspv
+static void load_matrix_from_gmem(
+    // matrix data, row_id
+    MAT_PKT_T *matrix,
+    // matrix indptr
+    IDX_T *mat_indptr,
+    // matrix part ptr
+    IDX_T *mat_partptr,
+    // number of non-zeros
+    IDX_T vec_num_nnz,
+    // partition base
+    IDX_T mat_indptr_base,
+    IDX_T mat_row_id_base,
+    // current part id
+    IDX_T part_id,
+    VAL_T Zero,
+    // fifos
+    hls::stream<VL_O_T>  &VL_to_ML_stream,
+    hls::stream<SF_IO_T>  DL_to_SF_stream[PACK_SIZE],
+    // load complete
+    hls::stream<unsigned>  &num_payloads
+) {
+    IDX_T pld_cnt = 0;
+    IDX_T mat_addr_base = mat_partptr[part_id];
     // loop over all active columns
-    loop_over_active_columns_DL:
-    for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_nnz_total; vec_nnz_cnt++) {
+    loop_over_active_columns_ML:
+    for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_num_nnz; vec_nnz_cnt++) {
 
         // slice out the current column out of the active columns
-        INDEX_T current_colid = vec_dit[vec_nnz_cnt + 1].index;
-        nnz_from_vec_stream << vec_dit[vec_nnz_cnt + 1].data;
+        VL_O_T instruction_from_vl;
+        VL_to_ML_stream.read(instruction_from_vl);
+        IDX_T current_colid = instruction_from_vl.current_column_id;
+        VAL_T vec_val = instruction_from_vl.vector_value;
 
         // [0] for start, [1] for end
-        INDEX_T col_slice[2];
+        // write like this to make sure it uses burst read
+        IDX_T col_slice[2];
         #pragma HLS array_partition variable=col_slice complete
 
-        // line tracing
-        #ifndef __SYNTHESIS__
-        if(line_tracing_DL) {
-            std::cout << "DL Reading Idxptr from : "
-                      << "Start[" << std::setw(5) << current_colid + idxptr_base     << "], "
-                      << "End  [" << std::setw(5) << current_colid + idxptr_base + 1 << "]" << std::endl;
-        }
-        #endif
-
-        loop_get_column_len_DL_unroll:
+        loop_get_column_len_ML:
         for (unsigned int i = 0; i < 2; i++) {
-            #pragma HLS unroll
-            col_slice[i] = mat_idxptr[current_colid + idxptr_base + i];
+            #pragma HLS pipeline II=1
+            col_slice[i] = mat_indptr[current_colid + mat_indptr_base + i];
         }
-        INDEX_T current_collen = col_slice[1] - col_slice[0];
 
-        // line tracing
-        #ifndef __SYNTHESIS__
-        if(line_tracing_DL) {
-            std::cout   << "DL Active Column : "
-                        << "ID    " << std::setw(5) << current_colid << ", "
-                        << "Start " << std::setw(5) << tile_base + col_slice[0]     << ", "
-                        << "End   " << std::setw(5) << tile_base + col_slice[1] - 1 << ", "
-                        << "Size  " << std::setw(3) << current_collen   << std::endl;
-        }
-        #endif
-
-        current_collen_stream << current_collen; // measured in number of packets
-
-        loop_over_pkts_DL:
-        for (unsigned int i = 0; i < current_collen; i++) {
+        IDX_T tmp_pcnt = 0;
+        loop_over_pkts_ML:
+        for (unsigned int i = 0; i < (col_slice[1] - col_slice[0]); i++) {
             #pragma HLS pipeline II=1
 
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_DL) {
-                std::cout << "DL Load packet from: "
-                          << "Pkt[" << std::setw(5) << tile_base + i + col_slice[0] << "]" << std::endl;
-            }
-            #endif
+            MAT_PKT_T packet_from_mat = matrix[i + mat_addr_base + col_slice[0]];
 
-            // [IMPORTANT] read mat_dit here
-            PACKED_DWI_T dwi_packet_from_mat = mat_dwi[tile_base + i + col_slice[0]];
-
-            loop_unpack_DL_unroll:
-            for (unsigned int k = 0; k < PACKET_SIZE; k++) {
+            IDX_T tmp_pcnt_incr = 0;
+            loop_unpack_ML_unroll:
+            for (unsigned int k = 0; k < PACK_SIZE; k++) {
                 #pragma HLS unroll
-                nnz_from_mat_stream[k] << dwi_packet_from_mat.datapkt[k];
-                current_row_id_stream[k] << dwi_packet_from_mat.indexpkt[k];
+
+                SF_IO_T input_to_SF;
+                input_to_SF.data.mat_val = packet_from_mat.vals.data[k];
+                input_to_SF.data.vec_val = vec_val;
+                input_to_SF.index = packet_from_mat.indices.data[k] - mat_row_id_base;
+                // discard paddings
+                if(packet_from_mat.vals.data[k] != Zero) {
+                    DL_to_SF_stream[k].write(input_to_SF);
+                    tmp_pcnt_incr ++;
+                }
+
             }
+
+            tmp_pcnt += tmp_pcnt_incr;
         }
+        pld_cnt += tmp_pcnt;
     }
+    num_payloads.write(pld_cnt);
+
 }
 
-//----------------------------------------------------
-// kernel process elements
-//----------------------------------------------------
-static void PE_spmspv(
-    // FIFO from DL
-    hls::stream<VAL_T> nnz_from_mat_stream[],
-    hls::stream<INDEX_T> current_row_id_stream[],
-    hls::stream<VAL_T> &nnz_from_vec_stream,
-    hls::stream<INDEX_T> &current_collen_stream,
-    // number of columns
-    INDEX_T vec_nnz_total,
-    // bram
-    VAL_T bram[NUM_BANK][BANK_SIZE],
-    // tile count
-    unsigned int tile_cnt
-) {
-    // *************  PE  **************
-    // PE registers
-    VAL_T   nnz_from_mat[NUM_PE];
-    INDEX_T current_row_id[NUM_PE];
-    VAL_T   nnz_from_vec;
-    VAL_T   result_inc[NUM_PE];
-    INDEX_T collen;
-    #pragma HLS array_partition variable=nnz_from_mat complete
-    #pragma HLS array_partition variable=current_row_id complete
-    #pragma HLS array_partition variable=result_inc complete
-    // granted by arbiter
-    bool granted[NUM_PE];
-    #pragma HLS array_partition variable=granted        complete
-    // whether to resend a request
-    bool resend_req[NUM_PE]; // to be forwarded (also the switch to data forwarding)
-    #pragma HLS array_partition variable=resend_req     complete
-    // processed item count
-    unsigned int fetch_cnt[NUM_PE];
-    bool all_fetched[NUM_PE];
-    unsigned int process_cnt[NUM_PE];
-    bool all_processed[NUM_PE]; // to be forwarded
-    #pragma HLS array_partition variable=fetch_cnt      complete
-    #pragma HLS array_partition variable=all_fetched    complete
-    #pragma HLS array_partition variable=process_cnt    complete
-    #pragma HLS array_partition variable=all_processed  complete
-    // forwarding signals
-    INDEX_T current_row_id_fwd[NUM_PE];
-    VAL_T   nnz_from_mat_fwd[NUM_PE];
-    #pragma HLS array_partition variable=current_row_id_fwd  complete
-    #pragma HLS array_partition variable=nnz_from_mat_fwd    complete
-
-    // *************  Virtual Port  **************
-    // no write response is needed, because if read is success, write will also success
-    // Virtual port signals
-    rd_req<INDEX_T> VrdP_req[NUM_PE];
-    rd_resp<VAL_T> VrdP_resp[NUM_PE];
-    wr_req<VAL_T,INDEX_T> VwrP_req[NUM_PE];
-    #pragma HLS array_partition variable=VrdP_req complete
-    #pragma HLS array_partition variable=VrdP_resp complete
-    #pragma HLS array_partition variable=VwrP_req complete
-
-    // *************  Arbiter  **************
-    // save read arbiter results which will be used in write
-    arbiter_result<INDEX_T> rd_arbiter_results[NUM_BANK];
-    #pragma HLS array_partition variable=rd_arbiter_results complete
-
-    // loop over all active columns
-    loop_over_active_columns_PE:
-    for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_nnz_total; vec_nnz_cnt++) {
-        #pragma HLS pipeline off
-
-        // used for line tracing
-        #ifndef __SYNTHESIS__
-            int round = 0;
-            bool input_success_ltr[NUM_PE];
-        #endif
-
-        // reset PE state
-        nnz_from_vec = nnz_from_vec_stream.read();
-        collen = current_collen_stream.read(); // measured in number of packets
-        loop_reset_process_unit_unroll:
-        for (unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
-            nnz_from_mat[PEid] = 0;
-            current_row_id[PEid] = 0;
-            result_inc[PEid] = 0;
-
-            VrdP_req[PEid].valid = 0;
-            VrdP_req[PEid].zero = 0;
-            VrdP_resp[PEid].valid = 0;
-
-            granted[PEid] = false;
-            resend_req[PEid] = false;
-
-            fetch_cnt[PEid] = 0;
-            all_fetched[PEid] = false;
-            process_cnt[PEid] = 0;
-            all_processed[PEid] = false;
-        }
-
-        // reset Arbiter results
-        loop_reset_arb_results_unroll:
-        for (unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
-            rd_arbiter_results[BKid].virtual_port_id = 0;
-            rd_arbiter_results[BKid].bank_idle = 1;
-        }
-
-        // reset priority rotation
-        unsigned int rotate_priority = 0;
-
-        // start processing
-        loop_process_element_pipeline:
-        while(!bool_array_and_reduction<NUM_PE>(all_fetched, all_processed)) {
-            #pragma HLS pipeline II=1
-            #pragma HLS latency min=9
-            #pragma HLS dependence variable=bram inter RAW false
-            #pragma HLS dependence variable=bram inter WAR false
-            #pragma HLS dependence variable=bram inter WAW false
-            // update rotate priority path
-            #pragma HLS dependence variable=rotate_priority inter distance=FWD_DISTANCE     RAW true
-            // data forwarding paths
-            #pragma HLS dependence variable=all_processed       inter distance=FWD_DISTANCE     RAW true
-            #pragma HLS dependence variable=resend_req          inter distance=FWD_DISTANCE     RAW true
-            #pragma HLS dependence variable=current_row_id_fwd  inter distance=FWD_DISTANCE     RAW true
-            #pragma HLS dependence variable=nnz_from_mat_fwd    inter distance=FWD_DISTANCE     RAW true
-
-            // line tracing
-
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                std::cout << "Column Cnt " << vec_nnz_cnt << "\t"
-                          << "Column Length " << collen << "\t"
-                          << "Round " << round << "\t"
-                          << "[" << array_sum<unsigned int,NUM_PE>(process_cnt) << "/" << collen * PACKET_SIZE << "]"
-                          << std::endl;
-                round ++;
-                // if(round > MAX_SW_EMU_LIMIT) {
-                //     std::cout << "[ERROR] Exceeded max software emulation loop count. Probably there is a deadlock" << std::endl;
-                //     return;
-                // }
-            }
-            #endif
-
-
-            // fetch inputs and send requests
-            loop_pe_fetch_unroll:
-            for (unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
-                #pragma HLS unroll
-                // all_fetched
-                all_fetched[PEid] = (fetch_cnt[PEid] >= collen);
-
-                // need to fetch or resend?
-                if(!all_fetched[PEid] || !all_processed[PEid]) {
-                    // if we need to resend a request
-                    if(resend_req[PEid]) {
-                        // use forwarded values of A,B and C from post_arbiter stage. Do not read from DL
-                        current_row_id[PEid] = current_row_id_fwd[PEid];
-                        nnz_from_mat[PEid] = nnz_from_mat_fwd[PEid];
-                        VrdP_req[PEid].addr = current_row_id_fwd[PEid];
-                        VrdP_req[PEid].zero = (nnz_from_mat_fwd[PEid] == 0);
-                        VrdP_req[PEid].valid = true;
-                    } else { // else : normal fetch
-                        // need to fetch
-                        if(!all_fetched[PEid]) {
-                            INDEX_T cri;
-                            VAL_T   nfm;
-                            bool cri_rdsuccess = current_row_id_stream[PEid].read_nb(cri);
-                            bool nfm_rdsuccess = nnz_from_mat_stream[PEid].read_nb(nfm);
-                            // fetch success
-                            if(cri_rdsuccess && nfm_rdsuccess) {
-                                current_row_id[PEid] = cri - tile_cnt * TILE_SIZE;
-                                nnz_from_mat[PEid] = nfm;
-                                VrdP_req[PEid].valid = true;
-                                VrdP_req[PEid].addr = cri - tile_cnt * TILE_SIZE;
-                                VrdP_req[PEid].zero = (nfm == 0);
-                                fetch_cnt[PEid] ++;
-                            } else { // fetch failed
-                                current_row_id[PEid] = 0;
-                                nnz_from_mat[PEid] = 0;
-                                VrdP_req[PEid].valid = false;
-                                VrdP_req[PEid].addr = 0;
-                                VrdP_req[PEid].zero = false;
-                            }
-
-                            // used for line tracing
-                            #ifndef __SYNTHESIS__
-                                input_success_ltr[PEid] = cri_rdsuccess && nfm_rdsuccess;
-                            #endif
-
-                        } else { // no need to fetch
-                            current_row_id[PEid] = 0;
-                            nnz_from_mat[PEid] = 0;
-                            VrdP_req[PEid].valid = false;
-                            VrdP_req[PEid].addr = 0;
-                            VrdP_req[PEid].zero = false;
-                        }
-                    }
-                } else { // no need to either fetch or resend
-                    current_row_id[PEid] = 0;
-                    nnz_from_mat[PEid] = 0;
-                    VrdP_req[PEid].valid = false;
-                    VrdP_req[PEid].addr = 0;
-                    VrdP_req[PEid].zero = false;
-                }
-            }
-            // ------------ end of F stage
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                std::cout << "F" << std::flush;
-            }
-            #endif
-
-            // arbiter logic
-            bram_access_arbiter(
-                VrdP_req,
-                rd_arbiter_results,
-                granted,
-                rotate_priority
-            );
-            // ------------ end of A stage
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                std::cout << "A" << std::flush;
-            }
-            #endif
-
-            // forward ungranted requests to F stage, update process_cnt
-            loop_pe_postarb_unroll:
-            for (unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
-                #pragma HLS unroll
-                // these signals need to be forwarded to the fitst stage;
-                all_processed[PEid] = (process_cnt[PEid] >= collen);
-
-                // activate data forwarding when a request fails
-                if(VrdP_req[PEid].valid && (!granted[PEid]) && (!VrdP_req[PEid].zero)) {
-                    current_row_id_fwd[PEid] = current_row_id[PEid];
-                    nnz_from_mat_fwd[PEid] = nnz_from_mat[PEid];
-                    resend_req[PEid] = true;
-                } else {
-                    resend_req[PEid] = false;
-                }
-
-                // count (granted, valid) or (zero) requests as processed
-                if((VrdP_req[PEid].valid && granted[PEid]) ||
-                    (VrdP_req[PEid].valid && VrdP_req[PEid].zero)) {
-                    process_cnt[PEid] ++;
-                }
-            }
-            // update priority rotate
-            rotate_priority = (rotate_priority + 1) % NUM_PE;
-            // ------------ end of P stage
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                std::cout << "P" << std::flush;
-            }
-            #endif
-
-            // process read requests
-            bram_access_read(VrdP_req,VrdP_resp,bram,rd_arbiter_results,granted);
-            // ------------ end of R stage
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                std::cout << "R" << std::flush;
-            }
-            #endif
-
-            // execute and send write requests
-            loop_process_element_X_unroll:
-            for(unsigned int PEid = 0; PEid < NUM_PE; PEid++) {
-                #pragma HLS unroll
-                if(VrdP_resp[PEid].valid && (nnz_from_mat[PEid] != 0)) {
-#if defined(MulAddSemiring)
-                    result_inc[PEid] = nnz_from_mat[PEid] * nnz_from_vec;
-                    VwrP_req[PEid].data = VrdP_resp[PEid].data + result_inc[PEid];
-                    VwrP_req[PEid].addr = current_row_id[PEid];
-#elif defined(LogicalAndOrSemiring)
-                    result_inc[PEid] = nnz_from_mat[PEid] && nnz_from_vec;
-                    VwrP_req[PEid].data = VrdP_resp[PEid].data || result_inc[PEid];
-                    VwrP_req[PEid].addr = current_row_id[PEid];
-#else
-                    std::cout << "Invalid semiring" << std::endl;
-                    exit(EXIT_FAILURE);
-#endif
-                } else {
-                    result_inc[PEid] = 0;
-                    VwrP_req[PEid].data = 0;
-                    VwrP_req[PEid].addr = 0;
-                }
-            }
-            // ------------ end of X stage
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                std::cout << "X" << std::flush;
-            }
-            #endif
-
-            // process write requests
-            bram_access_write(VwrP_req,bram,rd_arbiter_results);
-            // ------------ end of W stage
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                std::cout << "W\n" << std::flush;
-            }
-            #endif
-
-            // line tracing
-            #ifndef __SYNTHESIS__
-            if(line_tracing_PE) {
-                // PE states
-                for (size_t k = 0; k < NUM_PE; k++) {
-                    bool display_value = input_success_ltr[k] || !granted[k];
-                    std::cout << "PE [" << std::setw(2) << k << "] {"
-                                        << ""  << std::setw(4) << (all_processed[k]     ?  "----" :  std::to_string(process_cnt[k]))                << ""  << ""
-                                        << "} {"
-                                        << ""  << std::setw(2) << (input_success_ltr[k] ? "->" : "--")                                              << ""  << "|"
-                                        << ""  << std::setw(9) << (display_value        ? std::to_string((float)nnz_from_mat[k])            : "--") << ""  << "|"
-                                        << ""  << std::setw(9) << (display_value        ? std::to_string((float)nnz_from_vec)               : "--") << ""  << "|"
-                                        << "[" << std::setw(5) << (display_value        ? std::to_string(current_row_id[k])                 : "--") << ""  << ""
-                                        << "(" << std::setw(2) << (display_value        ? std::to_string(current_row_id[k] & BANK_ID_MASK)  : "--") << ")]"<< "|"
-                                        << ""  << std::setw(9) << (VrdP_resp[k].valid   ? std::to_string((float)VrdP_resp[k].data)          : "--") << ""  << "|"
-                                        << ""  << std::setw(9) << (VrdP_resp[k].valid   ? std::to_string((float)VwrP_req[k].data)           : "--") << ""
-                                        << "} {"
-                                        << (VrdP_req[k].zero    ? "Rz" :
-                                                VrdP_req[k].valid   ? "Rv" : " ." ) << ":"
-                                        << (!granted[k]         ?  "x" :  "o" ) << "|"
-                                        << (VrdP_resp[k].valid  ? "Wc" : " ." ) << "|"
-                                        << "}";
-                    std::cout << std::endl << std::flush;
-                }
-
-                // Arbiter results
-                std::cout << "BA (R" << std::setw(2) << ((rotate_priority- 1) % NUM_PE) << ") {";
-                for (size_t x = 0; x < NUM_PE; x++) {
-                    std::cout << "["
-                              << ""  << std::setw(2) << x << ""  << ":"
-                              << ""  << std::setw(2) << ((rd_arbiter_results[x].bank_idle) ? "--" : std::to_string(rd_arbiter_results[x].virtual_port_id)) << ""  << ""
-                              << "]";
-                }
-                std::cout << "}";
-                std::cout << std::endl << std::flush;
-            }
-            #endif
-
-        }
-    }
-}
-
-//----------------------------------------------------
-// kernel execution
-//----------------------------------------------------
-static void execution_spmspv(
-    // gmem pointer
-    const PACKED_DWI_T mat_dwi_ddr[],
-    const INDEX_T mat_idxptr_ddr[],
-    const DIT_T vec_dit_ddr[],
-    // size
-    unsigned int vec_nnz_total,
-    // bram
-    VAL_T bram[NUM_BANK][BANK_SIZE],
-    // tiling parameters
-    const unsigned int num_columns,
-    unsigned int tile_cnt,
-    unsigned int tile_base
-) {
-    // FIFOs
-    static hls::stream<INDEX_T> current_collen_stream;
-    #pragma HLS STREAM variable=current_collen_stream depth=256
-
-    static hls::stream<INDEX_T> current_row_id_stream[NUM_PE];
-    #pragma HLS STREAM variable=current_row_id_stream depth=256
-
-    static hls::stream<VAL_T> nnz_from_mat_stream[NUM_PE];
-    #pragma HLS STREAM variable=nnz_from_mat_stream depth=256
-
-    static hls::stream<VAL_T> nnz_from_vec_stream;
-    #pragma HLS STREAM variable=nnz_from_vec_stream depth=256
-
-    #pragma HLS dataflow
-
-    DL_spmspv(
-        mat_dwi_ddr,
-        mat_idxptr_ddr,
-        vec_dit_ddr,
-        nnz_from_mat_stream,
-        current_row_id_stream,
-        nnz_from_vec_stream,
-        current_collen_stream,
-        vec_nnz_total,
-        num_columns,
-        tile_cnt,
-        tile_base
-    );
-
-    #ifndef __SYNTHESIS__
-    if(line_tracing_kernel) {
-        std::cout << "[INFO kernel_spmspv] DL complete" << std::endl;
-        std::cout.flush();
-    }
-    #endif
-
-    PE_spmspv(
-        nnz_from_mat_stream,
-        current_row_id_stream,
-        nnz_from_vec_stream,
-        current_collen_stream,
-        vec_nnz_total,
-        bram,
-        tile_cnt
-    );
-
-    #ifndef __SYNTHESIS__
-    if(line_tracing_kernel) {
-        std::cout << "[INFO kernel_spmspv] PE complete" << std::endl;
-        std::cout.flush();
-    }
-    #endif
-}
-
-//----------------------------------------------------
 // bram access used for checkout results
-//----------------------------------------------------
-
 void bram_access_read_2ports(
     // real read ports
-    INDEX_T rd_addr[NUM_LANE],
-    VAL_T   rd_data[NUM_LANE],
+    IDX_T   rd_addr[PACK_SIZE * 2],
+    VAL_T   rd_data[PACK_SIZE * 2],
     // bram
-    VAL_T bram[NUM_BANK][BANK_SIZE]
+    VAL_T   bram[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE]
 ){
-    // #pragma HLS pipeline II=1
-    #pragma HLS inline
+    #pragma HLS pipeline II=1
+    // #pragma HLS inline
 
-    // pipeline registers (_local means local to bram)
-    INDEX_T rd_addr_local[NUM_LANE];
-    #pragma HLS array_partition variable=rd_addr_local complete
-
-    // input pipeline
-    loop_rb_inpp_abresult_unroll:
-    for (unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
-        #pragma HLS unroll
-        for (unsigned int PTid = 0; PTid < NUM_PORT_PER_BANK; PTid++) {
-            #pragma HLS unroll
-            rd_addr_local[BKid * NUM_PORT_PER_BANK + PTid] =
-                HLS_REG<INDEX_T>(
-                    HLS_REG<INDEX_T>(
-                        HLS_REG<INDEX_T>(
-                            HLS_REG<INDEX_T>(
-                                HLS_REG<INDEX_T>(rd_addr[BKid * NUM_PORT_PER_BANK + PTid])))));
-        }
-    }
-
-    // read access logic
-    VAL_T rd_data_local[NUM_LANE];
-    #pragma HLS array_partition variable=rd_data_local complete
-
-    // first get read data
     loop_rd_get_data_unroll:
-    for(unsigned int BKid = 0; BKid < NUM_BANK; BKid++) {
+    for(unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
         #pragma HLS unroll
-        for (unsigned int PTid = 0; PTid < NUM_PORT_PER_BANK; PTid++) {
+        for (unsigned int PTid = 0; PTid < 2; PTid++) {
             #pragma HLS unroll
-            INDEX_T sbbk_addr = rd_addr_local[BKid * NUM_PORT_PER_BANK + PTid] >> BANK_ID_NBITS;
-            rd_data_local[BKid * NUM_PORT_PER_BANK + PTid] = bram[BKid][sbbk_addr];
+            IDX_T sbbk_addr = rd_addr[BKid * 2 + PTid] >> BANK_ID_NBITS;
+            rd_data[BKid * 2 + PTid] = bram[BKid][sbbk_addr];
         }
     }
 
-    // output pipeline
-    loop_rb_outpp_vpresp_unroll:
-    for(unsigned int BKid = 0; BKid < NUM_BANK; BKid++){
-        #pragma HLS unroll
-        for (unsigned int PTid = 0; PTid < NUM_PORT_PER_BANK; PTid++) {
-            #pragma HLS unroll
-            rd_data[BKid * NUM_PORT_PER_BANK + PTid] =
-                HLS_REG<VAL_T>(
-                    HLS_REG<VAL_T>(
-                        HLS_REG<VAL_T>(
-                            HLS_REG<VAL_T>(
-                                HLS_REG<VAL_T>(rd_data_local[BKid * NUM_PORT_PER_BANK + PTid])))));
-        }
-    }
 }
 
-//----------------------------------------------------
 // change results to sparse
-//----------------------------------------------------
-
 static void checkout_results(
     // data to be checked
-    VAL_T dense_data[NUM_BANK][BANK_SIZE],
+    VAL_T dense_data[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
     // FIFOs
-    hls::stream<VAL_T> nnz_streams[],
-    hls::stream<INDEX_T> idx_streams[],
+    hls::stream<VEC_PKT_T> cr_output_streams[PACK_SIZE * 2],
     // control signals
-    hls::stream<unsigned int> &Nnnz_no_mask
+    hls::stream<IDX_T> &npld_to_wb,
+    IDX_T mat_row_id_base,
+    IDX_T num_rows,
+    VAL_T zero
 ) {
-    unsigned int local_Nnnz_no_mask = 0;
-    INDEX_T index_arr[NUM_LANE];
-    VAL_T data_arr[NUM_LANE];
+    IDX_T npld_before_mask = 0;
+    IDX_T index_arr[PACK_SIZE * 2];
+    VAL_T data_arr[PACK_SIZE * 2];
     #pragma HLS array_partition variable=index_arr complete
     #pragma HLS array_partition variable=data_arr complete
 
+    unsigned int num_rounds = (num_rows + 2 * PACK_SIZE - 1) / (PACK_SIZE * 2);
     loop_over_dense_data_pipeline:
-    for (unsigned int round_cnt = 0; round_cnt < BANK_SIZE / NUM_PORT_PER_BANK; round_cnt ++) {
+    for (unsigned int round_cnt = 0; round_cnt < num_rounds; round_cnt ++) {
         #pragma HLS pipeline II=1
-        #pragma HLS latency min=31 max=31
-        unsigned int local_Nnnz_inc = 0;
+        IDX_T local_npld_incr = 0;
 
         loop_before_read_banks_unroll:
-        for (unsigned int Bank_id = 0; Bank_id < NUM_BANK; Bank_id++) {
+        for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
             loop_before_read_ports_unroll:
-            for (unsigned int Port_id = 0; Port_id < NUM_PORT_PER_BANK; Port_id++) {
+            for (unsigned int Port_id = 0; Port_id < 2; Port_id++) {
                 #pragma HLS unroll
-                index_arr[Bank_id * NUM_PORT_PER_BANK + Port_id] = Bank_id + (round_cnt * NUM_PORT_PER_BANK + Port_id) * NUM_BANK;
+                index_arr[Bank_id * 2 + Port_id] = Bank_id + (round_cnt * 2 + Port_id) * PACK_SIZE;
             }
         }
 
         bram_access_read_2ports(index_arr,data_arr,dense_data);
 
         loop_after_read_banks_unroll:
-        for (unsigned int Bank_id = 0; Bank_id < NUM_BANK; Bank_id++) {
+        for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
             loop_after_read_ports_unroll:
-            for (unsigned int Port_id = 0; Port_id < NUM_PORT_PER_BANK; Port_id++) {
+            for (unsigned int Port_id = 0; Port_id < 2; Port_id++) {
                 #pragma HLS unroll
-                if(data_arr[Bank_id * NUM_PORT_PER_BANK + Port_id]) {
-                    nnz_streams[Bank_id * NUM_PORT_PER_BANK + Port_id].write(data_arr[Bank_id * NUM_PORT_PER_BANK + Port_id]);
-                    idx_streams[Bank_id * NUM_PORT_PER_BANK + Port_id].write(index_arr[Bank_id * NUM_PORT_PER_BANK + Port_id]);
-                    local_Nnnz_inc ++;
+                if(data_arr[Bank_id * 2 + Port_id] != zero) {
+                    VEC_PKT_T pld;
+                    pld.index = index_arr[Bank_id * 2 + Port_id] + mat_row_id_base;
+                    pld.val = data_arr[Bank_id * 2 + Port_id];
+                    cr_output_streams[Bank_id * 2 + Port_id].write(pld);
+                    local_npld_incr ++;
                 }
             }
         }
 
-        local_Nnnz_no_mask += local_Nnnz_inc;
+        npld_before_mask += local_npld_incr;
     }
-    Nnnz_no_mask << local_Nnnz_no_mask;
+    npld_to_wb << npld_before_mask;
 }
 
-//----------------------------------------------------
+
 // write back to ddr (out-of-order)
-//----------------------------------------------------
-
-static void write_back_ddr(
-    // FIFOs
-    hls::stream<VAL_T> nnz_streams[],
-    hls::stream<INDEX_T> idx_streams[],
-    // positive mask. valid when mask[i] != 0.
-#if defined(USE_MASK)
-    const INDEX_T mask[],
-#endif
-    DIT_T sparse_dit[],
-    // control signals
-    hls::stream<unsigned int> &Nnnz_no_mask,
-    // count results
-    unsigned int &Nnnz,
-    // tile count
-    unsigned int tile_cnt
+static void write_back_gmem(
+    hls::stream<VEC_PKT_T> wb_input_streams[PACK_SIZE * 2],
+    hls::stream<IDX_T> &npld_stream,
+    VAL_T *mask,
+    VEC_PKT_T *result,
+    IDX_T Nnz,
+    IDX_T &Nnz_incr,
+    VAL_T zero,
+    MASK_T mask_type
 ) {
-    unsigned int wb_cnt = 0;
-    unsigned int local_Nnnz_no_mask;
+    IDX_T wb_cnt = 0;
+    IDX_T incr = 0;
+    IDX_T npld = 0;
     bool checkout_finish = false;
+    bool loop_exit = false;
+    unsigned int Lane_id = 0;
 
-    // used forline tracing
-    #ifndef __SYNTHESIS__
-        unsigned int round = 0;
-    #endif
     loop_until_all_written_back:
-    while(!(checkout_finish && (local_Nnnz_no_mask == wb_cnt))) {
-        if(!checkout_finish) { // only try to read when checkout is not finished (avoid corrputing local_Nnnz_no_mask)
-            checkout_finish |= Nnnz_no_mask.read_nb(local_Nnnz_no_mask); // once successfully read, set up flag
-        }
-
-        loop_over_checkout_lanes_pipeline:
-        for (unsigned int Lane_id = 0; Lane_id < NUM_LANE; Lane_id++) {
-            #pragma HLS pipeline II=1
-            DIT_T wb_temp;
-            if(idx_streams[Lane_id].read_nb(wb_temp.index)) {
-                nnz_streams[Lane_id].read_nb(wb_temp.data);
-                wb_temp.index += tile_cnt * TILE_SIZE;
-                wb_cnt ++;
-
-                // positive mask. valid when mask[i] != 0.
-#if defined(USE_MASK)
-    #if defined(MASK_WRITE_TO_ZERO)
-                if(mask[wb_temp.index] == 0)
-    #endif
-    #if defined(MASK_WRITE_TO_ONE)
-                if(mask[wb_temp.index] != 0)
-    #endif
-#endif
-                {
-                    sparse_dit[Nnnz + 1] = wb_temp;
-                    Nnnz ++;
-
-//                     line tracing
-//                     #ifndef __SYNTHESIS__
-//                     std::cout << "["   << wb_cnt << "/" << local_Nnnz_no_mask << "]";
-//                     std::cout << "LN"  << std::setw(2) << Lane_id << " : "
-//                               << "{("  << std::setw(5) << wb_temp.data  << ", "
-//                               << "@"   << std::setw(5) << wb_temp.index << ")|"
-// #if defined(USE_MASK)
-//                               << "M "  << std::setw(1) << mask[wb_temp.index]
-// #endif
-//                               << " >> B["  << std::setw(5) << Nnnz << "]}"
-//                               << std::endl  << std::flush;
-// #endif
-                }
+    while(!loop_exit) {
+        #pragma HLS pipeline II=1
+        #pragma HLS dependence variable=loop_exit       inter   distance=15 RAW True
+        VEC_PKT_T wb_temp;
+        if(wb_input_streams[Lane_id].read_nb(wb_temp)) {
+            wb_cnt ++;
+            bool do_write;
+            switch (mask_type) {
+                case NOMASK:
+                    do_write = true;
+                    break;
+                case WRITETOONE:
+                    do_write = (mask[wb_temp.index] != zero);
+                    break;
+                case WRITETOZERO:
+                    do_write = (mask[wb_temp.index] == zero);
+                    break;
+                default:
+                    do_write = false;
+                    break;
+            }
+            if(do_write) {
+                result[Nnz + incr + 1] = wb_temp;
+                incr ++;
             }
         }
+        if(!checkout_finish) {
+            checkout_finish = npld_stream.read_nb(npld);
+        }
+        Lane_id = (Lane_id + 1) % (PACK_SIZE * 2);
+        loop_exit = checkout_finish && (npld == wb_cnt);
     }
+    Nnz_incr = incr;
 }
 
-//----------------------------------------------------
-// kernel result write back
-//----------------------------------------------------
-
-static void write_back_spmspv(
-    VAL_T bram[NUM_BANK][BANK_SIZE],
-    DIT_T results_ddr[],
-#if defined(USE_MASK)
-    const INDEX_T mask_ddr[],
-#endif
-    // result non-zero count(after mask)
-    unsigned int &result_nnz_cnt,
-    // tile count
-    unsigned int tile_cnt
-){
-    static hls::stream<VAL_T> nnz_streams[NUM_LANE];
-    static hls::stream<INDEX_T> idx_streams[NUM_LANE];
-    static hls::stream<unsigned int> Nnnz_no_mask;
-    #pragma HLS array_partition variable=nnz_streams complete
-    #pragma HLS array_partition variable=idx_streams complete
-    #pragma HLS stream variable=nnz_streams depth=32
-    #pragma HLS stream variable=idx_streams depth=32
-    #pragma HLS stream variable=Nnnz_no_mask depth=1
-
-    #pragma HLS dataflow
-    checkout_results(
-        bram,
-        nnz_streams,
-        idx_streams,
-        Nnnz_no_mask
-    );
-
-    #ifndef __SYNTHESIS__
-    if(line_tracing_kernel) {
-        std::cout << "[INFO kernel_spmspv] CHECKOUT complete" << std::endl;
-        std::cout.flush();
+// reset output buffer
+static void reset_output_buffer(
+    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
+    IDX_T num_rows,
+    VAL_T Zero
+) {
+    #pragma HLS pipeline II=1
+    unsigned int num_rounds = (num_rows + 2 * PACK_SIZE - 1) / PACK_SIZE;
+    loop_reset_ob:
+    for (unsigned int i = 0; i < num_rounds; i++) {
+        #pragma HLS pipeline II=1
+        for (unsigned int j = 0; j < PACK_SIZE; j++) {
+            #pragma HLS unroll
+            output_buffer[j][i] = Zero;
+        }
     }
-    #endif
-
-    write_back_ddr(
-        nnz_streams,
-        idx_streams,
-#if defined(USE_MASK)
-        mask_ddr,
-#endif
-        results_ddr,
-        Nnnz_no_mask,
-        result_nnz_cnt,
-        tile_cnt
-    );
 
     #ifndef __SYNTHESIS__
-    if(line_tracing_kernel) {
-        std::cout << "[INFO kernel_spmspv] WRITE DDR complete" << std::endl;
-        std::cout.flush();
+    if (line_tracing_spmspv) {
+        std::cout << "INFO: [Kernel SpMSpV] Output Buffer reset complete" << std::endl << std::flush;
     }
     #endif
 }
 
-//----------------------------------------------------
-// kernel spmspv
-//----------------------------------------------------
-extern "C" {
-
-void kernel_spmspv(
-    // ddr pointer
-    const DIT_T* vec_dit_ddr,
-    const PACKED_DWI_T* mat_dwi_ddr,
-    const INDEX_T* mat_idxptr_ddr,
-    const INDEX_T* mat_tileptr_ddr,
-#if defined(USE_MASK)
-    const INDEX_T* mask_ddr,
-#endif
-    DIT_T* result_ddr,
-    // size
-    const unsigned int num_columns,
-    const unsigned int num_tiles
+// compute
+static void compute_spmspv(
+    MAT_PKT_T *matrix,
+    IDX_T *mat_indptr,
+    IDX_T *mat_partptr,
+    VEC_PKT_T *vector,
+    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
+    IDX_T vec_num_nnz,
+    IDX_T mat_indptr_base,
+    IDX_T mat_row_id_base,
+    IDX_T part_id,
+    OP_T Op,
+    VAL_T Zero
 ) {
 
-    // interfaces
-    #pragma HLS INTERFACE m_axi port=mat_dwi_ddr      offset=slave bundle=gmem0
-    #pragma HLS INTERFACE m_axi port=mat_idxptr_ddr   offset=slave bundle=gmem1
-    #pragma HLS INTERFACE m_axi port=mat_tileptr_ddr  offset=slave bundle=gmem1
-    #pragma HLS INTERFACE m_axi port=vec_dit_ddr      offset=slave bundle=gmem2
-#if defined(USE_MASK)
-    #pragma HLS INTERFACE m_axi port=mask_ddr         offset=slave bundle=gmem2
-#endif
-    #pragma HLS INTERFACE m_axi port=result_ddr       offset=slave bundle=gmem2
+    // fifos
+    hls::stream<IDX_T> DL_to_SF_npld_stream;
+    hls::stream<IDX_T> SF_to_PE_npld_stream;
+    hls::stream<VL_O_T> VL_to_ML_stream;
+    hls::stream<SF_IO_T> DL_to_SF_stream[PACK_SIZE];
+    hls::stream<SF_IO_T> SF_to_PE_stream[PACK_SIZE];
+    #pragma HLS stream variable=DL_to_SF_npld_stream depth=2
+    #pragma HLS stream variable=SF_to_PE_npld_stream depth=2
+    #pragma HLS stream variable=VL_to_ML_stream depth=64
+    #pragma HLS stream variable=DL_to_SF_stream depth=64
+    #pragma HLS stream variable=SF_to_PE_stream depth=64
 
-    #pragma HLS INTERFACE s_axilite port=mat_dwi_ddr      bundle=control
-    #pragma HLS INTERFACE s_axilite port=mat_idxptr_ddr   bundle=control
-    #pragma HLS INTERFACE s_axilite port=mat_tileptr_ddr  bundle=control
-    #pragma HLS INTERFACE s_axilite port=vec_dit_ddr      bundle=control
-#if defined(USE_MASK)
-    #pragma HLS INTERFACE s_axilite port=mask_ddr         bundle=control
-#endif
-    #pragma HLS INTERFACE s_axilite port=result_ddr       bundle=control
+    // dataflow pipeline
+    #pragma HLS dataflow
+    load_vector_from_gmem(
+        vector,
+        vec_num_nnz,
+        VL_to_ML_stream
+    );
 
-    #pragma HLS INTERFACE s_axilite port=num_columns      bundle=control
-    #pragma HLS INTERFACE s_axilite port=num_tiles        bundle=control
+    load_matrix_from_gmem(
+        matrix,
+        mat_indptr,
+        mat_partptr,
+        vec_num_nnz,
+        mat_indptr_base,
+        mat_row_id_base,
+        part_id,
+        Zero,
+        VL_to_ML_stream,
+        DL_to_SF_stream,
+        DL_to_SF_npld_stream
+    );
 
-    #pragma HLS INTERFACE s_axilite port=return           bundle=control
-
-    #pragma HLS data_pack variable=mat_dwi_ddr
-    #pragma HLS data_pack variable=vec_dit_ddr
-    #pragma HLS data_pack variable=result_ddr
-
-    // block ram (output buffer)
-    static VAL_T bram[NUM_BANK][BANK_SIZE];
-    #pragma HLS array_partition variable=bram complete dim=1
-    // *************  Pipelining BRAM ***************
-    // #pragma HLS resource variable=bram core=RAM_2P_BRAM latency=4
-    #pragma HLS RESOURCE variable=bram core=XPM_MEMORY uram latency=4
-
-    unsigned int result_nnz_cnt_localreg = 0;
-    unsigned int vec_nnz_total = vec_dit_ddr[0].index;
-
-    // line tracing
     #ifndef __SYNTHESIS__
-    if(line_tracing_kernel) {
-        std::cout << "[INFO kernel_spmspv] start, input vector non-zero count : " << vec_nnz_total << std::endl;
+    if (line_tracing_spmspv) {
+        std::cout << "INFO :[Kernel SpMSpV] Data Loader complete" << std::endl << std::flush;
     }
     #endif
 
-    // loop over all tiles
-    loop_over_all_tiles:
-    for (unsigned int tile_cnt = 0; tile_cnt < num_tiles; tile_cnt++) {
-        #pragma HLS loop_flatten off
-        #pragma HLS pipeline off
+    shuffler_1p<SF_IO_T, SF_IO_VAL_T, PACK_SIZE, PACK_SIZE, BANK_ID_MASK>(
+        DL_to_SF_stream,
+        SF_to_PE_stream,
+        DL_to_SF_npld_stream,
+        SF_to_PE_npld_stream
+    );
 
-        // line tracing
-        #ifndef __SYNTHESIS__
-        if(line_tracing_kernel) {
-            std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt << " Buffer reset" << std::endl;
-        }
-        #endif
-
-        // reset output buffer
-        loop_reset_output_buffer:
-        for(unsigned int i = 0; i < BANK_SIZE / NUM_PORT_PER_BANK; i++) {
-            #pragma HLS pipeline II=1
-            loop_reset_ob_bank_unroll:
-            for(unsigned int j = 0; j < NUM_BANK; j++) {
-                #pragma HLS unroll
-                loop_reset_ob_port_unroll:
-                for (unsigned int p = 0; p < NUM_PORT_PER_BANK; p++) {
-                    #pragma HLS unroll
-                    bram[j][i * NUM_PORT_PER_BANK + p] = 0;
-                }
-            }
-        }
-
-        // read tile base
-        INDEX_T tile_base = mat_tileptr_ddr[tile_cnt];
-
-        // line tracing
-        #ifndef __SYNTHESIS__
-        if(line_tracing_kernel) {
-            std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt
-                                << " Base at " << std::setw(5) << tile_base << std::endl;
-        }
-        #endif
-
-        // execution
-        execution_spmspv(
-            mat_dwi_ddr,
-            mat_idxptr_ddr,
-            vec_dit_ddr,
-            vec_nnz_total,
-            bram,
-            num_columns,
-            tile_cnt,
-            tile_base
-        );
-
-        // line tracing
-        #ifndef __SYNTHESIS__
-        if(line_tracing_kernel) {
-            std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt << " EX complete" << std::endl;
-        }
-        #endif
-
-        // write back to result_ddr
-        write_back_spmspv(
-            bram,
-            result_ddr,
-#if defined(USE_MASK)
-            mask_ddr,
-#endif
-            result_nnz_cnt_localreg,
-            tile_cnt
-        );
-
-        // line tracing
-        #ifndef __SYNTHESIS__
-        if(line_tracing_kernel) {
-            std::cout << "[INFO kernel_spmspv] Tile " << std::setw(2) << tile_cnt << " WB complete" << std::endl;
-        }
-        #endif
-
-    } // loop over all tiles
-
-    // report nnz count
-    DIT_T result_head;
-    result_head.index = result_nnz_cnt_localreg;
-    result_head.data = 0;
-    result_ddr[0] = result_head;
-
-    // line tracing
     #ifndef __SYNTHESIS__
-    if(line_tracing_kernel) {
-        std::cout << "[INFO kernel_spmspv] finish, result non-zero count : " << result_nnz_cnt_localreg << std::endl;
+    if (line_tracing_spmspv) {
+        std::cout << "INFO :[Kernel SpMSpV] Shuffler complete" << std::endl << std::flush;
+    }
+    #endif
+
+    pe_cluster<VAL_T, OP_T, SF_IO_T, PACK_SIZE, BANK_ID_NBITS>(
+        SF_to_PE_stream,
+        output_buffer,
+        Op,
+        Zero,
+        SF_to_PE_npld_stream
+    );
+
+    #ifndef __SYNTHESIS__
+    if (line_tracing_spmspv) {
+        std::cout << "INFO :[Kernel SpMSpV] Process Elements complete" << std::endl << std::flush;
+    }
+    #endif
+
+
+    #ifndef __SYNTHESIS__
+    if (line_tracing_spmspv) {
+        std::cout << "INFO :[Kernel SpMSpV] Computation complete" << std::endl << std::flush;
     }
     #endif
 }
 
-} // extern "C"
+// write back
+static void write_back_results(
+    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
+    VEC_PKT_T *result,
+    VAL_T *mask,
+    IDX_T num_rows,
+    IDX_T result_Nnz,
+    IDX_T &result_Nnz_incr,
+    IDX_T mat_row_id_base,
+    VAL_T zero,
+    MASK_T mask_type
+) {
+    hls::stream<VEC_PKT_T> CR_to_WB_stream[PACK_SIZE * 2];
+    hls::stream<IDX_T> CR_to_WB_npld_stream;
+    #pragma HLS stream variable=CR_to_WB_npld_stream depth=2
+    #pragma HLS stream variable=CR_to_WB_stream depth=64
+
+    // dataflow pipeline
+    #pragma HLS dataflow
+
+    checkout_results(
+        output_buffer,
+        CR_to_WB_stream,
+        CR_to_WB_npld_stream,
+        mat_row_id_base,
+        num_rows,
+        zero
+    );
+    #ifndef __SYNTHESIS__
+    if (line_tracing_spmspv) {
+        std::cout << "INFO: [Kernel SpMSpV] Checkout Results complete" << std::endl << std::flush;
+    }
+    #endif
+
+    write_back_gmem(
+        CR_to_WB_stream,
+        CR_to_WB_npld_stream,
+        mask,
+        result,
+        result_Nnz,
+        result_Nnz_incr,
+        zero,
+        mask_type
+    );
+
+    #ifndef __SYNTHESIS__
+    if (line_tracing_spmspv) {
+        std::cout << "INFO: [Kernel SpMSpV] Result writeback complete" << std::endl << std::flush;
+    }
+    #endif
+}
+
+extern "C" {
+void kernel_spmspv(
+    MAT_PKT_T *matrix,         //0
+    IDX_T *mat_indptr,    //1
+    IDX_T *mat_partptr,   //2
+    VEC_PKT_T *vector,         //3
+    VAL_T  *mask,           //4
+    VEC_PKT_T *result,         //5
+    IDX_T num_rows,       //6
+    IDX_T num_cols,       //7
+    OP_T Op,                //8
+    MASK_T Mask_type        //9
+) {
+    #pragma HLS data_pack variable=matrix
+    #pragma HLS data_pack variable=vector
+    #pragma HLS data_pack variable=result
+
+    #pragma HLS interface m_axi port=matrix       offset=slave bundle=gmem1
+    #pragma HLS interface m_axi port=mat_indptr   offset=slave bundle=gmem0
+    #pragma HLS interface m_axi port=mat_partptr  offset=slave bundle=gmem0
+    #pragma HLS interface m_axi port=mask         offset=slave bundle=gmem0
+    #pragma HLS interface m_axi port=vector       offset=slave bundle=gmem2
+    #pragma HLS interface m_axi port=result       offset=slave bundle=gmem2
+
+    #pragma HLS interface s_axilite port=matrix       bundle=control
+    #pragma HLS interface s_axilite port=mat_indptr   bundle=control
+    #pragma HLS interface s_axilite port=mat_partptr  bundle=control
+    #pragma HLS interface s_axilite port=mask         bundle=control
+    #pragma HLS interface s_axilite port=vector       bundle=control
+    #pragma HLS interface s_axilite port=result       bundle=control
+
+    #pragma HLS interface s_axilite port=num_rows    bundle=control
+    #pragma HLS interface s_axilite port=num_cols    bundle=control
+    #pragma HLS interface s_axilite port=Op          bundle=control
+    #pragma HLS interface s_axilite port=Mask_type   bundle=control
+
+    #pragma HLS interface s_axilite port=return      bundle=control
+
+    IDX_T vec_num_nnz = vector[0].index;
+    VAL_T Zero;
+
+    switch (Op)   {
+    case MULADD:
+        Zero = MulAddZero;
+        break;
+    case ANDOR:
+        Zero = AndOrZero;
+        break;
+    case ADDMIN:
+        Zero = AddMinZero;
+        break;
+    default:
+        Zero = 0;
+        break;
+    }
+
+    // output buffer
+    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE];
+    #pragma HLS array_partition variable=output_buffer dim=1 complete
+    #pragma HLS resource variable=output_buffer core=RAM_2P
+
+    // result Nnz counter
+    IDX_T result_Nnz = 0;
+
+    // total number of parts
+    IDX_T num_parts = (num_rows + OUT_BUF_LEN - 1) / OUT_BUF_LEN;
+
+    // number of rows in the last part
+    IDX_T num_rows_last_part = (num_rows % OUT_BUF_LEN) ? (num_rows % OUT_BUF_LEN) : OUT_BUF_LEN;
+
+    // loop over parts
+    loop_over_parts:
+    for (unsigned int part_id = 0; part_id < num_parts; part_id++) {
+        #pragma HLS pipeline off
+        IDX_T num_rows_this_part = (part_id == (num_parts - 1)) ? num_rows_last_part : OUT_BUF_LEN;
+        IDX_T mat_indptr_base = (num_cols + 1) * part_id;
+        IDX_T mat_row_id_base = OUT_BUF_LEN * part_id;
+        IDX_T result_Nnz_incr;
+        reset_output_buffer(
+            output_buffer,
+            num_rows_this_part,
+            Zero
+        );
+        compute_spmspv(
+            matrix,
+            mat_indptr,
+            mat_partptr,
+            vector,
+            output_buffer,
+            vec_num_nnz,
+            mat_indptr_base,
+            mat_row_id_base,
+            part_id,
+            Op,
+            Zero
+        );
+        write_back_results(
+            output_buffer,
+            result,
+            mask,
+            num_rows_this_part,
+            result_Nnz,
+            result_Nnz_incr,
+            mat_row_id_base,
+            Zero,
+            Mask_type
+        );
+        result_Nnz += result_Nnz_incr;
+        #ifndef __SYNTHESIS__
+        if (line_tracing_spmspv) {
+            std::cout << "INFO: [Kernel SpMSpV] Partition " << part_id <<" complete" << std::endl << std::flush;
+            std::cout << "  # of rows this part: " << num_rows_this_part << std::endl << std::flush;
+            std::cout << "          row id base: " << mat_row_id_base << std::endl << std::flush;
+            std::cout << "          indptr base: " << mat_indptr_base << std::endl << std::flush;
+            std::cout << "     Nnz written back: " << result_Nnz << std::endl << std::flush;
+        }
+        #endif
+    }
+
+    // attach head
+    VEC_PKT_T result_head;
+    result_head.index = result_Nnz;
+    result_head.val = Zero;
+    result[0] = result_head;
+    #ifndef __SYNTHESIS__
+    if (line_tracing_spmspv) {
+        std::cout << "INFO: [Kernel SpMSpV] Kernel Finish" << std::endl << std::flush;
+        std::cout << "  Result Nnz = " << result_Nnz << std::endl << std::flush;
+    }
+    #endif
+
+}
+}
+

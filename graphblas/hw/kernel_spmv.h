@@ -22,9 +22,9 @@ typedef struct matrix_packet {
 
 // semiring
 typedef char OP_T;
-#define MulAdd 0
-#define AndOr  1
-#define AddMin 2
+#define MULADD 0
+#define ANDOR  1
+#define ADDMIN 2
 
 const VAL_T MulAddZero = 0;
 const VAL_T AndOrZero  = 0;
@@ -56,9 +56,9 @@ typedef struct shuffle_2_inout_type {
 
 // mask type
 typedef char MASK_T;
-#define NoMask      0
-#define WriteToZero 1
-#define WriteToOne  2
+#define NOMASK      0
+#define WRITETOZERO 1
+#define WRITETOONE  2
 
 // Below kernel configurations will be overwritten by the compiler
 // const unsigned OUT_BUF_LEN =;

@@ -433,127 +433,124 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
 // Variants of CSC for SpMSpV
 //----------------------------
 
-/*!
- * \brief Formatter for the sparse matrix used in SpMSpV. It does row partitioning and column packing.
- *
- * \tparam data_type The data type of non-zero values of the sparse matrix.
- * \tparam data_index_packet_type The data-index packet type of the packed sparse matrix.
- */
-template<typename data_type, typename idx_type, typename data_index_packet_type>
-class SpMSpVDataFormatter {
-private:
-    /*! \brief The sparse matrix */
-    CSCMatrix<data_type> csc_matrix_;
+// Fromatted CSC matrix
+// we do packing, padding and partitoning when formatting the standard CSC matrix
+template<typename MatrixPacketT>
+struct FormattedCSCMatrix {
+    /*! \brief The number of columns */
+    uint32_t num_columns;
     /*! \brief The number of partitions along the row dimension */
-    uint32_t num_row_partitions_;
+    uint32_t num_row_partitions;
     /*! \brief The total number of packets in the matrix (used for memory allocation) */
-    uint32_t num_packets_total_;
+    uint32_t num_packets_total;
 
-    std::vector<data_index_packet_type> formatted_adj_packet;
-    std::vector<idx_type>               formatted_adj_indptr;
-    std::vector<idx_type>               formatted_adj_partptr;
-
-private:
-    void _format(uint32_t out_buf_len, uint32_t pack_size);
-
-public:
-    SpMSpVDataFormatter(CSCMatrix<data_type> const &csc_matrix) {
-        this->csc_matrix_ = csc_matrix;
-    }
+    std::vector<MatrixPacketT> formatted_adj_packet;
+    std::vector<uint32_t> formatted_adj_indptr;
+    std::vector<uint32_t> formatted_adj_partptr;
 
     /*!
-     * \brief Format the sparse matrix by performing column partitioning and row packing.
-     * \param out_buf_len [MUST DIVIDE 32] The output buffer length, which determines the number of row partitions.
+     * \brief get formatted packet
      */
-    void format(uint32_t out_buf_len, uint32_t pack_size) {
-        this->_format(out_buf_len, pack_size);
-    }
-
-    /*!
-     * \brief get number of partitions
-     */
-    uint32_t num_row_partitions() {
-        return this->num_row_partitions_;
-    }
-
-    /*!
-     * \brief get number of packets
-     */
-    uint32_t num_packets_total() {
-        return this->num_packets_total_;
-    }
-
-    /*!
-     * \brief get a formatted packet
-     */
-    data_index_packet_type get_formatted_packet(int i) {
-        return this->formatted_adj_packet[i];
+    std::vector<MatrixPacketT, aligned_allocator<MatrixPacketT>> get_formatted_packet() {
+        std::vector<MatrixPacketT, aligned_allocator<MatrixPacketT>> channel_packets;
+        channel_packets.resize(this->num_packets_total);
+        for (size_t i = 0; i < this->num_packets_total; i++) {
+            channel_packets[i] = this->formatted_adj_packet[i];
+        }
+        return channel_packets;
     }
 
     /*!
      * \brief get a formatted indptr
      */
-    idx_type get_formatted_indptr(int i) {
-        return this->formatted_adj_indptr[i];
+    std::vector<idx_t, aligned_allocator<idx_t>> get_formatted_indptr() {
+        std::vector<idx_t, aligned_allocator<idx_t>> channel_indptr;
+        channel_indptr.resize((this->num_columns + 1) * this->num_row_partitions);
+        for (size_t i = 0; i < (this->num_columns + 1) * this->num_row_partitions; i++) {
+            channel_indptr[i] = this->formatted_adj_indptr[i];
+        }
+        return channel_indptr;
     }
 
     /*!
      * \brief get a formatted partptr
      */
-    idx_type get_formatted_partptr(int i) {
-        return this->formatted_adj_partptr[i];
+    std::vector<idx_t, aligned_allocator<idx_t>> get_formatted_partptr() {
+        std::vector<idx_t, aligned_allocator<idx_t>> channel_partptr;
+        channel_partptr.resize(this->num_row_partitions);
+        for (size_t i = 0; i < this->num_row_partitions; i++) {
+            channel_partptr[i] = this->formatted_adj_partptr[i];
+        }
+        return channel_partptr;
     }
 };
 
-template<typename data_type,typename idx_type, typename data_index_packet_type>
-void SpMSpVDataFormatter<data_type, idx_type, data_index_packet_type>::
-_format(uint32_t out_buf_len, uint32_t pack_size)
-{
-    if (out_buf_len % 32 != 0) {
-        std::cout << "The out_buf_len should divide "
-                  << 32 << ". "
-                  << "Exit!" <<std::endl;
+/*!
+ * \brief Format a standard CSC matrix.
+ *
+ * \tparam DataT The data type of non-zero values of the sparse matrix.
+ * \tparam MatrixPacketT The packet type of the formatted matrix.
+ *
+ * \param csc_matrix The input matrix in CSC format.
+ * \param Semiring  The semiring on which this matrix is represented.
+ * \param pack_size The number of elements packed in one packet.
+ * \param out_buf_len The length of the output buffer. Must divide (pack_size * 2).
+ *
+ * \return The output matrix in CPSR format.
+ */
+
+template<typename DataT,typename MatrixPacketT>
+FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
+                                             SemiringType Semiring,
+                                             uint32_t pack_size,
+                                             uint32_t out_buf_len) {
+
+    if (out_buf_len % (pack_size * 2) != 0) {
+        std::cout << "ERROR: [formatCSC] The out_buf_len should divide (pack_size * 2) !"
+                  << "  Aborting..." <<std::endl;
         exit(EXIT_FAILURE);
     }
 
-    assert(out_buf_len % 32 == 0);
-    this->num_row_partitions_ = (this->csc_matrix_.num_rows + out_buf_len - 1) / out_buf_len;
-    this->formatted_adj_packet.clear();
-    this->formatted_adj_indptr.clear();
-    this->formatted_adj_partptr.clear();
+    assert(out_buf_len % (pack_size * 2) == 0);
+    FormattedCSCMatrix<MatrixPacketT> formatted_matrix;
+    formatted_matrix.num_columns = csc_matrix.num_cols;
+    formatted_matrix.num_row_partitions = (csc_matrix.num_rows + out_buf_len - 1) / out_buf_len;
+    formatted_matrix.formatted_adj_packet.clear();
+    formatted_matrix.formatted_adj_indptr.clear();
+    formatted_matrix.formatted_adj_partptr.clear();
 
     // temporary buffers
-    std::vector<std::vector<data_type>> tile_data_buf(this->num_row_partitions_);
-    std::vector<std::vector<idx_type>> tile_idx_buf(this->num_row_partitions_);
+    std::vector<std::vector<DataT>> tile_data_buf(formatted_matrix.num_row_partitions);
+    std::vector<std::vector<uint32_t>> tile_idx_buf(formatted_matrix.num_row_partitions);
     // accumulative buffers
-    std::vector<std::vector<idx_type>> tile_idxptr_buf(this->num_row_partitions_);
-    std::vector<std::vector<data_index_packet_type>> tile_ditpkt_buf(this->num_row_partitions_);
+    std::vector<std::vector<uint32_t>> tile_idxptr_buf(formatted_matrix.num_row_partitions);
+    std::vector<std::vector<MatrixPacketT>> tile_ditpkt_buf(formatted_matrix.num_row_partitions);
 
     // tile nnz counter (temporary)
-    std::vector<unsigned> tile_nnz_cnt(this->num_row_partitions_,0);
+    std::vector<unsigned> tile_nnz_cnt(formatted_matrix.num_row_partitions,0);
 
     // tile packet counter (accumulative)
-    std::vector<unsigned> tile_pkt_cnt(this->num_row_partitions_,0);
+    std::vector<unsigned> tile_pkt_cnt(formatted_matrix.num_row_partitions,0);
 
-    idx_type total_num_packets = 0;
+    uint32_t total_num_packets = 0;
 
     // add initial tile idxptr
-    for (size_t t = 0; t < this->num_row_partitions_; t++) {
+    for (size_t t = 0; t < formatted_matrix.num_row_partitions; t++) {
       tile_idxptr_buf[t].push_back(0);
     }
 
     // add initial tileptr
-    this->formatted_adj_partptr.push_back(0);
+    formatted_matrix.formatted_adj_partptr.push_back(0);
 
     // loop over all columns
-    for (unsigned i = 0; i < this->csc_matrix_.num_cols; i++) {
+    for (unsigned i = 0; i < csc_matrix.num_cols; i++) {
       // slice out one column
-      idx_type start = this->csc_matrix_.adj_indptr[i];
-      idx_type end = this->csc_matrix_.adj_indptr[i+1];
-      idx_type col_len = end - start;
+      uint32_t start = csc_matrix.adj_indptr[i];
+      uint32_t end = csc_matrix.adj_indptr[i+1];
+      uint32_t col_len = end - start;
 
       // clear temporary buffer
-      for (size_t t = 0; t < this->num_row_partitions_; t++) {
+      for (size_t t = 0; t < formatted_matrix.num_row_partitions; t++) {
         tile_data_buf[t].clear();
         tile_idx_buf[t].clear();
         tile_nnz_cnt[t] = 0;
@@ -561,20 +558,20 @@ _format(uint32_t out_buf_len, uint32_t pack_size)
 
       // loop over all rows and distribute to the corresbonding tile
       for (unsigned j = 0; j < col_len; j++) {
-        unsigned dest_tile = this->csc_matrix_.adj_indices[start + j] / out_buf_len;
-        tile_data_buf[dest_tile].push_back(this->csc_matrix_.adj_data[start + j]);
-        tile_idx_buf[dest_tile].push_back(this->csc_matrix_.adj_indices[start + j]);
+        unsigned dest_tile = csc_matrix.adj_indices[start + j] / out_buf_len;
+        tile_data_buf[dest_tile].push_back(csc_matrix.adj_data[start + j]);
+        tile_idx_buf[dest_tile].push_back(csc_matrix.adj_indices[start + j]);
         tile_nnz_cnt[dest_tile] ++;
       }
 
       // column padding and data packing for every tile
-      for (unsigned t = 0; t < this->num_row_partitions_; t++) {
+      for (unsigned t = 0; t < formatted_matrix.num_row_partitions; t++) {
 
         // padding with zero
         unsigned num_packets = (tile_nnz_cnt[t] + pack_size - 1) / pack_size;
         unsigned num_padding_zero = num_packets * pack_size - tile_nnz_cnt[t];
         for (size_t z = 0; z < num_padding_zero; z++) {
-          tile_data_buf[t].push_back(0);
+          tile_data_buf[t].push_back(Semiring.zero);
           tile_idx_buf[t].push_back(0);
         }
         tile_pkt_cnt[t] += num_packets;
@@ -582,7 +579,7 @@ _format(uint32_t out_buf_len, uint32_t pack_size)
 
         // data packing
         for (unsigned p = 0; p < num_packets; p++) {
-          data_index_packet_type dwi_packet;
+          MatrixPacketT dwi_packet;
           for (unsigned k = 0; k < pack_size; k++) {
             dwi_packet.vals[k] = tile_data_buf[t][k + p * pack_size];
             dwi_packet.indices[k] = tile_idx_buf[t][k + p * pack_size];
@@ -592,26 +589,27 @@ _format(uint32_t out_buf_len, uint32_t pack_size)
       }
 
       // append tile idxptr
-      for (size_t t = 0; t < this->num_row_partitions_; t++) {
+      for (size_t t = 0; t < formatted_matrix.num_row_partitions; t++) {
         tile_idxptr_buf[t].push_back(tile_pkt_cnt[t]);
       }
     } // repeat for every column
 
     // concatenate all accumulative buffers into final output
     // and create tileptr vector
-    for (size_t t = 0; t < this->num_row_partitions_; t++) {
+    for (size_t t = 0; t < formatted_matrix.num_row_partitions; t++) {
       // ditpkt
-      this->formatted_adj_packet.insert(this->formatted_adj_packet.end(),tile_ditpkt_buf[t].begin(),tile_ditpkt_buf[t].end());
+      formatted_matrix.formatted_adj_packet.insert(formatted_matrix.formatted_adj_packet.end(),tile_ditpkt_buf[t].begin(),tile_ditpkt_buf[t].end());
       // idxptr
-      this->formatted_adj_indptr.insert(this->formatted_adj_indptr.end(),tile_idxptr_buf[t].begin(),tile_idxptr_buf[t].end());
+      formatted_matrix.formatted_adj_indptr.insert(formatted_matrix.formatted_adj_indptr.end(),tile_idxptr_buf[t].begin(),tile_idxptr_buf[t].end());
       // tileptr
-      this->formatted_adj_partptr.push_back(tile_pkt_cnt[t] + this->formatted_adj_partptr.back());
+      formatted_matrix.formatted_adj_partptr.push_back(tile_pkt_cnt[t] + formatted_matrix.formatted_adj_partptr.back());
     }
-    std::cout << "Total #of Packets : " << this->formatted_adj_packet.size()  << std::endl;
-    std::cout << "Total #of Tiles   : " << this->num_row_partitions_          << std::endl;
-    std::cout << "Size of idxptr    : " << this->formatted_adj_indptr.size()  << std::endl;
-    std::cout << "Size of tileptr   : " << this->formatted_adj_partptr.size() << std::endl;
-    this->num_packets_total_ = total_num_packets;
+    std::cout << "Total #of Packets : " << formatted_matrix.formatted_adj_packet.size()  << std::endl;
+    std::cout << "Total #of Tiles   : " << formatted_matrix.num_row_partitions           << std::endl;
+    std::cout << "Size of idxptr    : " << formatted_matrix.formatted_adj_indptr.size()  << std::endl;
+    std::cout << "Size of tileptr   : " << formatted_matrix.formatted_adj_partptr.size() << std::endl;
+    formatted_matrix.num_packets_total = total_num_packets;
+    return formatted_matrix;
 }
 
 } // namespace io

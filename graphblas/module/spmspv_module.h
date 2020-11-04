@@ -14,7 +14,8 @@
 #include "./base_module.h"
 
 using graphblas::io::CSCMatrix;
-using graphblas::io::SpMSpVDataFormatter;
+using graphblas::io::FormattedCSCMatrix;
+using graphblas::io::formatCSC;
 
 
 namespace graphblas {
@@ -34,12 +35,10 @@ unsigned log2(unsigned x) {
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 class SpMSpVModule : public BaseModule {
 private:
-    /*! \brief Whether the kernel uses mask */
-    bool use_mask_;
     /*! \brief The mask type */
     graphblas::MaskType mask_type_;
     /*! \brief The semiring */
-    SemiRingType semiring_;
+    graphblas::SemiringType semiring_;
     /*! \brief The length of output buffer of the kernel */
     uint32_t out_buf_len_;
     /*! \brief The number of row partitions */
@@ -76,6 +75,8 @@ private:
     CSCMatrix<float> csc_matrix_float_;
     /*! \brief The sparse matrix */
     CSCMatrix<matrix_data_t> csc_matrix_;
+    /*! \brief The formatted matrix */
+    FormattedCSCMatrix<packet_t> formatted_csc_matrix_;
 
 public:
     // Device buffers
@@ -97,27 +98,13 @@ private:
      * \param semiring The semiring.
      * \param out_buf_len The length of output buffer.
      */
-    void _get_kernel_config(SemiRingType semiring,
+    void _get_kernel_config(graphblas::SemiringType semiring,
                             uint32_t out_buf_len);
 
 public:
-    SpMSpVModule(SemiRingType semiring,
-                 uint32_t out_buf_len) : BaseModule("kernel_spmspv") {
+    SpMSpVModule(uint32_t out_buf_len) : BaseModule("kernel_spmspv") {
         this->_check_data_type();
-        this->_get_kernel_config(semiring, out_buf_len);
-    }
-
-    /*!
-     * \brief Set the mask type.
-     * \param mask_type The mask type.
-     */
-    void set_mask_type(graphblas::MaskType mask_type) {
-        if (mask_type == graphblas::kNoMask) {
-            this->use_mask_ = false;
-        } else {
-            this->use_mask_ = true;
-            this->mask_type_ = mask_type;
-        }
+        this->out_buf_len_ = out_buf_len;
     }
 
     /*!
@@ -142,6 +129,18 @@ public:
      */
     uint32_t get_nnz() {
         return this->csc_matrix_.adj_indptr[this->csc_matrix_.num_rows];
+    }
+
+    /*!
+     * \brief Change the kernel semiring and masktype
+     */
+    void config_kernel(graphblas::SemiringType semiring, graphblas::MaskType masktype) {
+        cl_int err;
+        this->semiring_ = semiring;
+        this->mask_type_ = masktype;
+        // Set argument
+        OCL_CHECK(err, err = this->kernel_.setArg(8, (char)this->semiring_.op));
+        OCL_CHECK(err, err = this->kernel_.setArg(9, (char)this->mask_type_));
     }
 
     /*!
@@ -202,24 +201,18 @@ public:
         this->command_queue_.finish();
         // truncate useless data
         this->results_.resize(this->results_[0].index + 1);
+        std::cout << "INFO: [Module SpMSpV - collect result] result collected." << std::endl << std::flush;
         return this->results_;
     }
 
     /*!
      * \brief Compute reference results.
      * \param vector The sparse vector.
-     * \return The reference results.
-     */
-    graphblas::aligned_sparse_float_vec_t compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector);
-
-    /*!
-     * \brief Compute reference results.
-     * \param vector The sparse vector.
      * \param mask The dense mask.
-     * \return The reference results.
+     * \return The reference results in dense format.
      */
-    graphblas::aligned_sparse_float_vec_t compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
-                                                                    graphblas::aligned_dense_float_vec_t &mask);
+    graphblas::aligned_dense_float_vec_t compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
+                                                                   graphblas::aligned_dense_float_vec_t &mask);
 
     void generate_kernel_header() override;
 
@@ -234,7 +227,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_check_data_type()
 
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_get_kernel_config(SemiRingType semiring,
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_get_kernel_config(graphblas::SemiringType semiring,
                                                                                  uint32_t out_buf_len) {
     this->semiring_ = semiring;
     this->out_buf_len_ = out_buf_len;
@@ -246,85 +239,9 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_he
     std::string command = "mkdir -p " + graphblas::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
+    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
     // Kernel configuration
-    header << "const unsignedKET_SIZE = " << graphblas::pack_size << ";" << std::endl;
-    header << "const unsigned_PE = " << graphblas::pack_size << ";" << std::endl;
-    header << "const unsigned_PORT_PER_BANK = 2;" << std::endl;
-    header << "const unsigned_BANK = NUM_PE" << ";" << std::endl;
-    header << "const unsigned_LANE = NUM_BANK * NUM_PORT_PER_BANK" << ";" << std::endl;
-    header << "const unsignedID_NBITS = "   << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
-    header << "const unsignedK_ID_NBITS = " << graphblas::log2(graphblas::pack_size) << ";" << std::endl;
-    header << "const unsignedK_ID_MASK = (1 << BANK_ID_NBITS) - 1" << ";" << std::endl;
-    header << "const unsignedE_SIZE = " << this->out_buf_len_ << ";" << std::endl;
-    header << "const unsignedK_SIZE = TILE_SIZE / NUM_BANK" << ";" << std::endl;
-    header << "const unsignedITER_LATENCY = 6" << ";" << std::endl;
-    header << "const unsigned_DISTANCE = ARBITER_LATENCY + 1" << ";" << std::endl;
-
-    // Data types
-    header << "typedef unsigned IDX_T;" << std::endl;
-
-    header <<  "typedef struct {"
-                  "IDX_T index; VAL_T data;"
-                "}" << " DIT_T;" << std::endl;
-
-    header <<  "typedef struct {"
-                  "IDX_T indexpkt[PACKET_SIZE];"
-                  "VAL_T datapkt[PACKET_SIZE];"
-                "}" << " PACKED_DWI_T;" << std::endl;
-
-    header <<  "template<typename idx_t>"
-                "struct rd_req {"
-                  "bool valid;"
-                  "bool zero;"
-                  "idx_t addr;"
-                "};" << std::endl;
-
-    header <<  "template<typename data_t>"
-                "struct rd_resp {"
-                  "bool valid;"
-                  "data_t data;"
-                "};" << std::endl;
-
-    header <<  "template<typename data_t, typename idx_t>"
-                "struct wr_req {"
-                  "data_t data;"
-                  "idx_t addr;"
-                "};" << std::endl;
-
-    header <<  "template<typename idx_t>"
-                "struct arbiter_result {"
-                  "ap_uint<PE_ID_NBITS> virtual_port_id;"
-                  "bool bank_idle;"
-                "};" << std::endl;
-
-    // Semiring
-    switch (this->semiring_) {
-        case graphblas::kMulAdd:
-            header << "#define MulAddSemiring" << std::endl;
-            break;
-        case graphblas::kLogicalAndOr:
-            header << "#define LogicalAndOrSemiring" << std::endl;
-            break;
-        default:
-            std::cerr << "Invalid semiring" << std::endl;
-            break;
-    }
-    // Mask
-    if (this->use_mask_) {
-        header << "#define USE_MASK" << std::endl;
-        switch (this->mask_type_) {
-            case graphblas::kMaskWriteToZero:
-                header << "#define MASK_WRITE_TO_ZERO" << std::endl;
-                break;
-            case graphblas::kMaskWriteToOne:
-                header << "#define MASK_WRITE_TO_ONE" << std::endl;
-                break;
-            default:
-                std::cerr << "Invalid mask type" << std::endl;
-                break;
-        }
-    }
+    header << "const unsigned OUT_BUF_LEN = " << this->out_buf_len_ << ";" << std::endl;
     header.close();
 }
 
@@ -340,16 +257,14 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_in
     ini << "[connectivity]" << std::endl;
 
     // allocate matrix on DDR1
-    ini << "sp=kernel_spmspv_1.mat_dwi_ddr:DDR[1]" << std::endl;
-    ini << "sp=kernel_spmspv_1.mat_idxptr_ddr:DDR[1]" << std::endl;
-    ini << "sp=kernel_spmspv_1.mat_tileptr_ddr:DDR[1]" << std::endl;
+    ini << "sp=kernel_spmspv_1.matrix:DDR[1]" << std::endl;
+    ini << "sp=kernel_spmspv_1.mat_indptr:DDR[1]" << std::endl;
+    ini << "sp=kernel_spmspv_1.mat_partptr:DDR[1]" << std::endl;
 
     // allocate others on DDR0
-    ini << "sp=kernel_spmspv_1.vec_dit_ddr:DDR[0]" << std::endl;
-    if (this->use_mask_) {
-        ini << "sp=kernel_spmspv_1.mask_ddr:DDR[0]" << std::endl;
-    }
-    ini << "sp=kernel_spmspv_1.result_ddr:DDR[0]" << std::endl;
+    ini << "sp=kernel_spmspv_1.mask:DDR[0]" << std::endl;
+    ini << "sp=kernel_spmspv_1.vector:DDR[0]" << std::endl;
+    ini << "sp=kernel_spmspv_1.result:DDR[0]" << std::endl;
 
     // enable retiming
     ini << "[vivado]" << std::endl;
@@ -363,30 +278,13 @@ template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::load_and_format_matrix(CSCMatrix<float> const &csc_matrix_float) {
     this->csc_matrix_float_ = csc_matrix_float;
     this->csc_matrix_ = graphblas::io::csc_matrix_convert_from_float<matrix_data_t>(csc_matrix_float);
-    SpMSpVDataFormatter<matrix_data_t, idx_t, packet_t>
-        formatter(this->csc_matrix_);
-    formatter.format(this->out_buf_len_, graphblas::pack_size);
-    this->num_row_partitions_ = formatter.num_row_partitions();
-    this->num_packets_ = formatter.num_packets_total();
+    this->formatted_csc_matrix_ = formatCSC<matrix_data_t, packet_t>(this->csc_matrix_, this->semiring_, graphblas::pack_size, this->out_buf_len_);
+    this->num_row_partitions_ = this->formatted_csc_matrix_.num_row_partitions;
+    this->num_packets_ = this->formatted_csc_matrix_.num_packets_total;
 
-    this->channel_packets_.resize(this->num_packets_);
-    this->channel_indptr_.resize((this->get_num_cols() + 1) * this->num_row_partitions_);
-    this->channel_partptr_.resize(this->num_row_partitions_ + 1);
-
-    // read packets from formatter
-    for (size_t i = 0; i < this->num_packets_; i++) {
-        this->channel_packets_[i] = formatter.get_formatted_packet(i);
-    }
-
-    // read indptr from formatter
-    for (size_t i = 0; i < (this->get_num_cols() + 1) * this->num_row_partitions_; i++) {
-        this->channel_indptr_[i] = formatter.get_formatted_indptr(i);
-    }
-
-    // read partptr from formatter
-    for (size_t i = 0; i < this->num_row_partitions_ + 1; i++) {
-        this->channel_partptr_[i] = formatter.get_formatted_partptr(i);
-    }
+    this->channel_packets_ = this->formatted_csc_matrix_.get_formatted_packet();
+    this->channel_indptr_ = this->formatted_csc_matrix_.get_formatted_indptr();
+    this->channel_partptr_ = this->formatted_csc_matrix_.get_formatted_partptr();
 
     // reserve enough space for the vector
     this->vector_.resize(this->get_num_cols() + 1);
@@ -426,14 +324,31 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
         &err));
     OCL_CHECK(err, this->channel_indptr_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(idx_t) * (this->get_num_cols() + 1) * this->num_row_partitions_ ,
+        sizeof(graphblas::idx_t) * (this->get_num_cols() + 1) * this->num_row_partitions_ ,
         &channel_indptr_ext,
         &err));
     OCL_CHECK(err, this->channel_partptr_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(idx_t) * (this->num_row_partitions_ + 1),
+        sizeof(graphblas::idx_t) * (this->num_row_partitions_ + 1),
         &channel_partptr_ext,
         &err));
+
+    // Set arguments
+    OCL_CHECK(err, err = this->kernel_.setArg(0, this->channel_packets_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(1, this->channel_indptr_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(2, this->channel_partptr_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(6, this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(7, this->csc_matrix_.num_cols));
+
+    // Send data to device
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
+                                this->channel_packets_buf,
+                                this->channel_indptr_buf,
+                                this->channel_partptr_buf,
+                                }, 0 /* 0 means from host*/)
+    );
+    this->command_queue_.finish();
+    std::cout << "INFO: [Module SpMSpV - send matrix] matrix successfully send to device." << std::endl << std::flush;
 
     // Handle results
     cl_mem_ext_ptr_t results_ext;
@@ -449,40 +364,9 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
         &results_ext,
         &err));
 
-    // Set arguments
-    /*
-      argidx (argidx wn mask):
-      0      (0)             : sparse vector[with head]
-      1      (1)             : matrix packets       (does not change over iteration)
-      2      (2)             : matrix indptr        (does not change over iteration)
-      3      (3)             : matrix partptr       (does not change over iteration)
-      4      (-)             : dense mask
-      5      (4)             : sparse results[with head]
-      6      (5)             : number of columns    (does not change over iteration)
-      7      (6)             : number of partitions (does not change over iteration)
-    */
-    size_t arg_idx = 1; // the first argument (arg_idx = 0) is the sparse vector
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_packets_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_indptr_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_partptr_buf));
-
-    if (this->use_mask_) {
-        this->arg_idx_mask_ = arg_idx; // mask is right before results
-        arg_idx++;
-    }
-
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->results_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csc_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->num_row_partitions_));
-
-    // Send data to device
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
-                                this->channel_packets_buf,
-                                this->channel_indptr_buf,
-                                this->channel_partptr_buf,
-                                }, 0 /* 0 means from host*/)
-    );
-    this->command_queue_.finish();
+    // Set argument
+    OCL_CHECK(err, err = this->kernel_.setArg(5, this->results_buf));
+    std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device." << std::endl << std::flush;
 }
 
 
@@ -491,9 +375,11 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_t
     cl_int err;
 
     // copy the input vector
+    this->vector_.resize(vector.size());
     std::copy(vector.begin(), vector.end(), this->vector_.begin());
-    std::cout << "[INFO send_vector_host_to_device] : external vector copied" << std::endl << std::flush;
-    std::cout << "[INFO send_vector_host_to_device] : external vector size : " << vector.size() << std::endl << std::flush;
+    // std::cout << "INFO: [Module SpMSpV - send vector] vector successfully loaded to host memory." << std::endl << std::flush;
+    // std::cout << "  vector size : " << vector.size() << std::endl << std::flush;
+    // std::cout << "  vector Nnz : "  << vector[0].index << std::endl << std::flush;
 
     // Handle vector
     cl_mem_ext_ptr_t vector_ext;
@@ -506,14 +392,14 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_t
                 sizeof(index_val_t) * this->vector_.size(),
                 &vector_ext,
                 &err));
-    std::cout << "[INFO send_vector_host_to_device] : memory allocated on FPGA" << std::endl << std::flush;
+    // std::cout << "INFO: [Module SpMSpV - send vector] memory allocated on FPGA" << std::endl << std::flush;
     // set argument
-    OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(3, this->vector_buf));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
     this->command_queue_.finish();
-    std::cout << "[INFO send_vector_host_to_device] : finished" << std::endl << std::flush;
+    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device." << std::endl << std::flush;
 }
 
 
@@ -521,24 +407,31 @@ template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
     cl_int err;
 
-    this->mask_.assign(mask.begin(), mask.end());
+    // copy the input vector
+    this->mask_.resize(mask.size());
+    std::copy(mask.begin(), mask.end(), this->mask_.begin());
+    // std::cout << "INFO: [Module SpMSpV - send mask] mask successfully loaded to host memory." << std::endl << std::flush;
 
-    cl_mem_ext_ptr_t mask_ext;
-
-    mask_ext.obj = this->mask_.data();
-    mask_ext.param = 0;
-    mask_ext.flags = graphblas::DDR[0];
+    // Handle vector
+    cl_mem_ext_ptr_t vector_ext;
+    vector_ext.obj = this->mask_.data();
+    vector_ext.param = 0;
+    vector_ext.flags = graphblas::DDR[0];
 
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->csc_matrix_.num_rows,
-                &mask_ext,
+                sizeof(vector_data_t) * this->mask_.size(),
+                &vector_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->arg_idx_mask_, this->mask_buf));
+    // std::cout << "INFO: [Module SpMSpV - send mask] memory allocated on FPGA" << std::endl << std::flush;
+    // set argument
+    OCL_CHECK(err, err = this->kernel_.setArg(4, this->mask_buf));
+
+    // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
     this->command_queue_.finish();
+    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device." << std::endl << std::flush;
 }
-
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::run() {
@@ -547,78 +440,14 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::run() {
     this->command_queue_.finish();
 }
 
-// reference without mask
+/*!
+ * \brief Compute reference results.
+ * \param vector The sparse vector.
+ * \param mask The dense mask.
+ * \return The reference results in dense format.
+ */
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-graphblas::aligned_sparse_float_vec_t
-SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector) {
-    // measure dimensions
-    unsigned vec_nnz_total = vector[0].index;
-    unsigned num_rows = this->csc_matrix_.num_rows;
-
-    // create result container
-    aligned_sparse_float_vec_t reference_results;
-
-    // local buffer for dense results
-    std::vector<vector_data_t> output_buffer(num_rows,0);
-
-    // indices of active columns are stored in vec_idx
-    // number of active columns = vec_nnz_total
-    // loop over all active columns
-    for (unsigned active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
-        idx_t current_colid = vector[active_colid + 1].index;
-        // slice out the current column out of the active columns
-        idx_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
-        idx_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
-        idx_t current_collen = col_id_end - col_id_start;
-        matrix_data_t current_col[current_collen];
-        idx_t current_row_ids[current_collen];
-        for (unsigned i = 0; i < current_collen; i++) {
-            current_col[i] = this->csc_matrix_.adj_data[i + col_id_start];
-            current_row_ids[i] = this->csc_matrix_.adj_indices[i + col_id_start];
-        }
-
-        // loop over all nnzs in the current column
-        for (unsigned mat_element_id = 0; mat_element_id < current_collen; mat_element_id++) {
-            idx_t current_row_id = current_row_ids[mat_element_id];
-            vector_data_t nnz_from_mat = current_col[mat_element_id];
-            vector_data_t nnz_from_vec = vector[active_colid + 1].val;
-            switch (this->semiring_) {
-                case graphblas::kMulAdd:
-                    output_buffer[current_row_id] += nnz_from_mat * nnz_from_vec;
-                    break;
-                case graphblas::kLogicalAndOr:
-                    output_buffer[current_row_id] = output_buffer[current_row_id] || (nnz_from_mat && nnz_from_vec);
-                    break;
-                default:
-                    std::cerr << "Invalid semiring" << std::endl;
-                    break;
-            }
-        }
-    }
-
-    // checkout results
-    idx_t nnz_cnt = 0;
-    reference_results.clear();
-    for (size_t obid = 0; obid < num_rows; obid++) {
-        if(output_buffer[obid]) {
-            index_float_t a;
-            a.val = output_buffer[obid];
-            a.index = obid;
-            reference_results.push_back(a);
-            nnz_cnt ++;
-        }
-    }
-    index_float_t reference_head;
-    reference_head.val = 0;
-    reference_head.index = nnz_cnt;
-    reference_results.insert(reference_results.begin(),reference_head);
-    return reference_results;
-}
-
-
-// reference with mask
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-graphblas::aligned_sparse_float_vec_t
+graphblas::aligned_dense_float_vec_t
 SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
                                                                                    graphblas::aligned_dense_float_vec_t &mask) {
     // measure dimensions
@@ -626,75 +455,62 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     unsigned num_rows = this->csc_matrix_.num_rows;
 
     // create result container
-    aligned_sparse_float_vec_t reference_results;
-
-    // local buffer for dense results
-    std::vector<vector_data_t> output_buffer(num_rows,0);
+    aligned_dense_float_vec_t reference_results(num_rows,this->semiring_.zero);
 
     // indices of active columns are stored in vec_idx
     // number of active columns = vec_nnz_total
     // loop over all active columns
-    for (unsigned active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
+    for (unsigned int active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
         idx_t current_colid = vector[active_colid + 1].index;
         // slice out the current column out of the active columns
         idx_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
         idx_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
-        idx_t current_collen = col_id_end - col_id_start;
-        matrix_data_t current_col[current_collen];
-        idx_t current_row_ids[current_collen];
-        for (unsigned i = 0; i < current_collen; i++) {
-            current_col[i] = this->csc_matrix_.adj_data[i + col_id_start];
-            current_row_ids[i] = this->csc_matrix_.adj_indices[i + col_id_start];
-        }
+
         // loop over all nnzs in the current column
-        for (unsigned mat_element_id = 0; mat_element_id < current_collen; mat_element_id++) {
-            idx_t current_row_id = current_row_ids[mat_element_id];
-            vector_data_t nnz_from_mat = current_col[mat_element_id];
-            vector_data_t nnz_from_vec = vector[active_colid + 1].val;
-            switch (this->semiring_) {
-                case graphblas::kMulAdd:
-                    output_buffer[current_row_id] += nnz_from_mat * nnz_from_vec;
+        for (unsigned int mat_element_id = col_id_start; mat_element_id < col_id_end; mat_element_id++) {
+            idx_t current_row_id = this->csc_matrix_.adj_indices[mat_element_id];
+            float nnz_from_mat = this->csc_matrix_.adj_data[mat_element_id];
+            float nnz_from_vec = vector[active_colid + 1].val;
+            float incr;
+            switch (this->semiring_.op) {
+                case kMulAdd:
+                    incr = nnz_from_mat * nnz_from_vec;
+                    reference_results[current_row_id] += incr;
                     break;
-                case graphblas::kLogicalAndOr:
-                    output_buffer[current_row_id] = output_buffer[current_row_id] || (nnz_from_mat && nnz_from_vec);
+                case kLogicalAndOr:
+                    incr = (nnz_from_mat && nnz_from_vec);
+                    reference_results[current_row_id] = reference_results[current_row_id] || incr;
+                    break;
+                case kAddMin:
+                    incr = nnz_from_mat + nnz_from_vec;
+                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ? reference_results[current_row_id] : incr;
                     break;
                 default:
-                    std::cerr << "Invalid semiring" << std::endl;
+                    std::cerr << "ERROR: [Module SpMSpV] Invalid semiring" << std::endl;
                     break;
             }
         }
     }
-
-    // checkout results
-    idx_t nnz_cnt = 0;
-    reference_results.clear();
-    for (size_t obid = 0; obid < num_rows; obid++) {
-        bool do_write = false;
+    // mask off values
+    for (unsigned int i = 0; i < num_rows; i++) {
+        bool mask_off;
         switch (this->mask_type_) {
-        case graphblas::kMaskWriteToZero:
-            do_write = (mask[obid] == 0);
-            break;
-        case graphblas::kMaskWriteToOne:
-            do_write = (mask[obid] != 0);
-            break;
-        default:
-            std::cerr << "Invalid Mask Type" << std::endl;
-            break;
+            case kNoMask:
+                mask_off = false;
+                break;
+            case kMaskWriteToOne:
+                mask_off = (mask[i] == this->semiring_.zero);
+                break;
+            case kMaskWriteToZero:
+                mask_off = (mask[i] != this->semiring_.zero);
+                break;
+            default:
+                mask_off = true;
+                break;
         }
-        if(do_write) {
-            if(output_buffer[obid]) {
-                graphblas::index_float_t a;
-                a.val = output_buffer[obid];
-                a.index = obid;
-                reference_results.push_back(a);
-                nnz_cnt ++;
-            }
-        }
+        if (mask_off) reference_results[i] = this->semiring_.zero;
     }
-    index_float_t reference_head;
-    reference_head.val = 0;
-    reference_head.index = nnz_cnt;
-    reference_results.insert(reference_results.begin(), reference_head);
+    std::cout << "INFO: [Module SpMSpV - compute reference] reference computation successfully complete." << std::endl << std::flush;
     return reference_results;
 }
 

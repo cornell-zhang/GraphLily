@@ -26,7 +26,7 @@ private:
     /*! \brief The mask type */
     graphblas::MaskType mask_type_;
     /*! \brief The semiring */
-    SemiRingType semiring_;
+    graphblas::SemiringType semiring_;
     /*! \brief The number of channels of the kernel */
     uint32_t num_channels_;
     /*! \brief The length of output buffer of the kernel */
@@ -103,7 +103,7 @@ public:
      * \brief Set the semiring type.
      * \param semiring The semiring type.
      */
-    void set_semiring(graphblas::SemiRingType semiring) {
+    void set_semiring(graphblas::SemiringType semiring) {
         this->semiring_ = semiring;
     }
 
@@ -377,7 +377,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->results_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_rows));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, (char)this->semiring_));
+    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, (char)this->semiring_.op));
     OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, (char)this->mask_type_));
     // Send data to device
     for (size_t c = 0; c < this->num_channels_; c++) {
@@ -470,7 +470,7 @@ graphblas::aligned_dense_float_vec_t
 SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dense_float_vec_t &vector) {
     aligned_dense_float_vec_t reference_results(this->csr_matrix_.num_rows);
     std::fill(reference_results.begin(), reference_results.end(), 0);
-    switch (this->semiring_) {
+    switch (this->semiring_.op) {
         case graphblas::kMulAdd:
             SPMV(reference_results[row_idx] += this->csr_matrix_float_.adj_data[i] * vector[idx]);
             break;
