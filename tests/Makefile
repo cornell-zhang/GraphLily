@@ -21,8 +21,8 @@ LDFLAGS += -L/work/shared/common/research/graphblas/software/cnpy/build -lcnpy
 CXXFLAGS += -I/work/shared/common/research/graphblas/software/googletest/googletest/include
 LDFLAGS += -L/work/shared/common/research/graphblas/software/googletest/build/lib -lgtest
 
-test_io: test_io.cpp
-	g++ $(CXXFLAGS) test_io.cpp -o $@ $(LDFLAGS)
+test_io: test_io.cpp $(xcl2_SRCS)
+	g++ $(CXXFLAGS) test_io.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)
 	mv test_io $(BUILD_DIR)/
 	cd $(BUILD_DIR); ./test_io

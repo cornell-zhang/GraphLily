@@ -144,8 +144,9 @@ public:
      *        The csr matrix should have float data type.
      *        Data type conversion, if required, is handled internally.
      * \param csr_matrix_float The csr matrix using float data type.
+     * \param skip_empty_rows Whether skip empty rows.
      */
-    void load_and_format_matrix(CSRMatrix<float> const &csr_matrix_float);
+    void load_and_format_matrix(CSRMatrix<float> const &csr_matrix_float, bool skip_empty_rows);
 
     /*!
      * \brief Send the formatted matrix from host to device.
@@ -161,8 +162,6 @@ public:
      * \brief Send the mask from host to device.
      */
     void send_mask_host_to_device(aligned_dense_vec_t &mask);
-
-    // uint32_t count_elements_skip_empty_rows();
 
     /*!
      * \brief Run the module.
@@ -274,20 +273,20 @@ void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
-        CSRMatrix<float> const &csr_matrix_float) {
+        CSRMatrix<float> const &csr_matrix_float,
+        bool skip_empty_rows) {
     this->csr_matrix_float_ = csr_matrix_float;
     this->csr_matrix_ = graphblas::io::csr_matrix_convert_from_float<val_t>(csr_matrix_float);
     this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buf_len_ - 1) / this->out_buf_len_;
     this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vec_buf_len_ - 1) / this->vec_buf_len_;
     size_t num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
-    val_t val_marker = 0;
     this->cpsr_matrix_ = csr2cpsr<val_t, graphblas::pack_size>(
         this->csr_matrix_,
-        val_marker,
         graphblas::idx_marker,
         this->out_buf_len_,
         this->vec_buf_len_,
-        this->num_channels_);
+        this->num_channels_,
+        skip_empty_rows);
     std::vector<aligned_partition_indptr_t> channel_partition_indptr(this->num_channels_);
     std::vector<aligned_packed_idx_t> channel_indices(this->num_channels_);
     std::vector<aligned_packed_val_t> channel_vals(this->num_channels_);
@@ -316,18 +315,16 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
             }
         }
         assert(channel_indices[c].size() == channel_vals[c].size());
-        this->channel_packets_[c].resize(num_partitions + channel_indices[c].size());
+        this->channel_packets_[c].resize(2*num_partitions + channel_indices[c].size());
         // partition indptr
         for (size_t i = 0; i < num_partitions; i++) {
-            this->channel_packets_[c][i].indices.data[0] = channel_partition_indptr[c][i].start;
-            for (size_t k = 0; k < graphblas::pack_size; k++) {
-                this->channel_packets_[c][i].vals.data[k] = (val_t)channel_partition_indptr[c][i].nnz.data[k];
-            }
+            this->channel_packets_[c][2*i].indices.data[0] = channel_partition_indptr[c][i].start;
+            this->channel_packets_[c][2*i + 1].indices = channel_partition_indptr[c][i].nnz;
         }
         // matrix indices and vals
         for (size_t i = 0; i < channel_indices[c].size(); i++) {
-            this->channel_packets_[c][i + num_partitions].indices = channel_indices[c][i];
-            this->channel_packets_[c][i + num_partitions].vals = channel_vals[c][i];
+            this->channel_packets_[c][2*num_partitions + i].indices = channel_indices[c][i];
+            this->channel_packets_[c][2*num_partitions + i].vals = channel_vals[c][i];
         }
     }
     this->vector_.resize(this->csr_matrix_.num_cols);

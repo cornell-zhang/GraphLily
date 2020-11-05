@@ -6,6 +6,9 @@
 #include <numeric>
 #include <algorithm>
 
+#include "xcl2.hpp"  // use aligned_allocator
+
+#include "../global.h"
 #include "./data_loader.h"
 
 
@@ -49,19 +52,19 @@ void util_normalize_csr_matrix_by_outdegree(CSRMatrix<data_type> &csr_matrix) {
 
 
 template<typename data_type>
-void util_pad_marker_end_of_row(std::vector<data_type> &adj_data,
-                                std::vector<uint32_t> &adj_indices,
-                                std::vector<uint32_t> &adj_indptr,
-                                data_type val_marker,
-                                uint32_t idx_marker) {
+void util_pad_marker_end_of_row_no_skip_empty_rows(std::vector<data_type> &adj_data,
+                                                   std::vector<uint32_t> &adj_indices,
+                                                   std::vector<uint32_t> &adj_indptr,
+                                                   uint32_t idx_marker) {
     uint32_t num_rows = adj_indptr.size() - 1;
     std::vector<data_type> adj_data_swap(adj_data.size() + num_rows);
     std::vector<uint32_t> adj_indices_swap(adj_indices.size() + num_rows);
+    data_type val_marker = 1;
     uint32_t count = 0;
-    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+    for (uint32_t row_idx = 0; row_idx < num_rows; row_idx++) {
         uint32_t start = adj_indptr[row_idx];
         uint32_t end = adj_indptr[row_idx + 1];
-        for (size_t i = start; i < end; i++) {
+        for (uint32_t i = start; i < end; i++) {
             adj_data_swap[count] = adj_data[i];
             adj_indices_swap[count] = adj_indices[i];
             count++;
@@ -72,8 +75,106 @@ void util_pad_marker_end_of_row(std::vector<data_type> &adj_data,
     }
     adj_data = adj_data_swap;
     adj_indices = adj_indices_swap;
-    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+    for (uint32_t row_idx = 0; row_idx < num_rows; row_idx++) {
         adj_indptr[row_idx + 1] += (row_idx + 1);
+    }
+}
+
+
+template<typename data_type>
+void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data,
+                                                std::vector<uint32_t> &adj_indices,
+                                                std::vector<uint32_t> &adj_indptr,
+                                                uint32_t idx_marker,
+                                                uint32_t interleave_stride)
+{
+    uint32_t num_rows = adj_indptr.size() - 1;
+    assert(num_rows % interleave_stride == 0);
+
+    bool row_is_empty[num_rows];
+    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+        if (row_idx < interleave_stride) {
+            // The first few rows should be inserted a marker whether empty or not
+            row_is_empty[row_idx] = false;
+        } else {
+            uint32_t start = adj_indptr[row_idx];
+            uint32_t end = adj_indptr[row_idx + 1];
+            if (end == start) {
+                row_is_empty[row_idx] = true;
+            } else {
+                row_is_empty[row_idx] = false;
+            }
+        }
+    }
+
+    uint32_t cumulative_sum_nonempty_rows[num_rows];
+    cumulative_sum_nonempty_rows[0] = !row_is_empty[0];
+    for (size_t row_idx = 1; row_idx < num_rows; row_idx++) {
+        cumulative_sum_nonempty_rows[row_idx] = cumulative_sum_nonempty_rows[row_idx - 1]
+                                                + !row_is_empty[row_idx];
+    }
+
+    data_type val_marker[num_rows];
+    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+        if (!row_is_empty[row_idx]) {
+            val_marker[row_idx] = 1;
+        } else {
+            val_marker[row_idx] = 0;
+        }
+    }
+    for (size_t k = 0; k < interleave_stride; k++) {
+        for (size_t row_idx = k; row_idx < num_rows; ) {
+            size_t next = row_idx + interleave_stride;
+            if (!row_is_empty[row_idx]) {
+                while(next < num_rows && row_is_empty[next]) {
+                    val_marker[row_idx]++;
+                    next += interleave_stride;
+                }
+            }
+            row_idx = next;
+        }
+    }
+
+    uint32_t total_num_nonempty_rows = cumulative_sum_nonempty_rows[num_rows - 1];
+    std::vector<data_type> adj_data_swap(adj_data.size() + total_num_nonempty_rows);
+    std::vector<uint32_t> adj_indices_swap(adj_indices.size() + total_num_nonempty_rows);
+    uint32_t count = 0;
+    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+        if (!row_is_empty[row_idx]) {
+            uint32_t start = adj_indptr[row_idx];
+            uint32_t end = adj_indptr[row_idx + 1];
+            for (size_t i = start; i < end; i++) {
+                adj_data_swap[count] = adj_data[i];
+                adj_indices_swap[count] = adj_indices[i];
+                count++;
+            }
+            adj_data_swap[count] = val_marker[row_idx];
+            adj_indices_swap[count] = idx_marker;
+            count++;
+        }
+    }
+    assert(count == adj_data_swap.size());
+
+    adj_data = adj_data_swap;
+    adj_indices = adj_indices_swap;
+    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+        adj_indptr[row_idx + 1] += cumulative_sum_nonempty_rows[row_idx];
+    }
+}
+
+
+template<typename data_type>
+void util_pad_marker_end_of_row(std::vector<data_type> &adj_data,
+                                std::vector<uint32_t> &adj_indices,
+                                std::vector<uint32_t> &adj_indptr,
+                                uint32_t idx_marker,
+                                uint32_t interleave_stride,
+                                bool skip_empty_rows=false) {
+    if (skip_empty_rows) {
+        util_pad_marker_end_of_row_skip_empty_rows(adj_data, adj_indices, adj_indptr,
+                                                   idx_marker, interleave_stride);
+    } else {
+        util_pad_marker_end_of_row_no_skip_empty_rows(adj_data, adj_indices, adj_indptr, idx_marker);
     }
 }
 
@@ -85,12 +186,10 @@ void util_pad_marker_end_of_row(std::vector<data_type> &adj_data,
 // CPSR (cyclic packed streams of rows) format.
 template<typename data_type, uint32_t num_PEs_per_hbm_channel>
 struct CPSRMatrix {
-    /*! \brief The number of partitions along the row dimension */
     uint32_t num_row_partitions;
-    /*! \brief The number of partitions along the column dimension */
     uint32_t num_col_partitions;
-    /*! \brief The number of HBM channels */
     uint32_t num_hbm_channels;
+    bool skip_empty_rows;
 
     using packed_val_t = struct {data_type data[num_PEs_per_hbm_channel];};
     using packed_idx_t = struct {uint32_t data[num_PEs_per_hbm_channel];};
@@ -249,14 +348,14 @@ void util_reorder_rows_ascending_nnz(std::vector<data_type> const &adj_data,
 
     // Iterate the original CSR matrix row by row and perform reordering
     for (size_t i = 0; i < num_rows; i++) {
-        uint32_t row_id = rows_ascending_nnz[i];
-        for (uint32_t j = adj_indptr[row_id]; j < adj_indptr[row_id + 1]; j++) {
+        uint32_t row_idx = rows_ascending_nnz[i];
+        for (uint32_t j = adj_indptr[row_idx]; j < adj_indptr[row_idx + 1]; j++) {
             data_type val = adj_data[j];
             uint32_t col_idx = adj_indices[j];
             reordered_adj_data.push_back(val);
             reordered_adj_indices.push_back(col_idx);
         }
-        reordered_adj_indptr.push_back(reordered_adj_indptr.back() + nnz_each_row[row_id]);
+        reordered_adj_indptr.push_back(reordered_adj_indptr.back() + nnz_each_row[row_idx]);
     }
 }
 
@@ -346,21 +445,22 @@ void util_pack_rows(std::vector<data_type> const &adj_data,
  * \tparam num_PEs_per_hbm_channel The number of PEs per HBM channel, i.e., the pack size.
  *
  * \param csr_matrix The input matrix in CSR format.
- * \param val_marker The marker to be padded into adj_data to denote the end of a row.
  * \param idx_marker The marker to be padded into adj_indices to denote the end of a row.
  * \param out_buf_len The output buffer length, which determines the number of row partitions.
  * \param vec_buf_len The vector buffer length, which determines the number of column partitions.
  * \param num_hbm_channels The number of HBM channels.
+ * \param skip_empty_rows Whether skip empty rows or not.
  *
  * \return The output matrix in CPSR format.
  */
 template <typename data_type, uint32_t num_PEs_per_hbm_channel>
 CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> const &csr_matrix,
-                                                        data_type val_marker,
                                                         uint32_t idx_marker,
                                                         uint32_t out_buf_len,
                                                         uint32_t vec_buf_len,
-                                                        uint32_t num_hbm_channels) {
+                                                        uint32_t num_hbm_channels,
+                                                        bool skip_empty_rows)
+{
     if (csr_matrix.num_rows % (num_PEs_per_hbm_channel * num_hbm_channels) != 0) {
         std::cout << "The number of rows of the sparse matrix should divide "
                   << num_PEs_per_hbm_channel * num_hbm_channels << ". "
@@ -378,12 +478,14 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
     assert(out_buf_len % (num_PEs_per_hbm_channel * num_hbm_channels) == 0);
     assert(vec_buf_len % num_PEs_per_hbm_channel == 0);
     CPSRMatrix<data_type, num_PEs_per_hbm_channel> cpsr_matrix;
+    cpsr_matrix.skip_empty_rows = skip_empty_rows;
     cpsr_matrix.num_hbm_channels = num_hbm_channels;
     cpsr_matrix.num_row_partitions = (csr_matrix.num_rows + out_buf_len - 1) / out_buf_len;
     cpsr_matrix.num_col_partitions = (csr_matrix.num_cols + vec_buf_len - 1) / vec_buf_len;
-    cpsr_matrix.formatted_adj_data.resize(cpsr_matrix.num_row_partitions*cpsr_matrix.num_col_partitions*num_hbm_channels);
-    cpsr_matrix.formatted_adj_indices.resize(cpsr_matrix.num_row_partitions*cpsr_matrix.num_col_partitions*num_hbm_channels);
-    cpsr_matrix.formatted_adj_indptr.resize(cpsr_matrix.num_row_partitions*cpsr_matrix.num_col_partitions*num_hbm_channels);
+    uint32_t num_partitions = cpsr_matrix.num_row_partitions*cpsr_matrix.num_col_partitions;
+    cpsr_matrix.formatted_adj_data.resize(num_partitions * num_hbm_channels);
+    cpsr_matrix.formatted_adj_indices.resize(num_partitions * num_hbm_channels);
+    cpsr_matrix.formatted_adj_indptr.resize(num_partitions * num_hbm_channels);
     for (size_t j = 0; j < cpsr_matrix.num_row_partitions; j++) {
         std::vector<data_type> partitioned_adj_data[cpsr_matrix.num_col_partitions];
         std::vector<uint32_t> partitioned_adj_indices[cpsr_matrix.num_col_partitions];
@@ -409,8 +511,9 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
             util_pad_marker_end_of_row<data_type>(partitioned_adj_data[i],
                                                   partitioned_adj_indices[i],
                                                   partitioned_adj_indptr[i],
-                                                  val_marker,
-                                                  idx_marker);
+                                                  idx_marker,
+                                                  num_hbm_channels*num_PEs_per_hbm_channel,
+                                                  skip_empty_rows);
             util_pack_rows<data_type,
                            typename CPSRMatrix<data_type, num_PEs_per_hbm_channel>::packed_val_t,
                            typename CPSRMatrix<data_type, num_PEs_per_hbm_channel>::packed_idx_t>(
@@ -419,10 +522,12 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
                 partitioned_adj_indptr[i],
                 num_hbm_channels,
                 num_PEs_per_hbm_channel,
-                &(cpsr_matrix.formatted_adj_data[j*cpsr_matrix.num_col_partitions*num_hbm_channels + i*num_hbm_channels]),
-                &(cpsr_matrix.formatted_adj_indices[j*cpsr_matrix.num_col_partitions*num_hbm_channels + i*num_hbm_channels]),
-                &(cpsr_matrix.formatted_adj_indptr[j*cpsr_matrix.num_col_partitions*num_hbm_channels + i*num_hbm_channels])
-            );
+                &(cpsr_matrix.formatted_adj_data[j*cpsr_matrix.num_col_partitions*num_hbm_channels
+                                                 + i*num_hbm_channels]),
+                &(cpsr_matrix.formatted_adj_indices[j*cpsr_matrix.num_col_partitions*num_hbm_channels
+                                                    + i*num_hbm_channels]),
+                &(cpsr_matrix.formatted_adj_indptr[j*cpsr_matrix.num_col_partitions*num_hbm_channels
+                                                   + i*num_hbm_channels]));
         }
     }
     return cpsr_matrix;
@@ -445,8 +550,8 @@ struct FormattedCSCMatrix {
     uint32_t num_packets_total;
 
     std::vector<MatrixPacketT> formatted_adj_packet;
-    std::vector<uint32_t> formatted_adj_indptr;
-    std::vector<uint32_t> formatted_adj_partptr;
+    std::vector<graphblas::idx_t> formatted_adj_indptr;
+    std::vector<graphblas::idx_t> formatted_adj_partptr;
 
     /*!
      * \brief get formatted packet
@@ -463,8 +568,8 @@ struct FormattedCSCMatrix {
     /*!
      * \brief get a formatted indptr
      */
-    std::vector<idx_t, aligned_allocator<idx_t>> get_formatted_indptr() {
-        std::vector<idx_t, aligned_allocator<idx_t>> channel_indptr;
+    std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> get_formatted_indptr() {
+        std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> channel_indptr;
         channel_indptr.resize((this->num_columns + 1) * this->num_row_partitions);
         for (size_t i = 0; i < (this->num_columns + 1) * this->num_row_partitions; i++) {
             channel_indptr[i] = this->formatted_adj_indptr[i];
@@ -475,8 +580,8 @@ struct FormattedCSCMatrix {
     /*!
      * \brief get a formatted partptr
      */
-    std::vector<idx_t, aligned_allocator<idx_t>> get_formatted_partptr() {
-        std::vector<idx_t, aligned_allocator<idx_t>> channel_partptr;
+    std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> get_formatted_partptr() {
+        std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> channel_partptr;
         channel_partptr.resize(this->num_row_partitions);
         for (size_t i = 0; i < this->num_row_partitions; i++) {
             channel_partptr[i] = this->formatted_adj_partptr[i];
@@ -492,19 +597,18 @@ struct FormattedCSCMatrix {
  * \tparam MatrixPacketT The packet type of the formatted matrix.
  *
  * \param csc_matrix The input matrix in CSC format.
- * \param Semiring  The semiring on which this matrix is represented.
+ * \param semiring The semiring on which this matrix is represented.
  * \param pack_size The number of elements packed in one packet.
  * \param out_buf_len The length of the output buffer. Must divide (pack_size * 2).
  *
  * \return The output matrix in CPSR format.
  */
 
-template<typename DataT,typename MatrixPacketT>
+template<typename DataT, typename MatrixPacketT>
 FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
-                                             SemiringType Semiring,
-                                             uint32_t pack_size,
-                                             uint32_t out_buf_len) {
-
+                                            SemiringType semiring,
+                                            uint32_t pack_size,
+                                            uint32_t out_buf_len) {
     if (out_buf_len % (pack_size * 2) != 0) {
         std::cout << "ERROR: [formatCSC] The out_buf_len should divide (pack_size * 2) !"
                   << "  Aborting..." <<std::endl;
@@ -571,7 +675,7 @@ FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
         unsigned num_packets = (tile_nnz_cnt[t] + pack_size - 1) / pack_size;
         unsigned num_padding_zero = num_packets * pack_size - tile_nnz_cnt[t];
         for (size_t z = 0; z < num_padding_zero; z++) {
-          tile_data_buf[t].push_back(Semiring.zero);
+          tile_data_buf[t].push_back(semiring.zero);
           tile_idx_buf[t].push_back(0);
         }
         tile_pkt_cnt[t] += num_packets;
@@ -598,9 +702,13 @@ FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
     // and create tileptr vector
     for (size_t t = 0; t < formatted_matrix.num_row_partitions; t++) {
       // ditpkt
-      formatted_matrix.formatted_adj_packet.insert(formatted_matrix.formatted_adj_packet.end(),tile_ditpkt_buf[t].begin(),tile_ditpkt_buf[t].end());
+      formatted_matrix.formatted_adj_packet.insert(formatted_matrix.formatted_adj_packet.end(),
+                                                   tile_ditpkt_buf[t].begin(),
+                                                   tile_ditpkt_buf[t].end());
       // idxptr
-      formatted_matrix.formatted_adj_indptr.insert(formatted_matrix.formatted_adj_indptr.end(),tile_idxptr_buf[t].begin(),tile_idxptr_buf[t].end());
+      formatted_matrix.formatted_adj_indptr.insert(formatted_matrix.formatted_adj_indptr.end(),
+                                                   tile_idxptr_buf[t].begin(),
+                                                   tile_idxptr_buf[t].end());
       // tileptr
       formatted_matrix.formatted_adj_partptr.push_back(tile_pkt_cnt[t] + formatted_matrix.formatted_adj_partptr.back());
     }

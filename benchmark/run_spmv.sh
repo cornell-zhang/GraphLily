@@ -1,11 +1,15 @@
 make bench_spmv
 
-num_channels=4
-bitstream=${GRAPHBLAS_ROOT_PATH}/benchmark/bitstreams/bfs_4_channel_16_pack_64K_VecBuf_150MHz.xclbin
+num_channels=8
+bitstream=/work/shared/common/research/graphblas/bitstreams/spmv_8_channel_8_pack_128K_VecBuf_168MHz.xclbin
 
 PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
+
 DATSETS=(gplus_108K_13M_csr_float32.npz
          reddit_233K_115M_csr_float32.npz
+         com_youtube_1M_3M_csr_float32.npz
+         web_google_876K_5M_csr_float32.npz
+         live_journal_5M_69M_csr_float32.npz
          pokec_1633K_31M_csr_float32.npz
          ogbn_proteins_132K_79M_csr_float32.npz
          ogbl_ppa_576K_42M_csr_float32.npz

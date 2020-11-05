@@ -1,3 +1,8 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wint-in-bool-context"
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -95,7 +100,7 @@ TEST(DataLoader, CSRMatrixConvertFromFloat) {
 }
 
 
-TEST(DataLoader, CSR2CSC) {
+TEST(DataLoader, Csr2CSC) {
     CSRMatrix<float> csr_matrix = csr_matrix_1;
     CSCMatrix<float> csc_matrix = csr2csc<float>(csr_matrix);
     ASSERT_EQ(csc_matrix.num_rows, uint32_t(4));
@@ -128,7 +133,7 @@ TEST(DataFormatter, NormalizeCSRMatrixByOutdegree) {
 }
 
 
-TEST(DataFormatter, ConvertCSR2DDS) {
+TEST(DataFormatter, ConvertCsr2DDS) {
     CSRMatrix<float> M = csr_matrix_1;
     uint32_t num_cols_per_partition = 3;
     uint32_t num_col_partitions = (M.num_cols + num_cols_per_partition - 1) / num_cols_per_partition;
@@ -233,29 +238,29 @@ TEST(DataFormatter, PackRows) {
 }
 
 
-TEST(DataFormatter, CSR2CPSRColPartitioning) {
+TEST(DataFormatter, Csr2CpsrColPartitioning) {
     CSRMatrix<float> M = csr_matrix_2;
     const uint32_t out_buf_len = 4;
     const uint32_t vec_buf_len = 4;
     const uint32_t num_hbm_channels = 2;
     const uint32_t num_PEs_per_hbm_channel = 2;
-    float val_marker = std::numeric_limits<float>::infinity();
     unsigned idx_marker = std::numeric_limits<unsigned>::max();
+    const bool skip_empty_rows = false;
 
     CPSRMatrix<float, num_PEs_per_hbm_channel> cpsr_matrix = csr2cpsr<float, num_PEs_per_hbm_channel>(M,
-        val_marker, idx_marker, out_buf_len, vec_buf_len, num_hbm_channels);
+        idx_marker, out_buf_len, vec_buf_len, num_hbm_channels, skip_empty_rows);
 
     using packed_val_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_val_t;
     using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
 
     std::vector<packed_val_t> reference_data_col_partition_1_channel_1 =
-        {{1,5}, {2,6}, {3,val_marker}, {4,0}, {val_marker,0}};
+        {{1,5}, {2,6}, {3,1}, {4,0}, {1,0}};
     std::vector<packed_idx_t> reference_indices_col_partition_1_channel_1 =
         {{0,0}, {1,2}, {2,idx_marker}, {3,0}, {idx_marker,0}};
     std::vector<packed_idx_t> reference_indptr_col_partition_1_channel_1 =
         {{0,0}, {5,3}}; // a marker is inserted to the end of each row
     std::vector<packed_val_t> reference_data_col_partition_1_channel_2 =
-        {{7,8}, {val_marker,val_marker}};
+        {{7,8}, {1,1}};
     std::vector<packed_idx_t> reference_indices_col_partition_1_channel_2 =
         {{1,3}, {idx_marker,idx_marker}};
     std::vector<packed_idx_t> reference_indptr_col_partition_1_channel_2 =
@@ -294,29 +299,29 @@ TEST(DataFormatter, CSR2CPSRColPartitioning) {
 }
 
 
-TEST(DataFormatter, CSR2CPSRRowPartitioning) {
+TEST(DataFormatter, Csr2CpsrRowPartitioning) {
     CSRMatrix<float> M = csr_matrix_1;
     const uint32_t out_buf_len = 2;
     const uint32_t vec_buf_len = 4;
     const uint32_t num_hbm_channels = 1;
     const uint32_t num_PEs_per_hbm_channel = 2;
-    float val_marker = std::numeric_limits<float>::infinity();
     unsigned idx_marker = std::numeric_limits<unsigned>::max();
+    const bool skip_empty_rows = false;
 
     CPSRMatrix<float, num_PEs_per_hbm_channel> cpsr_matrix = csr2cpsr<float, num_PEs_per_hbm_channel>(M,
-        val_marker, idx_marker, out_buf_len, vec_buf_len, num_hbm_channels);
+        idx_marker, out_buf_len, vec_buf_len, num_hbm_channels, skip_empty_rows);
 
     using packed_val_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_val_t;
     using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
 
     std::vector<packed_val_t> reference_data_row_partition_1 =
-        {{1,5}, {2,6}, {3,val_marker}, {4,0}, {val_marker,0}};
+        {{1,5}, {2,6}, {3,1}, {4,0}, {1,0}};
     std::vector<packed_idx_t> reference_indices_row_partition_1 =
         {{0,0}, {1,2}, {2,idx_marker}, {3,0}, {idx_marker,0}};
     std::vector<packed_idx_t> reference_indptr_row_partition_1 =
-        {{0,0}, {5,3}}; // a marker is inserted to the end of each row
+        {{0,0}, {5,3}};  // a marker is inserted to the end of each row
     std::vector<packed_val_t> reference_data_row_partition_2 =
-        {{7,8}, {val_marker,val_marker}};
+        {{7,8}, {1,1}};
     std::vector<packed_idx_t> reference_indices_row_partition_2 =
         {{1,3}, {idx_marker,idx_marker}};
     std::vector<packed_idx_t> reference_indptr_row_partition_2 =
@@ -337,7 +342,58 @@ TEST(DataFormatter, CSR2CPSRRowPartitioning) {
 }
 
 
+// csr_matrix_3 is:
+//     [[0, 0, 0, 0],
+//      [1, 0, 2, 0],
+//      [3, 0, 0, 0],
+//      [0, 0, 0, 0],
+//      [0, 0, 0, 0],
+//      [0, 4, 0, 0],
+//      [5, 0, 0, 0],
+//      [0, 0, 0, 0]]
+const static CSRMatrix<float> csr_matrix_3 = {
+    .num_rows=8,
+    .num_cols=4,
+    .adj_data=std::vector<float>{1, 2, 3, 4, 5},
+    .adj_indices=std::vector<uint32_t>{0, 2, 0, 1, 0},
+    .adj_indptr=std::vector<uint32_t>{0, 0, 2, 3, 3, 3, 4, 5, 5},
+};
+
+
+TEST(DataFormatter, Csr2CpsrRowPartitioningSkipEmptyRows) {
+    CSRMatrix<float> M = csr_matrix_3;
+    const uint32_t out_buf_len = 8;
+    const uint32_t vec_buf_len = 4;
+    const uint32_t num_hbm_channels = 1;
+    const uint32_t num_PEs_per_hbm_channel = 2;
+    unsigned idx_marker = std::numeric_limits<unsigned>::max();
+    const bool skip_empty_rows = true;
+
+    CPSRMatrix<float, num_PEs_per_hbm_channel> cpsr_matrix = csr2cpsr<float, num_PEs_per_hbm_channel>(M,
+        idx_marker, out_buf_len, vec_buf_len, num_hbm_channels, skip_empty_rows);
+
+    using packed_val_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_val_t;
+    using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
+
+    std::vector<packed_val_t> reference_data =
+        {{1,1}, {3,2}, {2,2}, {5,4}, {1,2}};
+    std::vector<packed_idx_t> reference_indices =
+        {{idx_marker,0}, {0,2}, {idx_marker,idx_marker}, {0,1}, {idx_marker,idx_marker}};
+    std::vector<packed_idx_t> reference_indptr =
+        {{0,0}, {1,3}, {3,3}, {3,5}, {5,5}};
+
+    check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_data(0, 0, 0), reference_data);
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indices(0, 0, 0), reference_indices);
+    check_packed_vector_equal<packed_idx_t, num_PEs_per_hbm_channel>(
+        cpsr_matrix.get_packed_indptr(0, 0, 0), reference_indptr);
+}
+
+
 int main(int argc, char ** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+#pragma GCC diagnostic pop

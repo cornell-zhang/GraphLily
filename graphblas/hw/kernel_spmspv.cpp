@@ -29,7 +29,6 @@ static void load_vector_from_gmem(
         instruction_to_ml.vector_value = vector[vec_nnz_cnt + 1].val;
         VL_to_ML_stream.write(instruction_to_ml);
     }
-
 }
 
 // data loader for spmspv
@@ -49,10 +48,10 @@ static void load_matrix_from_gmem(
     IDX_T part_id,
     VAL_T Zero,
     // fifos
-    hls::stream<VL_O_T>  &VL_to_ML_stream,
-    hls::stream<SF_IO_T>  DL_to_SF_stream[PACK_SIZE],
+    hls::stream<VL_O_T> &VL_to_ML_stream,
+    hls::stream<SF_IO_T> DL_to_SF_stream[PACK_SIZE],
     // load complete
-    hls::stream<unsigned>  &num_payloads
+    hls::stream<unsigned> &num_payloads
 ) {
     IDX_T pld_cnt = 0;
     IDX_T mat_addr_base = mat_partptr[part_id];
@@ -94,13 +93,11 @@ static void load_matrix_from_gmem(
                 input_to_SF.data.vec_val = vec_val;
                 input_to_SF.index = packet_from_mat.indices.data[k] - mat_row_id_base;
                 // discard paddings
-                if(packet_from_mat.vals.data[k] != Zero) {
+                if (packet_from_mat.vals.data[k] != Zero) {
                     DL_to_SF_stream[k].write(input_to_SF);
                     tmp_pcnt_incr ++;
                 }
-
             }
-
             tmp_pcnt += tmp_pcnt_incr;
         }
         pld_cnt += tmp_pcnt;
@@ -112,16 +109,16 @@ static void load_matrix_from_gmem(
 // bram access used for checkout results
 void bram_access_read_2ports(
     // real read ports
-    IDX_T   rd_addr[PACK_SIZE * 2],
-    VAL_T   rd_data[PACK_SIZE * 2],
+    IDX_T rd_addr[PACK_SIZE * 2],
+    VAL_T rd_data[PACK_SIZE * 2],
     // bram
-    VAL_T   bram[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE]
+    VAL_T bram[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE]
 ){
     #pragma HLS pipeline II=1
     // #pragma HLS inline
 
     loop_rd_get_data_unroll:
-    for(unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
+    for (unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
         #pragma HLS unroll
         for (unsigned int PTid = 0; PTid < 2; PTid++) {
             #pragma HLS unroll
@@ -129,7 +126,6 @@ void bram_access_read_2ports(
             rd_data[BKid * 2 + PTid] = bram[BKid][sbbk_addr];
         }
     }
-
 }
 
 // change results to sparse
@@ -174,7 +170,7 @@ static void checkout_results(
             loop_after_read_ports_unroll:
             for (unsigned int Port_id = 0; Port_id < 2; Port_id++) {
                 #pragma HLS unroll
-                if(data_arr[Bank_id * 2 + Port_id] != zero) {
+                if (data_arr[Bank_id * 2 + Port_id] != zero) {
                     VEC_PKT_T pld;
                     pld.index = index_arr[Bank_id * 2 + Port_id] + mat_row_id_base;
                     pld.val = data_arr[Bank_id * 2 + Port_id];
@@ -183,7 +179,6 @@ static void checkout_results(
                 }
             }
         }
-
         npld_before_mask += local_npld_incr;
     }
     npld_to_wb << npld_before_mask;
@@ -209,11 +204,11 @@ static void write_back_gmem(
     unsigned int Lane_id = 0;
 
     loop_until_all_written_back:
-    while(!loop_exit) {
+    while (!loop_exit) {
         #pragma HLS pipeline II=1
-        #pragma HLS dependence variable=loop_exit       inter   distance=15 RAW True
+        #pragma HLS dependence variable=loop_exit inter distance=15 RAW True
         VEC_PKT_T wb_temp;
-        if(wb_input_streams[Lane_id].read_nb(wb_temp)) {
+        if (wb_input_streams[Lane_id].read_nb(wb_temp)) {
             wb_cnt ++;
             bool do_write;
             switch (mask_type) {
@@ -230,12 +225,12 @@ static void write_back_gmem(
                     do_write = false;
                     break;
             }
-            if(do_write) {
+            if (do_write) {
                 result[Nnz + incr + 1] = wb_temp;
                 incr ++;
             }
         }
-        if(!checkout_finish) {
+        if (!checkout_finish) {
             checkout_finish = npld_stream.read_nb(npld);
         }
         Lane_id = (Lane_id + 1) % (PACK_SIZE * 2);
@@ -282,7 +277,6 @@ static void compute_spmspv(
     OP_T Op,
     VAL_T Zero
 ) {
-
     // fifos
     hls::stream<IDX_T> DL_to_SF_npld_stream;
     hls::stream<IDX_T> SF_to_PE_npld_stream;
@@ -412,16 +406,16 @@ static void write_back_results(
 
 extern "C" {
 void kernel_spmspv(
-    MAT_PKT_T *matrix,         //0
-    IDX_T *mat_indptr,    //1
-    IDX_T *mat_partptr,   //2
-    VEC_PKT_T *vector,         //3
-    VAL_T  *mask,           //4
-    VEC_PKT_T *result,         //5
-    IDX_T num_rows,       //6
-    IDX_T num_cols,       //7
-    OP_T Op,                //8
-    MASK_T Mask_type        //9
+    MAT_PKT_T *matrix,   // 0
+    IDX_T *mat_indptr,   // 1
+    IDX_T *mat_partptr,  // 2
+    VEC_PKT_T *vector,   // 3
+    VAL_T *mask,         // 4
+    VEC_PKT_T *result,   // 5
+    IDX_T num_rows,      // 6
+    IDX_T num_cols,      // 7
+    OP_T Op,             // 8
+    MASK_T Mask_type     // 9
 ) {
     #pragma HLS data_pack variable=matrix
     #pragma HLS data_pack variable=vector
@@ -451,7 +445,7 @@ void kernel_spmspv(
     IDX_T vec_num_nnz = vector[0].index;
     VAL_T Zero;
 
-    switch (Op)   {
+    switch (Op) {
     case MULADD:
         Zero = MulAddZero;
         break;
@@ -540,7 +534,6 @@ void kernel_spmspv(
         std::cout << "  Result Nnz = " << result_Nnz << std::endl << std::flush;
     }
     #endif
-
-}
 }
 
+}  // extern "C"

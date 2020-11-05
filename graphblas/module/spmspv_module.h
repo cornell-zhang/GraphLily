@@ -460,14 +460,14 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     // indices of active columns are stored in vec_idx
     // number of active columns = vec_nnz_total
     // loop over all active columns
-    for (unsigned int active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
+    for (unsigned active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
         idx_t current_colid = vector[active_colid + 1].index;
         // slice out the current column out of the active columns
         idx_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
         idx_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
 
         // loop over all nnzs in the current column
-        for (unsigned int mat_element_id = col_id_start; mat_element_id < col_id_end; mat_element_id++) {
+        for (unsigned mat_element_id = col_id_start; mat_element_id < col_id_end; mat_element_id++) {
             idx_t current_row_id = this->csc_matrix_.adj_indices[mat_element_id];
             float nnz_from_mat = this->csc_matrix_.adj_data[mat_element_id];
             float nnz_from_vec = vector[active_colid + 1].val;
@@ -492,7 +492,7 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
         }
     }
     // mask off values
-    for (unsigned int i = 0; i < num_rows; i++) {
+    for (unsigned i = 0; i < num_rows; i++) {
         bool mask_off;
         switch (this->mask_type_) {
             case kNoMask:

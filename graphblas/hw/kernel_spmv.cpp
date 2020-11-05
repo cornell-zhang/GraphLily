@@ -23,17 +23,17 @@ static void matrix_loader_hbm_to_stream_one_channel(
     hls::stream<SF_1_IO_T> ML_to_SF_1_stream[PACK_SIZE],  // out
     hls::stream<unsigned> &num_payloads                   // out
 ) {
-    MAT_PKT_T partition_indptr = matrix_one_channel[partition_idx];
-    IDX_T partition_start = partition_indptr.indices.data[0];
-
-    PACKED_IDX_T partition_size;
-    for (int k = 0; k < PACK_SIZE; k++) {
-        #pragma HLS UNROLL
-        partition_size.data[k] = (IDX_T)partition_indptr.vals.data[k];  // Data type casting
-    }
+    IDX_T partition_start = matrix_one_channel[2*partition_idx].indices.data[0];
+    PACKED_IDX_T partition_size = matrix_one_channel[2*partition_idx + 1].indices;
 
     unsigned max_size = array_max<unsigned, PACK_SIZE>(partition_size.data);
-    unsigned payload_count = 0;
+
+    unsigned payload_count[PACK_SIZE];
+    #pragma HLS ARRAY_PARTITION variable=payload_count complete
+    for (int k = 0; k < PACK_SIZE; k++) {
+        #pragma HLS UNROLL
+        payload_count[k] = 0;
+    }
 
     IDX_T row_idx[PACK_SIZE];
     #pragma HLS ARRAY_PARTITION variable=row_idx complete
@@ -46,20 +46,21 @@ static void matrix_loader_hbm_to_stream_one_channel(
     loop_matrix_loader_hbm_to_stream_one_channel:
     for (int i = 0; i < max_size; i++) {
         #pragma HLS PIPELINE II=1
-        MAT_PKT_T mat_pkt = matrix_one_channel[i + partition_start + num_partitions];
+        MAT_PKT_T mat_pkt = matrix_one_channel[i + partition_start + 2*num_partitions];
 
         for (unsigned k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
             if (i < partition_size.data[k]) {
                 if (mat_pkt.indices.data[k] == IDX_MARKER) {
-                    // row_idx[k] += (PACK_SIZE * mat_pkt.vals.data[k]);
-                    row_idx[k] += PACK_SIZE;  // Row index within each packed stream of rows
+                     // Be careful: mat_pkt.vals.data[k] can not be larger than power(2, 16)
+                    row_idx[k] += (PACK_SIZE * (unsigned)mat_pkt.vals.data[k]);
+                    // row_idx[k] += PACK_SIZE;  // Row index within each packed stream of rows
                 } else {
                     SF_1_IO_T input_to_SF_1;
                     input_to_SF_1.index = mat_pkt.indices.data[k];
                     input_to_SF_1.data = (SF_1_IO_VAL_T){row_idx[k], mat_pkt.vals.data[k]};
                     ML_to_SF_1_stream[k].write(input_to_SF_1);
-                    payload_count++;
+                    payload_count[k]++;
 
                     #ifndef __SYNTHESIS__
                     if (line_tracing_spmv) {
@@ -75,13 +76,7 @@ static void matrix_loader_hbm_to_stream_one_channel(
         }
     }
 
-    #ifndef __SYNTHESIS__
-    if (line_tracing_spmv) {
-        std::cout << "payload_count: " << payload_count << std::endl;
-    }
-    #endif
-
-    num_payloads.write(payload_count);
+    num_payloads.write(array_sum<unsigned, PACK_SIZE>(payload_count));
 }
 
 
@@ -178,7 +173,7 @@ static void compute_spmv_one_channel(
     unsigned partition_idx,                                                                         // in
     unsigned num_partitions,                                                                        // in
     VAL_T Zero,                                                                                     // in
-    VAL_T vector_uram_one_channel[NUM_BANK_PER_HBM_CHANNEL][VEC_BUF_LEN/NUM_BANK_PER_HBM_CHANNEL],  // in                                // in
+    VAL_T vector_uram_one_channel[NUM_BANK_PER_HBM_CHANNEL][VEC_BUF_LEN/NUM_BANK_PER_HBM_CHANNEL],  // in
     OP_T Op,                                                                                        // in
     VAL_T out_bram[PACK_SIZE][OUT_BUF_LEN / NUM_PE_TOTAL]                                           // out
 ) {
@@ -441,6 +436,7 @@ void kernel_spmv(
 
     // There is no conflict when multiple PEs write to out_bram.
     VAL_T out_bram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / NUM_PE_TOTAL];
+    // #pragma HLS RESOURCE variable=out_bram core=XPM_MEMORY uram
     #pragma HLS ARRAY_PARTITION variable=out_bram complete dim=1
     #pragma HLS ARRAY_PARTITION variable=out_bram complete dim=2
 
@@ -453,6 +449,7 @@ void kernel_spmv(
 
         loop_initialize_out_bram:
         for (int i = 0; i < OUT_BUF_LEN / NUM_PE_TOTAL; i++) {
+            #pragma HLS PIPELINE
             for (int c = 0; c < NUM_HBM_CHANNEL; c++) {
                 #pragma HLS UNROLL
                 for (int PE_idx = 0; PE_idx < PACK_SIZE; PE_idx++) {
@@ -465,6 +462,7 @@ void kernel_spmv(
         // Iterate column partitions
         for (int col_partition_idx = 0; col_partition_idx < num_col_partitions; col_partition_idx++) {
             #pragma HLS dataflow
+
             unsigned partition_idx = row_partition_idx * num_col_partitions + col_partition_idx;
 
             #ifndef __SYNTHESIS__
@@ -647,36 +645,85 @@ void kernel_spmv(
         PACKED_VAL_T tmp_out;
         PACKED_VAL_T tmp_mask;
 
-        // check whether the pipeline II is 1
-        loop_write_to_out_ddr:
-        for (int i = 0; i < vsize; i++) {
-            #pragma HLS PIPELINE II=1
-            if (mask_type != NOMASK) {
-                tmp_mask = mask[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE];
-            }
-            for (int k = 0; k < PACK_SIZE; k++) {
-                #pragma HLS UNROLL
-                if (mask_type == NOMASK) {
-                    tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
-                } else if (mask_type == WRITETOZERO) {
-                    if (tmp_mask.data[k] == 0) {
-                        tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
-                    } else {
-                        tmp_out.data[k] = 0;
-                    }
-                } else if (mask_type == WRITETOONE) {
-                    if (tmp_mask.data[k] == 0) {
-                        tmp_out.data[k] = 0;
-                    } else {
+        // TODO: Check whether the pipeline II is 1
+        switch (mask_type) {
+            case NOMASK:
+                loop_write_to_out_ddr_no_mask:
+                for (int i = 0; i < vsize; i++) {
+                    #pragma HLS PIPELINE II=1
+                    for (int k = 0; k < PACK_SIZE; k++) {
+                        #pragma HLS UNROLL
                         tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
                     }
-                } else {
-                    std::cout << "Invalid mask type" << std::endl;
-                    exit(EXIT_FAILURE);
+                    out[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE] = tmp_out;
                 }
-            }
-            out[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE] = tmp_out;
+                break;
+            case WRITETOZERO:
+                loop_write_to_out_ddr_mask_WriteToZero:
+                for (int i = 0; i < vsize; i++) {
+                    #pragma HLS PIPELINE II=1
+                    tmp_mask = mask[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE];
+                    for (int k = 0; k < PACK_SIZE; k++) {
+                        #pragma HLS UNROLL
+                        if (tmp_mask.data[k] == 0) {
+                            tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
+                        } else {
+                            tmp_out.data[k] = 0;
+                        }
+                    }
+                    out[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE] = tmp_out;
+                }
+                break;
+            case WRITETOONE:
+                loop_write_to_out_ddr_mask_WriteToOne:
+                for (int i = 0; i < vsize; i++) {
+                    #pragma HLS PIPELINE II=1
+                    tmp_mask = mask[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE];
+                    for (int k = 0; k < PACK_SIZE; k++) {
+                        #pragma HLS UNROLL
+                        if (tmp_mask.data[k] == 0) {
+                            tmp_out.data[k] = 0;
+                        } else {
+                            tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
+                        }
+                    }
+                    out[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE] = tmp_out;
+                }
+                break;
+            default:
+                std::cout << "Invalid mask type" << std::endl;
+                exit(EXIT_FAILURE);
         }
+
+        // loop_write_to_out_ddr:
+        // for (int i = 0; i < vsize; i++) {
+        //     #pragma HLS PIPELINE II=1
+        //     if (mask_type != NoMask) {
+        //         tmp_mask = mask[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE];
+        //     }
+        //     for (int k = 0; k < PACK_SIZE; k++) {
+        //         #pragma HLS UNROLL
+        //         if (mask_type == NoMask) {
+        //             tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
+        //         } else if (mask_type == WriteToZero) {
+        //             if (tmp_mask.data[k] == 0) {
+        //                 tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
+        //             } else {
+        //                 tmp_out.data[k] = 0;
+        //             }
+        //         } else if (mask_type == WriteToOne) {
+        //             if (tmp_mask.data[k] == 0) {
+        //                 tmp_out.data[k] = 0;
+        //             } else {
+        //                 tmp_out.data[k] = out_bram[i % NUM_HBM_CHANNEL][k][i / NUM_HBM_CHANNEL];
+        //             }
+        //         } else {
+        //             std::cout << "Invalid mask type" << std::endl;
+        //             exit(EXIT_FAILURE);
+        //         }
+        //     }
+        //     out[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE] = tmp_out;
+        // }
     }
 }
 

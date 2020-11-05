@@ -94,9 +94,6 @@ const SemiringType ArithmeticSemiring = {kMulAdd, 0, 1};
 const SemiringType LogicalSemiring = {kLogicalAndOr, 0, 1};
 const SemiringType TropicalSemiring = {kAddMin, 1, UFIXED_INF};
 
-// Kernel configuration
-const uint32_t num_hbm_channels = 8;
-
 // Makefile for synthesizing xclbin
 const std::string makefile_prologue =
     "DEVICE = /opt/xilinx/platforms/" + device_name + "/" + device_name + ".xpfm\n"
