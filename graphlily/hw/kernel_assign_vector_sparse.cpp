@@ -1,8 +1,10 @@
-#include <ap_fixed.h>
+#include "./kernel_assign_vector_sparse.h"
+
 #include <assert.h>
 #include <iostream>
 
-#include "./kernel_assign_vector_sparse.h"
+#include <ap_fixed.h>
+
 
 extern "C" {
 
@@ -14,14 +16,14 @@ void kernel_assign_vector_sparse(
     VAL_T val              // The value to be assigned to the inout vector
 ) {
     /*
-    *   working mode description:
-    *   0 : used in BFS.
-    *       the new_frontier will never be updated.
-    *       the inout will be assigned val according to the mask.
-    *   1 : used in SSSP.
-    *       the input val will never be used.
-    *       the inout will be updated to have the smaller value between the inout and mask.
-    *       new_frontier will be generated
+    * working mode description:
+    * 0 : used in BFS.
+    *     the new_frontier will never be updated.
+    *     the inout will be assigned val according to the mask.
+    * 1 : used in SSSP.
+    *     the input val will never be used.
+    *     the inout will be updated to have the smaller value between the inout and mask.
+    *     new_frontier will be generated
     */
 #pragma HLS INTERFACE m_axi port=mask offset=slave bundle=gmem0
 #pragma HLS INTERFACE m_axi port=inout offset=slave bundle=gmem0
@@ -70,7 +72,8 @@ void kernel_assign_vector_sparse(
             }
         }
         #ifndef __SYNTHESIS__
-            std::cout << "[INFO kernel_assign_vector_sparse] Batch " << batch_cnt <<" read complete" << std::endl << std::flush;
+            std::cout << "[INFO kernel_assign_vector_sparse] Batch " << batch_cnt
+                      << " read complete" << std::endl << std::flush;
         #endif
 
         // process stage
@@ -86,8 +89,9 @@ void kernel_assign_vector_sparse(
                     if (local_inout_buf[i] > local_mask_buf[i].val) {
                         // #ifndef __SYNTHESIS__
                         //     std::cout << "[INFO kernel_assign_vector_sparse] Update at "
-                        //         << local_mask_buf[i].index << " "
-                        //         << "(" << local_inout_buf[i] << " > " << local_mask_buf[i].val << ")" << std::endl << std::flush;
+                        //               << local_mask_buf[i].index << " "
+                        //               << "(" << local_inout_buf[i] << " > " << local_mask_buf[i].val
+                        //               << ")" << std::endl << std::flush;
                         // #endif
                         local_inout_buf[i] = local_mask_buf[i].val;
                         local_nf_buf[batch_nf_length] = local_mask_buf[i];
@@ -103,7 +107,8 @@ void kernel_assign_vector_sparse(
             }
         }
         #ifndef __SYNTHESIS__
-            std::cout << "[INFO kernel_assign_vector_sparse] Batch " << batch_cnt <<" process complete" << std::endl << std::flush;
+            std::cout << "[INFO kernel_assign_vector_sparse] Batch " << batch_cnt
+                      << " process complete" << std::endl << std::flush;
         #endif
 
         // wirte inout
@@ -125,7 +130,8 @@ void kernel_assign_vector_sparse(
             nf_length += batch_nf_length;
         }
         #ifndef __SYNTHESIS__
-            std::cout << "[INFO kernel_assign_vector_sparse] Batch " << batch_cnt <<" write complete" << std::endl << std::flush;
+            std::cout << "[INFO kernel_assign_vector_sparse] Batch " << batch_cnt
+                      << " write complete" << std::endl << std::flush;
         #endif
 
         // update progress
@@ -141,4 +147,4 @@ void kernel_assign_vector_sparse(
     }
 }
 
-} // extern "C"
+}  // extern "C"

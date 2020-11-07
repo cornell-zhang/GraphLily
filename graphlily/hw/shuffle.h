@@ -1,11 +1,13 @@
 #ifndef GRAPHLILY_HW_SHUFFLE_H_
 #define GRAPHLILY_HW_SHUFFLE_H_
 
-#include "hls_stream.h"
 #include <iostream>
 #include <iomanip>
 
+#include "hls_stream.h"
+
 #include "./util.h"
+
 
 #ifndef __SYNTHESIS__
 bool line_tracing_shuffle_1p = false;
@@ -78,7 +80,9 @@ unsigned arbiter_1p(
         #pragma HLS unroll
         unsigned requested_olid = in_addr[ILid] & addr_mask;
         // temp_in_granted[ILid] = (in_valid[ILid] && (xbar_sel[requested_olid] == ILid));
-        in_granted[ILid] = (in_valid[ILid] && out_valid[requested_olid] && (xbar_sel[requested_olid] == ILid));
+        in_granted[ILid] = (in_valid[ILid]
+                            && out_valid[requested_olid]
+                            && (xbar_sel[requested_olid] == ILid));
     }
 
     loop_A_resend:

@@ -1,5 +1,5 @@
-#ifndef __GRAPHBLAS_ASSIGN_VECTOR_SPARSE_MODULE_H
-#define __GRAPHBLAS_ASSIGN_VECTOR_SPARSE_MODULE_H
+#ifndef GRAPHLILY_ASSIGN_VECTOR_SPARSE_MODULE_H_
+#define GRAPHLILY_ASSIGN_VECTOR_SPARSE_MODULE_H_
 
 #include <cstdint>
 #include <vector>
@@ -8,11 +8,11 @@
 
 #include "xcl2.hpp"
 
-#include "../global.h"
-#include "./base_module.h"
+#include "graphlily/global.h"
+#include "graphlily/module/base_module.h"
 
 
-namespace graphblas {
+namespace graphlily {
 namespace module {
 
 template<typename vector_data_t, typename sparse_vector_data_t>
@@ -24,7 +24,7 @@ private:
     /*! \brief Internal copy of mask */
     aligned_mask_t mask_;
     /*! \brief Internal copy of inout */
-    aligned_dense_vec_t  inout_;
+    aligned_dense_vec_t inout_;
     /*! \brief Internal copy of new_frontier */
     aligned_mask_t new_frontier_;
     /*! \brief Working mode. 0 for BFS, 1 for SSSP */
@@ -130,9 +130,9 @@ public:
      * \param len The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
-    void compute_reference_results(graphblas::aligned_sparse_float_vec_t &mask,
-                                   graphblas::aligned_dense_float_vec_t &inout,
-                                   graphblas::aligned_sparse_float_vec_t &new_frontier,
+    void compute_reference_results(graphlily::aligned_sparse_float_vec_t &mask,
+                                   graphlily::aligned_dense_float_vec_t &inout,
+                                   graphlily::aligned_sparse_float_vec_t &new_frontier,
                                    float val);
 
     void generate_kernel_header() override;
@@ -143,10 +143,10 @@ public:
 
 template<typename vector_data_t, typename sparse_vector_data_t>
 void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
+    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Data types
     header << "typedef unsigned IDX_T;" << std::endl;
     header << "const unsigned BATCH_SIZE = " << 128 << ";" << std::endl;
@@ -157,10 +157,10 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::generate_kern
 
 template<typename vector_data_t, typename sparse_vector_data_t>
 void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream ini(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini");
+    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
     ini << "[connectivity]" << std::endl;
     ini << "sp=kernel_assign_vector_sparse_1.mask:DDR[0]" << std::endl;
     ini << "sp=kernel_assign_vector_sparse_1.inout:DDR[0]" << std::endl;
@@ -177,7 +177,7 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::send_mask_hos
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphblas::DDR[0];
+    mask_ext.flags = graphlily::DDR[0];
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(sparse_vector_data_t) * this->mask_.size(),
@@ -190,7 +190,7 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::send_mask_hos
     cl_mem_ext_ptr_t new_frontier_ext;
     new_frontier_ext.obj = this->new_frontier_.data();
     new_frontier_ext.param = 0;
-    new_frontier_ext.flags = graphblas::DDR[0];
+    new_frontier_ext.flags = graphlily::DDR[0];
     OCL_CHECK(err, this->new_frontier_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(sparse_vector_data_t) * this->new_frontier_.size(),
@@ -209,7 +209,7 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::send_inout_ho
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();
     inout_ext.param = 0;
-    inout_ext.flags = graphblas::DDR[0];
+    inout_ext.flags = graphlily::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->inout_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -240,9 +240,9 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::run(vector_da
 
 template<typename vector_data_t, typename sparse_vector_data_t>
 void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::compute_reference_results(
-    graphblas::aligned_sparse_float_vec_t &mask,
-    graphblas::aligned_dense_float_vec_t &inout,
-    graphblas::aligned_sparse_float_vec_t &new_frontier,
+    graphlily::aligned_sparse_float_vec_t &mask,
+    graphlily::aligned_dense_float_vec_t &inout,
+    graphlily::aligned_sparse_float_vec_t &new_frontier,
     float val
 ) {
     new_frontier.clear();
@@ -252,12 +252,12 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::compute_refer
         }
     } else if (this->mode_ == 1) {
         for (size_t i = 0; i < mask[0].index; i++) {
-            if(inout[mask[i + 1].index] > mask[i + 1].val) {
+            if (inout[mask[i + 1].index] > mask[i + 1].val) {
                 inout[mask[i + 1].index] = mask[i + 1].val;
                 new_frontier.push_back(mask[i+1]);
             }
         }
-        graphblas::index_float_t nf_head;
+        graphlily::index_float_t nf_head;
         nf_head.index = new_frontier.size();
         nf_head.val = 0;
         new_frontier.insert(new_frontier.begin(),nf_head);
@@ -268,8 +268,7 @@ void AssignVectorSparseModule<vector_data_t,sparse_vector_data_t>::compute_refer
     }
 }
 
+}  // namespace module
+}  // namespace graphlily
 
-} // namespace module
-} // namespace graphblas
-
-#endif // __GRAPHBLAS_ASSIGN_VECTOR_SPARSE_MODULE_H
+#endif  // GRAPHLILY_ASSIGN_VECTOR_SPARSE_MODULE_H_

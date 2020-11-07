@@ -1,9 +1,10 @@
 #include "./kernel_spmspv.h"
 
-#include <ap_fixed.h>
-#include <hls_stream.h>
 #include <iostream>
 #include <iomanip>
+
+#include <ap_fixed.h>
+#include <hls_stream.h>
 
 #include "./shuffle.h"
 #include "./pe.h"
@@ -11,6 +12,7 @@
 #ifndef __SYNTHESIS__
 static bool line_tracing_spmspv = true;
 #endif
+
 
 // vector loader for spmspv
 static void load_vector_from_gmem(
@@ -435,12 +437,12 @@ void kernel_spmspv(
     #pragma HLS interface s_axilite port=vector       bundle=control
     #pragma HLS interface s_axilite port=result       bundle=control
 
-    #pragma HLS interface s_axilite port=num_rows    bundle=control
-    #pragma HLS interface s_axilite port=num_cols    bundle=control
-    #pragma HLS interface s_axilite port=Op          bundle=control
-    #pragma HLS interface s_axilite port=Mask_type   bundle=control
+    #pragma HLS interface s_axilite port=num_rows   bundle=control
+    #pragma HLS interface s_axilite port=num_cols   bundle=control
+    #pragma HLS interface s_axilite port=Op         bundle=control
+    #pragma HLS interface s_axilite port=Mask_type  bundle=control
 
-    #pragma HLS interface s_axilite port=return      bundle=control
+    #pragma HLS interface s_axilite port=return     bundle=control
 
     IDX_T vec_num_nnz = vector[0].index;
     VAL_T Zero;

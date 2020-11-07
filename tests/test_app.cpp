@@ -3,18 +3,19 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include <ap_fixed.h>
+#include "graphlily/app/bfs.h"
+#include "graphlily/app/pagerank.h"
+
 #include <iostream>
 
-#include "graphblas/app/bfs.h"
-#include "graphblas/app/pagerank.h"
+#include <ap_fixed.h>
 
 
 std::string target = "sw_emu";
 
 
 void clean_proj_folder() {
-    std::string command = "rm -rf ./" + graphblas::proj_folder_name;
+    std::string command = "rm -rf ./" + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
 }
@@ -46,11 +47,11 @@ void test_bfs() {
     uint32_t num_channels = 8;
     uint32_t out_buf_len = 1024;
     uint32_t vec_buf_len4;
-    graphblas::app::BFS bfs(num_channels, out_buf_len, vec_buf_len);
+    graphlily::app::BFS bfs(num_channels, out_buf_len, vec_buf_len);
 
     bfs.set_target(target);
     bfs.compile();
-    bfs.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    bfs.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
                                      "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
@@ -80,14 +81,14 @@ void test_pagerank() {
     uint32_t num_channels = 8;
     uint32_t out_buf_len = 1024;
     uint32_t vec_buf_len4;
-    graphblas::app::PageRank pagerank(num_channels, out_buf_len, vec_buf_len);
+    graphlily::app::PageRank pagerank(num_channels, out_buf_len, vec_buf_len);
 
     float damping = 0.9;
     uint32_t num_iterations = 10;
 
     pagerank.set_target(target);
     pagerank.compile();
-    pagerank.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    pagerank.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
                                      "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";

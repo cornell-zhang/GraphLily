@@ -1,5 +1,5 @@
-#ifndef __GRAPHBLAS_SPMSPV_MODULE_H
-#define __GRAPHBLAS_SPMSPV_MODULE_H
+#ifndef GRAPHLILY_SPMSPV_MODULE_H_
+#define GRAPHLILY_SPMSPV_MODULE_H_
 
 #include <cstdint>
 #include <vector>
@@ -8,37 +8,27 @@
 
 #include "xcl2.hpp"
 
-#include "../global.h"
-#include "../io/data_loader.h"
-#include "../io/data_formatter.h"
-#include "./base_module.h"
-
-using graphblas::io::CSCMatrix;
-using graphblas::io::FormattedCSCMatrix;
-using graphblas::io::formatCSC;
+#include "graphlily/global.h"
+#include "graphlily/io/data_loader.h"
+#include "graphlily/io/data_formatter.h"
+#include "graphlily/module/base_module.h"
 
 
-namespace graphblas {
+using graphlily::io::CSCMatrix;
+using graphlily::io::FormattedCSCMatrix;
+using graphlily::io::formatCSC;
+
+
+namespace graphlily {
 namespace module {
-
-unsigned log2(unsigned x) {
-    switch (x) {
-        case    1: return 0;
-        case    2: return 1;
-        case    4: return 2;
-        case    8: return 3;
-        case   16: return 4;
-        default  : return 0;
-    }
-}
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 class SpMSpVModule : public BaseModule {
 private:
     /*! \brief The mask type */
-    graphblas::MaskType mask_type_;
+    graphlily::MaskType mask_type_;
     /*! \brief The semiring */
-    graphblas::SemiringType semiring_;
+    graphlily::SemiringType semiring_;
     /*! \brief The length of output buffer of the kernel */
     uint32_t out_buf_len_;
     /*! \brief The number of row partitions */
@@ -48,9 +38,10 @@ private:
 
     // using val_t = vector_data_t;
     // using index_val_t = struct {val_t val; idx_t index;};
-    using packet_t = struct {graphblas::idx_t indices[graphblas::pack_size]; matrix_data_t vals[graphblas::pack_size];};
+    using packet_t = struct {graphlily::idx_t indices[graphlily::pack_size];
+                             matrix_data_t vals[graphlily::pack_size];};
 
-    using aligned_idx_t = std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>>;
+    using aligned_idx_t = std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>>;
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
     using aligned_sparse_vec_t = std::vector<index_val_t, aligned_allocator<index_val_t>>;
     using aligned_packet_t = std::vector<packet_t, aligned_allocator<packet_t>>;
@@ -93,14 +84,6 @@ private:
      */
     void _check_data_type();
 
-    /*!
-     * \brief Get the kernel configuration.
-     * \param semiring The semiring.
-     * \param out_buf_len The length of output buffer.
-     */
-    void _get_kernel_config(graphblas::SemiringType semiring,
-                            uint32_t out_buf_len);
-
 public:
     SpMSpVModule(uint32_t out_buf_len) : BaseModule("kernel_spmspv") {
         this->_check_data_type();
@@ -134,7 +117,7 @@ public:
     /*!
      * \brief Change the kernel semiring and masktype
      */
-    void config_kernel(graphblas::SemiringType semiring, graphblas::MaskType masktype) {
+    void config_kernel(graphlily::SemiringType semiring, graphlily::MaskType masktype) {
         cl_int err;
         this->semiring_ = semiring;
         this->mask_type_ = masktype;
@@ -211,8 +194,8 @@ public:
      * \param mask The dense mask.
      * \return The reference results in dense format.
      */
-    graphblas::aligned_dense_float_vec_t compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
-                                                                   graphblas::aligned_dense_float_vec_t &mask);
+    graphlily::aligned_dense_float_vec_t compute_reference_results(graphlily::aligned_sparse_float_vec_t &vector,
+                                                                   graphlily::aligned_dense_float_vec_t &mask);
 
     void generate_kernel_header() override;
 
@@ -227,19 +210,11 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_check_data_type()
 
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_get_kernel_config(graphblas::SemiringType semiring,
-                                                                                 uint32_t out_buf_len) {
-    this->semiring_ = semiring;
-    this->out_buf_len_ = out_buf_len;
-}
-
-
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
+    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
     // Kernel configuration
     header << "const unsigned OUT_BUF_LEN = " << this->out_buf_len_ << ";" << std::endl;
     header.close();
@@ -248,10 +223,10 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_he
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream ini(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini");
+    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
 
     // memory channel connectivity
     ini << "[connectivity]" << std::endl;
@@ -275,10 +250,14 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_in
 
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::load_and_format_matrix(CSCMatrix<float> const &csc_matrix_float) {
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::load_and_format_matrix(
+        CSCMatrix<float> const &csc_matrix_float) {
     this->csc_matrix_float_ = csc_matrix_float;
-    this->csc_matrix_ = graphblas::io::csc_matrix_convert_from_float<matrix_data_t>(csc_matrix_float);
-    this->formatted_csc_matrix_ = formatCSC<matrix_data_t, packet_t>(this->csc_matrix_, this->semiring_, graphblas::pack_size, this->out_buf_len_);
+    this->csc_matrix_ = graphlily::io::csc_matrix_convert_from_float<matrix_data_t>(csc_matrix_float);
+    this->formatted_csc_matrix_ = formatCSC<matrix_data_t, packet_t>(this->csc_matrix_,
+                                                                     this->semiring_,
+                                                                     graphlily::pack_size,
+                                                                     this->out_buf_len_);
     this->num_row_partitions_ = this->formatted_csc_matrix_.num_row_partitions;
     this->num_packets_ = this->formatted_csc_matrix_.num_packets_total;
 
@@ -306,15 +285,15 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
 
     channel_packets_ext.obj = this->channel_packets_.data();
     channel_packets_ext.param = 0;
-    channel_packets_ext.flags = graphblas::DDR[1];
+    channel_packets_ext.flags = graphlily::DDR[1];
 
     channel_indptr_ext.obj = this->channel_indptr_.data();
     channel_indptr_ext.param = 0;
-    channel_indptr_ext.flags = graphblas::DDR[1];
+    channel_indptr_ext.flags = graphlily::DDR[1];
 
     channel_partptr_ext.obj = this->channel_partptr_.data();
     channel_partptr_ext.param = 0;
-    channel_partptr_ext.flags = graphblas::DDR[1];
+    channel_partptr_ext.flags = graphlily::DDR[1];
 
     // Allocate memory on the FPGA
     OCL_CHECK(err, this->channel_packets_buf = cl::Buffer(this->context_,
@@ -324,12 +303,12 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
         &err));
     OCL_CHECK(err, this->channel_indptr_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(graphblas::idx_t) * (this->get_num_cols() + 1) * this->num_row_partitions_ ,
+        sizeof(graphlily::idx_t) * (this->get_num_cols() + 1) * this->num_row_partitions_ ,
         &channel_indptr_ext,
         &err));
     OCL_CHECK(err, this->channel_partptr_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(graphblas::idx_t) * (this->num_row_partitions_ + 1),
+        sizeof(graphlily::idx_t) * (this->num_row_partitions_ + 1),
         &channel_partptr_ext,
         &err));
 
@@ -342,20 +321,21 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
-                                this->channel_packets_buf,
-                                this->channel_indptr_buf,
-                                this->channel_partptr_buf,
-                                }, 0 /* 0 means from host*/)
-    );
+        this->channel_packets_buf,
+        this->channel_indptr_buf,
+        this->channel_partptr_buf,
+        }, 0 /* 0 means from host*/));
+
     this->command_queue_.finish();
-    std::cout << "INFO: [Module SpMSpV - send matrix] matrix successfully send to device." << std::endl << std::flush;
+    std::cout << "INFO: [Module SpMSpV - send matrix] matrix successfully send to device."
+              << std::endl << std::flush;
 
     // Handle results
     cl_mem_ext_ptr_t results_ext;
 
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
-    results_ext.flags = graphblas::DDR[0];
+    results_ext.flags = graphlily::DDR[0];
 
     // Allocate memory on the FPGA
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
@@ -366,71 +346,72 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
 
     // Set argument
     OCL_CHECK(err, err = this->kernel_.setArg(5, this->results_buf));
-    std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device." << std::endl << std::flush;
+    std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
+              << std::endl << std::flush;
 }
 
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_to_device(aligned_sparse_vec_t &vector) {
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_to_device(
+        aligned_sparse_vec_t &vector) {
     cl_int err;
 
     // copy the input vector
     this->vector_.resize(vector.size());
     std::copy(vector.begin(), vector.end(), this->vector_.begin());
-    // std::cout << "INFO: [Module SpMSpV - send vector] vector successfully loaded to host memory." << std::endl << std::flush;
-    // std::cout << "  vector size : " << vector.size() << std::endl << std::flush;
-    // std::cout << "  vector Nnz : "  << vector[0].index << std::endl << std::flush;
 
     // Handle vector
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphblas::DDR[0];
+    vector_ext.flags = graphlily::DDR[0];
 
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(index_val_t) * this->vector_.size(),
                 &vector_ext,
                 &err));
-    // std::cout << "INFO: [Module SpMSpV - send vector] memory allocated on FPGA" << std::endl << std::flush;
+
     // set argument
     OCL_CHECK(err, err = this->kernel_.setArg(3, this->vector_buf));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
     this->command_queue_.finish();
-    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device." << std::endl << std::flush;
+    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device."
+              << std::endl << std::flush;
 }
 
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
+void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_mask_host_to_device(
+        aligned_dense_vec_t &mask) {
     cl_int err;
 
     // copy the input vector
     this->mask_.resize(mask.size());
     std::copy(mask.begin(), mask.end(), this->mask_.begin());
-    // std::cout << "INFO: [Module SpMSpV - send mask] mask successfully loaded to host memory." << std::endl << std::flush;
 
     // Handle vector
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->mask_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphblas::DDR[0];
+    vector_ext.flags = graphlily::DDR[0];
 
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(vector_data_t) * this->mask_.size(),
                 &vector_ext,
                 &err));
-    // std::cout << "INFO: [Module SpMSpV - send mask] memory allocated on FPGA" << std::endl << std::flush;
+
     // set argument
     OCL_CHECK(err, err = this->kernel_.setArg(4, this->mask_buf));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
     this->command_queue_.finish();
-    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device." << std::endl << std::flush;
+    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device."
+              << std::endl << std::flush;
 }
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
@@ -447,9 +428,10 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::run() {
  * \return The reference results in dense format.
  */
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-graphblas::aligned_dense_float_vec_t
-SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(graphblas::aligned_sparse_float_vec_t &vector,
-                                                                                   graphblas::aligned_dense_float_vec_t &mask) {
+graphlily::aligned_dense_float_vec_t
+SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(
+        graphlily::aligned_sparse_float_vec_t &vector,
+        graphlily::aligned_dense_float_vec_t &mask) {
     // measure dimensions
     unsigned vec_nnz_total = vector[0].index;
     unsigned num_rows = this->csc_matrix_.num_rows;
@@ -483,7 +465,8 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
                     break;
                 case kAddMin:
                     incr = nnz_from_mat + nnz_from_vec;
-                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ? reference_results[current_row_id] : incr;
+                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ?
+                                                         reference_results[current_row_id] : incr;
                     break;
                 default:
                     std::cerr << "ERROR: [Module SpMSpV] Invalid semiring" << std::endl;
@@ -510,12 +493,12 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
         }
         if (mask_off) reference_results[i] = this->semiring_.zero;
     }
-    std::cout << "INFO: [Module SpMSpV - compute reference] reference computation successfully complete." << std::endl << std::flush;
+    std::cout << "INFO: [Module SpMSpV - compute reference] reference computation successfully complete."
+              << std::endl << std::flush;
     return reference_results;
 }
 
+}  // namespace module
+}  // namespace graphlily
 
-} // namespace module
-} // namespace graphblas
-
-#endif // __GRAPHBLAS_SPMSPV_MODULE_H
+#endif  // GRAPHLILY_SPMSPV_MODULE_H_

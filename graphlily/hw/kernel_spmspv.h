@@ -19,7 +19,7 @@ typedef struct matrix_packet {
 
 typedef struct vector_packet {
    IDX_T index;
-   VAL_T   val;
+   VAL_T val;
 } VEC_PKT_T;
 
 // semiring definition
@@ -44,14 +44,14 @@ const VAL_T AddMinOne = 0;
 
 // TODO: overload "<<" operator for better line tracing support
 typedef struct shuffle_inout_vale_type {
-    VAL_T   mat_val;
-    VAL_T   vec_val;
+    VAL_T mat_val;
+    VAL_T vec_val;
 } SF_IO_VAL_T;
 
 // TODO: overload "<<" operator for better line tracing support
 typedef struct shuffle_inout_type {
-    IDX_T          index;
-    SF_IO_VAL_T    data;
+    IDX_T index;
+    SF_IO_VAL_T data;
 } SF_IO_T;
 
 typedef struct vector_loader_out_type {

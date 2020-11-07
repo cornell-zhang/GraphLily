@@ -1,5 +1,5 @@
-#ifndef __GRAPHBLAS_EWISE_ADD_MODULE_H
-#define __GRAPHBLAS_EWISE_ADD_MODULE_H
+#ifndef GRAPHLILY_EWISE_ADD_MODULE_H_
+#define GRAPHLILY_EWISE_ADD_MODULE_H_
 
 #include <cstdint>
 #include <vector>
@@ -8,17 +8,17 @@
 
 #include "xcl2.hpp"
 
-#include "../global.h"
-#include "./base_module.h"
+#include "graphlily/global.h"
+#include "graphlily/module/base_module.h"
 
 
-namespace graphblas {
+namespace graphlily {
 namespace module {
 
 template<typename vector_data_t>
 class eWiseAddModule : public BaseModule {
 private:
-    using packed_val_t = struct {vector_data_t data[graphblas::pack_size];};
+    using packed_val_t = struct {vector_data_t data[graphlily::pack_size];};
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
     /*! \brief Internal copy of the input vector */
@@ -84,8 +84,8 @@ public:
      * \param val The value to be assigned to the inout vector.
      * \return The output vector.
      */
-    graphblas::aligned_dense_float_vec_t
-    compute_reference_results(graphblas::aligned_dense_float_vec_t const &in,
+    graphlily::aligned_dense_float_vec_t
+    compute_reference_results(graphlily::aligned_dense_float_vec_t const &in,
                               uint32_t len,
                               float val);
 
@@ -97,12 +97,12 @@ public:
 
 template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
+    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Data types
-    header << "const unsigned PACK_SIZE = " << graphblas::pack_size << ";" << std::endl;
+    header << "const unsigned PACK_SIZE = " << graphlily::pack_size << ";" << std::endl;
     header << "typedef struct {VAL_T data[PACK_SIZE];}" << " PACKED_VAL_T;" << std::endl;
     header.close();
 }
@@ -110,10 +110,10 @@ void eWiseAddModule<vector_data_t>::generate_kernel_header() {
 
 template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream ini(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini");
+    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
     ini << "[connectivity]" << std::endl;
     ini << "sp=kernel_add_scalar_vector_dense_1.in:DDR[0]" << std::endl;
     ini << "sp=kernel_add_scalar_vector_dense_1.out:DDR[0]" << std::endl;
@@ -127,7 +127,7 @@ void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_dense_vec_t &
     cl_mem_ext_ptr_t in_ext;
     in_ext.obj = this->in_.data();
     in_ext.param = 0;
-    in_ext.flags = graphblas::DDR[0];
+    in_ext.flags = graphlily::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->in_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -146,7 +146,7 @@ void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
     cl_mem_ext_ptr_t out_ext;
     out_ext.obj = this->out_.data();
     out_ext.param = 0;
-    out_ext.flags = graphblas::DDR[0];
+    out_ext.flags = graphlily::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->out_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -174,19 +174,18 @@ void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
 }
 
 
-template<typename vector_data_t> graphblas::aligned_dense_float_vec_t
-eWiseAddModule<vector_data_t>::compute_reference_results(graphblas::aligned_dense_float_vec_t const &in,
+template<typename vector_data_t> graphlily::aligned_dense_float_vec_t
+eWiseAddModule<vector_data_t>::compute_reference_results(graphlily::aligned_dense_float_vec_t const &in,
                                                          uint32_t len,
                                                          float val) {
-    graphblas::aligned_dense_float_vec_t out(len);
+    graphlily::aligned_dense_float_vec_t out(len);
     for (uint32_t i = 0; i < len; i++) {
         out[i] = in[i] + val;
     }
     return out;
 }
 
+}  // namespace module
+}  // namespace graphlily
 
-} // namespace module
-} // namespace graphblas
-
-#endif // __GRAPHBLAS_EWISE_ADD_MODULE_H
+#endif  // GRAPHLILY_EWISE_ADD_MODULE_H_

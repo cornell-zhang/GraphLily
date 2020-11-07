@@ -1,5 +1,5 @@
-#ifndef __GRAPHBLAS_IO_DATA_LOADER_H
-#define __GRAPHBLAS_IO_DATA_LOADER_H
+#ifndef GRAPHLILY_IO_DATA_LOADER_H_
+#define GRAPHLILY_IO_DATA_LOADER_H_
 
 #include <cstdint>
 #include <vector>
@@ -7,7 +7,7 @@
 #include "cnpy.h"
 
 
-namespace graphblas {
+namespace graphlily {
 namespace io {
 
 //--------------------------------------------------
@@ -121,15 +121,15 @@ CSCMatrix<data_type> csr2csc(CSRMatrix<data_type> const &csr_matrix) {
         nnz_each_col[csr_matrix.adj_indices[n]]++;
     }
     csc_matrix.adj_indptr[0] = 0;
-    for(size_t col_idx = 0; col_idx < csc_matrix.num_cols; col_idx++) {
+    for (size_t col_idx = 0; col_idx < csc_matrix.num_cols; col_idx++) {
         csc_matrix.adj_indptr[col_idx + 1] = csc_matrix.adj_indptr[col_idx] + nnz_each_col[col_idx];
     }
     assert(csc_matrix.adj_indptr[csc_matrix.num_cols] == nnz);
     // Convert adj_data and adj_indices
     std::vector<uint32_t> nnz_consumed_each_col(csc_matrix.num_cols);
     std::fill(nnz_consumed_each_col.begin(), nnz_consumed_each_col.end(), 0);
-    for(size_t row_idx = 0; row_idx < csr_matrix.num_rows; row_idx++){
-        for(size_t i = csr_matrix.adj_indptr[row_idx]; i < csr_matrix.adj_indptr[row_idx + 1]; i++){
+    for (size_t row_idx = 0; row_idx < csr_matrix.num_rows; row_idx++){
+        for (size_t i = csr_matrix.adj_indptr[row_idx]; i < csr_matrix.adj_indptr[row_idx + 1]; i++){
             uint32_t col_idx = csr_matrix.adj_indices[i];
             uint32_t dest = csc_matrix.adj_indptr[col_idx] + nnz_consumed_each_col[col_idx];
             csc_matrix.adj_indices[dest] = row_idx;
@@ -156,7 +156,7 @@ CSCMatrix<data_type> csc_matrix_convert_from_float(CSCMatrix<float> const &in) {
     return out;
 }
 
-} // namespace io
-} // namespace graphblas
+}  // namespace io
+}  // namespace graphlily
 
-#endif // __GRAPHBLAS_IO_DATA_LOADER_H
+#endif  // GRAPHLILY_IO_DATA_LOADER_H_

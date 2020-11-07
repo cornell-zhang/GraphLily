@@ -1,9 +1,8 @@
-#ifndef __GRAPHBLAS_GLOBAL_H
-#define __GRAPHBLAS_GLOBAL_H
+#ifndef GRAPHLILY_GLOBAL_H_
+#define GRAPHLILY_GLOBAL_H_
 
 #include <string>
 #include <cstdlib>
-#include <type_traits>
 
 #include "ap_fixed.h"
 #include "xcl2.hpp"
@@ -12,14 +11,14 @@
 namespace {
 
 std::string get_root_path() {
-    char* root_path = getenv("GRAPHBLAS_ROOT_PATH");
+    char* root_path = getenv("GRAPHLILY_ROOT_PATH");
     return root_path == NULL ? std::string("") : std::string(root_path);
 }
 
-} // anonymous namespace
+}  // namespace
 
 
-namespace graphblas {
+namespace graphlily {
 
 // The root path
 const std::string root_path = get_root_path();
@@ -36,7 +35,7 @@ cl::Device find_device() {
             return device;
         }
     }
-    std::cout << "Failed to find "  << device_name << ", exit!\n";
+    std::cout << "Failed to find " << device_name << ", exit!\n";
     exit(EXIT_FAILURE);
 }
 
@@ -83,16 +82,16 @@ struct SemiringType {
     val_t one;
 };
 
+const SemiringType ArithmeticSemiring = {kMulAdd, 0, 1};
+const SemiringType LogicalSemiring = {kLogicalAndOr, 0, 1};
+const SemiringType TropicalSemiring = {kAddMin, 1, UFIXED_INF};
+
 // Mask type
 enum MaskType {
     kNoMask = 0,
     kMaskWriteToZero = 1,
     kMaskWriteToOne = 2,
 };
-
-const SemiringType ArithmeticSemiring = {kMulAdd, 0, 1};
-const SemiringType LogicalSemiring = {kLogicalAndOr, 0, 1};
-const SemiringType TropicalSemiring = {kAddMin, 1, UFIXED_INF};
 
 // Makefile for synthesizing xclbin
 const std::string makefile_prologue =
@@ -161,6 +160,6 @@ unsigned log2(unsigned x) {
     }
 }
 
-} // namespace graphblas
+}  // namespace graphlily
 
-#endif // __GRAPHBLAS_GLOBAL_H
+#endif  // GRAPHLILY_GLOBAL_H_

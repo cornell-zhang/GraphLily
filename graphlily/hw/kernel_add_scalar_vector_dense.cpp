@@ -1,8 +1,9 @@
-#include <ap_fixed.h>
+#include "./kernel_add_scalar_vector_dense.h"
+
 #include <assert.h>
 #include <iostream>
 
-#include "./kernel_add_scalar_vector_dense.h"
+#include <ap_fixed.h>
 
 
 extern "C" {
@@ -43,4 +44,4 @@ void kernel_add_scalar_vector_dense(
     }
 }
 
-} // extern "C"
+}  // extern "C"

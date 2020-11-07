@@ -1,11 +1,12 @@
 #include "./kernel_spmv.h"
 
-#include <hls_stream.h>
-#include <ap_fixed.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <iostream>
 #include <iomanip>
+
+#include <hls_stream.h>
+#include <ap_fixed.h>
 
 #include "./shuffle.h"
 #include "./pe.h"

@@ -1,15 +1,15 @@
 HOST_ARCH = x86
 
 CXXFLAGS += -Wall -O3 -g -std=c++11
-CXXFLAGS += -I$(GRAPHBLAS_ROOT_PATH)
+CXXFLAGS += -I$(GRAPHLILY_ROOT_PATH)
 
 LDFLAGS += -lrt -lstdc++
 
-include $(GRAPHBLAS_ROOT_PATH)/xrt/includes/xcl2/xcl2.mk
+include $(GRAPHLILY_ROOT_PATH)/xrt/includes/xcl2/xcl2.mk
 CXXFLAGS += $(xcl2_CXXFLAGS)
 LDFLAGS += $(xcl2_LDFLAGS)
 
-include $(GRAPHBLAS_ROOT_PATH)/xrt/includes/opencl/opencl.mk
+include $(GRAPHLILY_ROOT_PATH)/xrt/includes/opencl/opencl.mk
 CXXFLAGS += $(opencl_CXXFLAGS)
 LDFLAGS += $(opencl_LDFLAGS)
 

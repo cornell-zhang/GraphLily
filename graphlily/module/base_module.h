@@ -1,10 +1,10 @@
-#ifndef __GRAPHBLAS_BASE_MODULE_H
-#define __GRAPHBLAS_BASE_MODULE_H
+#ifndef GRAPHLILY_BASE_MODULE_H_
+#define GRAPHLILY_BASE_MODULE_H_
 
-#include "../global.h"
+#include "graphlily/global.h"
 
 
-namespace graphblas {
+namespace graphlily {
 namespace module {
 
 template <typename T>
@@ -16,30 +16,30 @@ void _set_target_impl(T* t, std::string target) {
 
 template <typename T>
 void _generate_makefile_impl(T* t) {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream makefile(graphblas::proj_folder_name + "/makefile");
+    std::ofstream makefile(graphlily::proj_folder_name + "/makefile");
     makefile << "TARGET := " << t->target_ << "\n" << std::endl;
-    makefile << graphblas::makefile_prologue << t->makefile_body_ << graphblas::makefile_epilogue;
+    makefile << graphlily::makefile_prologue << t->makefile_body_ << graphlily::makefile_epilogue;
     makefile.close();
 }
 
 
 template <typename T>
 void _compile_impl(T* t) {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
     t->link_kernel_code();
     t->generate_kernel_header();
     t->generate_kernel_ini();
     t->generate_makefile();
-    command = "cd " + graphblas::proj_folder_name + "; " + "make build";
+    command = "cd " + graphlily::proj_folder_name + "; " + "make build";
     std::cout << command << std::endl;
     system(command.c_str());
     if (t->target_ == "sw_emu" || t->target_ == "hw_emu") {
-        command = "cp " + graphblas::proj_folder_name + "/emconfig.json " + ".";
+        command = "cp " + graphlily::proj_folder_name + "/emconfig.json " + ".";
         std::cout << command << std::endl;
         system(command.c_str());
     }
@@ -69,7 +69,7 @@ private:
 public:
     BaseModule(std::string kernel_name) {
         this->kernel_name_ = kernel_name;
-        this->makefile_body_ = graphblas::add_kernel_to_makefile(this->kernel_name_);
+        this->makefile_body_ = graphlily::add_kernel_to_makefile(this->kernel_name_);
     }
 
     /*!
@@ -161,28 +161,28 @@ public:
 
 
 void BaseModule::link_kernel_code() {
-    std::string command = "cp " + graphblas::root_path + "/graphblas/hw/" + "util.h"
-                                + " " + graphblas::proj_folder_name + "/" + "util.h";
+    std::string command = "cp " + graphlily::root_path + "/graphlily/hw/" + "util.h"
+                                + " " + graphlily::proj_folder_name + "/" + "util.h";
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp " + graphblas::root_path + "/graphblas/hw/" + "shuffle.h"
-                    + " " + graphblas::proj_folder_name + "/" + "shuffle.h";
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "shuffle.h"
+                    + " " + graphlily::proj_folder_name + "/" + "shuffle.h";
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp " + graphblas::root_path + "/graphblas/hw/" + "pe.h"
-                    + " " + graphblas::proj_folder_name + "/" + "pe.h";
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "pe.h"
+                    + " " + graphlily::proj_folder_name + "/" + "pe.h";
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".cpp"
-                    + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + this->kernel_name_ + ".cpp"
+                    + " " + graphlily::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp " + graphblas::root_path + "/graphblas/hw/" + this->kernel_name_ + ".h"
-                    + " " + graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h";
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + this->kernel_name_ + ".h"
+                    + " " + graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h";
     std::cout << command << std::endl;
     system(command.c_str());
 }
@@ -194,7 +194,7 @@ void BaseModule::set_up_runtime(std::string xclbin_file_path) {
     if (this->target_ == "sw_emu" || this->target_ == "hw_emu") {
         setenv("XCL_EMULATION_MODE", this->target_.c_str(), true);
     }
-    this->device_ = graphblas::find_device();
+    this->device_ = graphlily::find_device();
     this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
     // Set this->kernel_
     auto file_buf = xcl::read_binary_file(xclbin_file_path);
@@ -213,7 +213,7 @@ void BaseModule::set_up_runtime(std::string xclbin_file_path) {
                                                            &err));
 }
 
-} // namespace module
-} // namespace graphblas
+}  // namespace module
+}  // namespace graphlily
 
-#endif // __GRAPHBLAS_BASE_MODULE_H
+#endif  // GRAPHLILY_BASE_MODULE_H_

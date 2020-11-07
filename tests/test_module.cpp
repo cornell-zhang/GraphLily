@@ -3,23 +3,25 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include <ap_fixed.h>
-#include "graphblas/global.h"
-#include "graphblas/io/data_loader.h"
-#include "graphblas/io/data_formatter.h"
-#include "graphblas/module/spmv_module.h"
-#include "graphblas/module/spmspv_module.h"
-#include "graphblas/module/assign_vector_dense_module.h"
-#include "graphblas/module/assign_vector_sparse_module.h"
-#include "graphblas/module/add_scalar_vector_dense_module.h"
+#include "graphlily/module/spmv_module.h"
+#include "graphlily/module/spmspv_module.h"
+#include "graphlily/module/assign_vector_dense_module.h"
+#include "graphlily/module/assign_vector_sparse_module.h"
+#include "graphlily/module/add_scalar_vector_dense_module.h"
 
+#include <ap_fixed.h>
 #include <gtest/gtest.h>
+
+#include "graphlily/global.h"
+#include "graphlily/io/data_loader.h"
+#include "graphlily/io/data_formatter.h"
+
 
 std::string target = "sw_emu";
 
 
 void clean_proj_folder() {
-    std::string command = "rm -rf ./" + graphblas::proj_folder_name;
+    std::string command = "rm -rf ./" + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
 }
@@ -31,7 +33,7 @@ convert_vector_sparse_to_dense(std::vector<SparseDataT, aligned_allocator<Sparse
                                uint32_t dense_size,
                                DenseDataT zero) {
     std::vector<DenseDataT, aligned_allocator<DenseDataT>> dense_vec(dense_size,zero);
-    for (size_t i = 1; i < sparse_vec[0].index + 1; i++)  {
+    for (size_t i = 1; i < sparse_vec[0].index + 1; i++) {
         dense_vec[sparse_vec[i].index] = sparse_vec[i].val;
     }
     return dense_vec;
@@ -59,9 +61,9 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 }
 
 
-void _test_spmv_module(graphblas::module::SpMVModule<graphblas::val_t, graphblas::val_t> &module,
-                       graphblas::SemiringType semiring,
-                       graphblas::MaskType mask_type,
+void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> &module,
+                       graphlily::SemiringType semiring,
+                       graphlily::MaskType mask_type,
                        CSRMatrix<float> const &csr_matrix,
                        bool skip_empty_rows) {
     module.set_semiring(semiring);
@@ -69,12 +71,12 @@ void _test_spmv_module(graphblas::module::SpMVModule<graphblas::val_t, graphblas
 
     std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
     std::generate(vector_float.begin(), vector_float.end(), [&](){return float(rand() % 2);});
-    std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>> vector(vector_float.begin(),
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> vector(vector_float.begin(),
                                                                               vector_float.end());
 
     std::vector<float, aligned_allocator<float>> mask_float(csr_matrix.num_cols);
     std::generate(mask_float.begin(), mask_float.end(), [&](){return float(rand() % 2);});
-    std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>> mask(mask_float.begin(),
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> mask(mask_float.begin(),
                                                                             mask_float.end());
 
     module.load_and_format_matrix(csr_matrix, skip_empty_rows);
@@ -83,10 +85,10 @@ void _test_spmv_module(graphblas::module::SpMVModule<graphblas::val_t, graphblas
     module.send_mask_host_to_device(mask);
     module.run();
 
-    std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>> kernel_results =
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> kernel_results =
         module.send_results_device_to_host();
     std::vector<float, aligned_allocator<float>> reference_results;
-    if (mask_type == graphblas::kNoMask) {
+    if (mask_type == graphlily::kNoMask) {
         reference_results = module.compute_reference_results(vector_float);
     } else {
         reference_results = module.compute_reference_results(vector_float, mask_float);
@@ -97,7 +99,7 @@ void _test_spmv_module(graphblas::module::SpMVModule<graphblas::val_t, graphblas
     // }
     // std::cout << std::endl;
 
-    verify<graphblas::val_t>(reference_results, kernel_results);
+    verify<graphlily::val_t>(reference_results, kernel_results);
 }
 
 
@@ -105,50 +107,50 @@ TEST(SpMV, MultipleCases) {
     uint32_t out_buf_len = 512;
     uint32_t vec_buf_len = 512;
     uint32_t num_hbm_channels = 8;
-    graphblas::module::SpMVModule<graphblas::val_t, graphblas::val_t> module(num_hbm_channels,
+    graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> module(num_hbm_channels,
                                                                              out_buf_len,
                                                                              vec_buf_len);
     module.set_target(target);
     module.compile();
-    module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
                                      "data/sparse_matrix_graph/uniform_10K_10_csc_float32.npz";
-    CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
-    graphblas::io::util_round_csr_matrix_dim(csr_matrix,
-                                             num_hbm_channels * graphblas::pack_size,
-                                             graphblas::pack_size);
+    CSRMatrix<float> csr_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
+    graphlily::io::util_round_csr_matrix_dim(csr_matrix,
+                                             num_hbm_channels * graphlily::pack_size,
+                                             graphlily::pack_size);
     // for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
     for (auto &x : csr_matrix.adj_data) x = 1.0;
 
-    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kNoMask, csr_matrix, false);
-    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kNoMask, csr_matrix, false);
-    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToZero, csr_matrix, false);
-    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kMaskWriteToZero, csr_matrix, false);
-    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToOne, csr_matrix, false);
-    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kMaskWriteToOne, csr_matrix, false);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, csr_matrix, false);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kNoMask, csr_matrix, false);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, csr_matrix, false);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToZero, csr_matrix, false);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, csr_matrix, false);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, csr_matrix, false);
 
-    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kNoMask, csr_matrix, true);
-    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kNoMask, csr_matrix, true);
-    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToZero, csr_matrix, true);
-    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kMaskWriteToZero, csr_matrix, true);
-    _test_spmv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToOne, csr_matrix, true);
-    _test_spmv_module(module, graphblas::LogicalSemiring, graphblas::kMaskWriteToOne, csr_matrix, true);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, csr_matrix, true);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kNoMask, csr_matrix, true);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, csr_matrix, true);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToZero, csr_matrix, true);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, csr_matrix, true);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, csr_matrix, true);
 
     clean_proj_folder();
 }
 
 
-void _test_spmspv_module(graphblas::module::SpMSpVModule<graphblas::val_t,
-                                                         graphblas::val_t,
-                                                         graphblas::index_val_t> &module,
-                         graphblas::SemiringType semiring,
-                         graphblas::MaskType mask_type,
+void _test_spmspv_module(graphlily::module::SpMSpVModule<graphlily::val_t,
+                                                         graphlily::val_t,
+                                                         graphlily::index_val_t> &module,
+                         graphlily::SemiringType semiring,
+                         graphlily::MaskType mask_type,
                          CSCMatrix<float> const &csc_matrix,
                          float vector_sparsity) {
     // data types
-    using aligned_sparse_vec_t = std::vector<graphblas::index_val_t, aligned_allocator<graphblas::index_val_t>>;
-    using aligned_dense_vec_t = std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>>;
+    using aligned_sparse_vec_t = std::vector<graphlily::index_val_t, aligned_allocator<graphlily::index_val_t>>;
+    using aligned_dense_vec_t = std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>>;
     module.config_kernel(semiring, mask_type);
 
     // generate vector
@@ -156,12 +158,12 @@ void _test_spmspv_module(graphblas::module::SpMSpVModule<graphblas::val_t,
     unsigned vector_nnz_cnt = (unsigned)floor(vector_length * (1 - vector_sparsity));
     unsigned vector_indices_increment = vector_length / vector_nnz_cnt;
 
-    graphblas::aligned_sparse_float_vec_t vector_float(vector_nnz_cnt);
+    graphlily::aligned_sparse_float_vec_t vector_float(vector_nnz_cnt);
     for (size_t i = 0; i < vector_nnz_cnt; i++) {
         vector_float[i].val = (float)(rand() % 10) / 10;
         vector_float[i].index = i * vector_indices_increment;
     }
-    graphblas::index_float_t vector_head;
+    graphlily::index_float_t vector_head;
     vector_head.index = vector_nnz_cnt;
     vector_head.val = 0;
     vector_float.insert(vector_float.begin(), vector_head);
@@ -173,7 +175,7 @@ void _test_spmspv_module(graphblas::module::SpMSpVModule<graphblas::val_t,
 
     // generate mask
     unsigned mask_length = csc_matrix.num_rows;
-    graphblas::aligned_dense_float_vec_t mask_float(mask_length, 0);
+    graphlily::aligned_dense_float_vec_t mask_float(mask_length, 0);
     for (size_t i = 0; i < mask_length; i++) {
         mask_float[i] = (float)(rand() % 2);
     }
@@ -181,7 +183,7 @@ void _test_spmspv_module(graphblas::module::SpMSpVModule<graphblas::val_t,
     std::copy(mask_float.begin(), mask_float.end(), std::back_inserter(mask));
 
     aligned_sparse_vec_t kernel_results(csc_matrix.num_rows + 1);
-    graphblas::aligned_dense_float_vec_t reference_results(csc_matrix.num_rows + 1);
+    graphlily::aligned_dense_float_vec_t reference_results(csc_matrix.num_rows + 1);
 
     // run the kernel
     module.load_and_format_matrix(csc_matrix);
@@ -192,35 +194,35 @@ void _test_spmspv_module(graphblas::module::SpMSpVModule<graphblas::val_t,
     kernel_results = module.send_results_device_to_host();
     reference_results = module.compute_reference_results(vector_float, mask_float);
 
-    aligned_dense_vec_t kernel_results_dense = convert_vector_sparse_to_dense<graphblas::index_val_t,
-        graphblas::val_t>(kernel_results, vector_length, semiring.zero);
-    verify<graphblas::val_t>(reference_results, kernel_results_dense);
+    aligned_dense_vec_t kernel_results_dense = convert_vector_sparse_to_dense<graphlily::index_val_t,
+        graphlily::val_t>(kernel_results, vector_length, semiring.zero);
+    verify<graphlily::val_t>(reference_results, kernel_results_dense);
 }
 
 
 TEST(SpMSpV, MultipleCases) {
     uint32_t out_buf_len = 512;
-    graphblas::module::SpMSpVModule<graphblas::val_t,
-                                    graphblas::val_t,
-                                    graphblas::index_val_t> module(out_buf_len);
+    graphlily::module::SpMSpVModule<graphlily::val_t,
+                                    graphlily::val_t,
+                                    graphlily::index_val_t> module(out_buf_len);
     module.set_target(target);
     module.compile();
-    module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
                                      "data/sparse_matrix_graph/dense_1K_csr_float32.npz";
-    CSCMatrix<float> csc_matrix = graphblas::io::csr2csc(
-        graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path));
+    CSCMatrix<float> csc_matrix = graphlily::io::csr2csc(
+        graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path));
 
     // for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
     for (auto &x : csc_matrix.adj_data) x = 1.0;
 
-    _test_spmspv_module(module, graphblas::ArithmeticSemiring, graphblas::kNoMask,          csc_matrix, 0.99);
-    _test_spmspv_module(module, graphblas::LogicalSemiring,    graphblas::kNoMask,          csc_matrix, 0.99);
-    _test_spmspv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToZero, csc_matrix, 0.99);
-    _test_spmspv_module(module, graphblas::LogicalSemiring,    graphblas::kMaskWriteToZero, csc_matrix, 0.99);
-    _test_spmspv_module(module, graphblas::ArithmeticSemiring, graphblas::kMaskWriteToOne,  csc_matrix, 0.99);
-    _test_spmspv_module(module, graphblas::LogicalSemiring,    graphblas::kMaskWriteToOne,  csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,          csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kNoMask,          csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kMaskWriteToZero, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne,  csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kMaskWriteToOne,  csc_matrix, 0.99);
 
     clean_proj_folder();
 }
@@ -228,7 +230,7 @@ TEST(SpMSpV, MultipleCases) {
 
 // void test_assign_vector_dense_module() {
 //     using vector_data_t = unsigned;
-//     graphblas::module::AssignVectorDenseModule<vector_data_t> module;
+//     graphlily::module::AssignVectorDenseModule<vector_data_t> module;
 
 //     uint32_t length = 128;
 //     vector_data_t val = 23;
@@ -244,9 +246,9 @@ TEST(SpMSpV, MultipleCases) {
 //                                                                               reference_inout.end());
 
 //     module.set_target(target);
-//     module.set_mask_type(graphblas::kMaskWriteToOne);
+//     module.set_mask_type(graphlily::kMaskWriteToOne);
 //     module.compile();
-//     module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+//     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
 //     module.send_mask_host_to_device(mask);
 //     module.send_inout_host_to_device(kernel_inout);
@@ -262,7 +264,7 @@ TEST(SpMSpV, MultipleCases) {
 // void test_assign_vector_sparse_module() {
 //     using vector_data_t = unsigned;
 //     using sparse_data_t = struct {
-//         graphblas::idx_t index;
+//         graphlily::idx_t index;
 //         vector_data_t val;
 //     };
 
@@ -272,19 +274,19 @@ TEST(SpMSpV, MultipleCases) {
 //     uint32_t inout_size = 8192;
 //     vector_data_t val = 7216;
 //     float val_float = float(val);
-//     float f_uint_inf = float(graphblas::UINT_INF);
+//     float f_uint_inf = float(graphlily::UINT_INF);
 
 //     unsigned length = (unsigned)floor(inout_size * (1 - mask_sparsity));
 //     unsigned mask_indices_increment = inout_size / length;
 
-//     graphblas::module::AssignVectorSparseModule<vector_data_t,sparse_data_t> module;
+//     graphlily::module::AssignVectorSparseModule<vector_data_t,sparse_data_t> module;
 //     module.set_target(target);
 //     module.compile();
-//     module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+//     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
 //     /*----------------------------- Mode 0 (BFS) -------------------------------*/
 
-//     graphblas::aligned_sparse_float_vec_t mask_float_bfs(length + 1);
+//     graphlily::aligned_sparse_float_vec_t mask_float_bfs(length + 1);
 //     for (size_t i = 0; i < length; i++) {
 //         mask_float_bfs[i+1].val = float(rand() % 10);
 //         mask_float_bfs[i+1].index = i * mask_indices_increment;
@@ -297,10 +299,10 @@ TEST(SpMSpV, MultipleCases) {
 //         mask_bfs[i].index = mask_float_bfs[i].index;
 //     }
 
-//     graphblas::aligned_dense_float_vec_t reference_inout_bfs(inout_size);
+//     graphlily::aligned_dense_float_vec_t reference_inout_bfs(inout_size);
 //     std::generate(reference_inout_bfs.begin(), reference_inout_bfs.end(), [&](){return (rand() % 10);});
 //     std::vector<vector_data_t,aligned_allocator<vector_data_t>> kernel_inout_bfs(reference_inout_bfs.begin(), reference_inout_bfs.end());
-//     graphblas::aligned_sparse_float_vec_t reference_dummy_nf;
+//     graphlily::aligned_sparse_float_vec_t reference_dummy_nf;
 
 //     module.send_mask_host_to_device(mask_bfs);
 //     module.send_inout_host_to_device(kernel_inout_bfs);
@@ -314,7 +316,7 @@ TEST(SpMSpV, MultipleCases) {
 
 //     /*----------------------------- Mode 1 (SSSP) -------------------------------*/
 
-//     graphblas::aligned_sparse_float_vec_t mask_float_sssp(length + 1);
+//     graphlily::aligned_sparse_float_vec_t mask_float_sssp(length + 1);
 //     for (size_t i = 0; i < length; i++) {
 //         mask_float_sssp[i+1].val = float(rand() % 10);
 //         mask_float_sssp[i+1].index = i * mask_indices_increment;
@@ -327,18 +329,18 @@ TEST(SpMSpV, MultipleCases) {
 //         mask_sssp[i].index = mask_float_sssp[i].index;
 //     }
 
-//     graphblas::aligned_dense_float_vec_t reference_inout_sssp(inout_size);
+//     graphlily::aligned_dense_float_vec_t reference_inout_sssp(inout_size);
 //     std::generate(reference_inout_sssp.begin(), reference_inout_sssp.end(), [&](){return (((rand() % 10) > 5) ? 3 : f_uint_inf);});
 //     std::vector<vector_data_t,aligned_allocator<vector_data_t>> kernel_inout_sssp(inout_size);
 //     for (size_t i = 0; i < reference_inout_sssp.size() + 1; i++) {
-//         if(reference_inout_sssp[i] == f_uint_inf) {
-//             kernel_inout_sssp[i] = graphblas::UINT_INF;
+//         if (reference_inout_sssp[i] == f_uint_inf) {
+//             kernel_inout_sssp[i] = graphlily::UINT_INF;
 //         } else {
 //             kernel_inout_sssp[i] = reference_inout_sssp[i];
 //         }
 //     }
 
-//     graphblas::aligned_sparse_float_vec_t reference_new_frontier;
+//     graphlily::aligned_sparse_float_vec_t reference_new_frontier;
 //     std::vector<sparse_data_t,aligned_allocator<sparse_data_t>> kernel_new_frontier;
 //     std::vector<vector_data_t,aligned_allocator<vector_data_t>> kernel_inout_print(kernel_inout_sssp.begin(),kernel_inout_sssp.end());
 
@@ -353,13 +355,13 @@ TEST(SpMSpV, MultipleCases) {
 //     verify<vector_data_t>(reference_inout_sssp, kernel_inout_sssp);
 //     std::cout << "[INFO test_assign_sparse:SSSP] Inout Matched" << std::endl;
 
-//     graphblas::aligned_dense_float_vec_t dense_ref_nf =
-//         graphblas::convert_sparse_vec_to_dense_vec<
-//             graphblas::aligned_sparse_float_vec_t,graphblas::aligned_dense_float_vec_t
+//     graphlily::aligned_dense_float_vec_t dense_ref_nf =
+//         graphlily::convert_sparse_vec_to_dense_vec<
+//             graphlily::aligned_sparse_float_vec_t,graphlily::aligned_dense_float_vec_t
 //         >(reference_new_frontier,inout_size);
 
 //     std::vector<vector_data_t,aligned_allocator<vector_data_t>> dense_knl_nf =
-//         graphblas::convert_sparse_vec_to_dense_vec<
+//         graphlily::convert_sparse_vec_to_dense_vec<
 //             std::vector<sparse_data_t,aligned_allocator<sparse_data_t>>,
 //             std::vector<vector_data_t,aligned_allocator<vector_data_t>>
 //         >(kernel_new_frontier,inout_size);
@@ -372,7 +374,7 @@ TEST(SpMSpV, MultipleCases) {
 
 // void test_add_scalar_vector_dense_module() {
 //     using vector_data_t = ap_ufixed<32, 1>;
-//     graphblas::module::eWiseAddModule<vector_data_t> module;
+//     graphlily::module::eWiseAddModule<vector_data_t> module;
 
 //     uint32_t length = 128;
 //     vector_data_t val = 0.14;
@@ -386,7 +388,7 @@ TEST(SpMSpV, MultipleCases) {
 
 //     module.set_target(target);
 //     module.compile();
-//     module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+//     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
 //     module.send_in_host_to_device(in);
 //     module.allocate_out_buf(length);
@@ -400,7 +402,7 @@ TEST(SpMSpV, MultipleCases) {
 
 // void test_copy_buffer_bind_buffer() {
 //     using vector_data_t = unsigned;
-//     graphblas::module::AssignVectorDenseModule<vector_data_t> module;
+//     graphlily::module::AssignVectorDenseModule<vector_data_t> module;
 
 //     uint32_t length = 128;
 //     std::vector<float, aligned_allocator<float>> mask_float(length);
@@ -411,9 +413,9 @@ TEST(SpMSpV, MultipleCases) {
 //     std::vector<vector_data_t, aligned_allocator<vector_data_t>> inout(inout_float.begin(), inout_float.end());
 
 //     module.set_target(target);
-//     module.set_mask_type(graphblas::kMaskWriteToOne);
+//     module.set_mask_type(graphlily::kMaskWriteToOne);
 //     module.compile();
-//     module.set_up_runtime("./" + graphblas::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+//     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
 //     /*----------------------------- Copy buffer -------------------------------*/
 //     {
@@ -433,8 +435,8 @@ TEST(SpMSpV, MultipleCases) {
 //     cl_mem_ext_ptr_t x_ext;
 //     x_ext.obj = x.data();
 //     x_ext.param = 0;
-//     x_ext.flags = graphblas::DDR[0];
-//     cl::Device device = graphblas::find_device();
+//     x_ext.flags = graphlily::DDR[0];
+//     cl::Device device = graphlily::find_device();
 //     cl::Context context = cl::Context(device, NULL, NULL, NULL);
 //     cl::Buffer x_buf = cl::Buffer(context,
 //                                   CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,

@@ -1,7 +1,7 @@
 make bench_bfs
 
 num_channels=4
-bitstream=${GRAPHBLAS_ROOT_PATH}/benchmark/bitstreams/bfs_4_channel_16_pack_64K_VecBuf_150MHz.xclbin
+bitstream=${GRAPHLILY_ROOT_PATH}/benchmark/bitstreams/bfs_4_channel_16_pack_64K_VecBuf_150MHz.xclbin
 
 PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
 DATSETS=(gplus_108K_13M_csr_float32.npz

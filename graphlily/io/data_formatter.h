@@ -1,5 +1,5 @@
-#ifndef __GRAPHBLAS_IO_DATA_FORMATTER_H
-#define __GRAPHBLAS_IO_DATA_FORMATTER_H
+#ifndef GRAPHLILY_IO_DATA_FORMATTER_H_
+#define GRAPHLILY_IO_DATA_FORMATTER_H_
 
 #include <cstdint>
 #include <vector>
@@ -8,11 +8,11 @@
 
 #include "xcl2.hpp"  // use aligned_allocator
 
-#include "../global.h"
-#include "./data_loader.h"
+#include "graphlily/global.h"
+#include "graphlily/io/data_loader.h"
 
 
-namespace graphblas {
+namespace graphlily {
 namespace io {
 
 template<typename data_type>
@@ -126,7 +126,7 @@ void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data
         for (size_t row_idx = k; row_idx < num_rows; ) {
             size_t next = row_idx + interleave_stride;
             if (!row_is_empty[row_idx]) {
-                while(next < num_rows && row_is_empty[next]) {
+                while (next < num_rows && row_is_empty[next]) {
                     val_marker[row_idx]++;
                     next += interleave_stride;
                 }
@@ -464,14 +464,14 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
     if (csr_matrix.num_rows % (num_PEs_per_hbm_channel * num_hbm_channels) != 0) {
         std::cout << "The number of rows of the sparse matrix should divide "
                   << num_PEs_per_hbm_channel * num_hbm_channels << ". "
-                  << "Please use graphblas::io::util_round_csr_matrix_dim. "
+                  << "Please use graphlily::io::util_round_csr_matrix_dim. "
                   << "Exit!" <<std::endl;
         exit(EXIT_FAILURE);
     }
     if (csr_matrix.num_cols % num_PEs_per_hbm_channel != 0) {
         std::cout << "The number of columns of the sparse matrix should divide "
                   << num_PEs_per_hbm_channel << ". "
-                  << "Please use graphblas::io::util_round_csr_matrix_dim. "
+                  << "Please use graphlily::io::util_round_csr_matrix_dim. "
                   << "Exit!" <<std::endl;
         exit(EXIT_FAILURE);
     }
@@ -550,8 +550,8 @@ struct FormattedCSCMatrix {
     uint32_t num_packets_total;
 
     std::vector<MatrixPacketT> formatted_adj_packet;
-    std::vector<graphblas::idx_t> formatted_adj_indptr;
-    std::vector<graphblas::idx_t> formatted_adj_partptr;
+    std::vector<graphlily::idx_t> formatted_adj_indptr;
+    std::vector<graphlily::idx_t> formatted_adj_partptr;
 
     /*!
      * \brief get formatted packet
@@ -568,8 +568,8 @@ struct FormattedCSCMatrix {
     /*!
      * \brief get a formatted indptr
      */
-    std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> get_formatted_indptr() {
-        std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> channel_indptr;
+    std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>> get_formatted_indptr() {
+        std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>> channel_indptr;
         channel_indptr.resize((this->num_columns + 1) * this->num_row_partitions);
         for (size_t i = 0; i < (this->num_columns + 1) * this->num_row_partitions; i++) {
             channel_indptr[i] = this->formatted_adj_indptr[i];
@@ -580,8 +580,8 @@ struct FormattedCSCMatrix {
     /*!
      * \brief get a formatted partptr
      */
-    std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> get_formatted_partptr() {
-        std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>> channel_partptr;
+    std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>> get_formatted_partptr() {
+        std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>> channel_partptr;
         channel_partptr.resize(this->num_row_partitions);
         for (size_t i = 0; i < this->num_row_partitions; i++) {
             channel_partptr[i] = this->formatted_adj_partptr[i];
@@ -720,7 +720,7 @@ FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
     return formatted_matrix;
 }
 
-} // namespace io
-} // namespace graphblas
+}  // namespace io
+}  // namespace graphlily
 
-#endif // __GRAPHBLAS_IO_DATA_FORMATTER_H
+#endif  // GRAPHLILY_IO_DATA_FORMATTER_H_

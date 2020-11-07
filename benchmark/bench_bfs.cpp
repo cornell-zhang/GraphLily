@@ -1,13 +1,13 @@
 #include <iostream>
 #include <chrono>
 
-#include "graphblas/app/bfs.h"
+#include "graphlily/app/bfs.h"
 
 
 void bench_bfs(uint32_t num_channels, std::string bitstream, std::string dataset) {
     uint32_t out_buf_len = 320 * 1024;
     uint32_t vec_buf_len = 64 * 1024;
-    graphblas::app::BFS bfs(num_channels, out_buf_len, vec_buf_len);
+    graphlily::app::BFS bfs(num_channels, out_buf_len, vec_buf_len);
 
     std::string target = "hw";
     bfs.set_target(target);

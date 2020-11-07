@@ -1,18 +1,19 @@
 #ifndef GRAPHLILY_HW_PE_H_
 #define GRAPHLILY_HW_PE_H_
 
-#include "hls_stream.h"
 #include <iostream>
 #include <iomanip>
 
+#include "hls_stream.h"
+
 #include "./util.h"
+
 
 #ifndef __SYNTHESIS__
 bool line_tracing_pe_cluster = false;
 #endif
 
 #define MIN(a, b) ((a < b)? a : b)
-
 
 //----------------------------------------------------------------
 // ALUs

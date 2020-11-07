@@ -3,15 +3,16 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
+#include "graphlily/io/data_loader.h"
+#include "graphlily/io/data_formatter.h"
+
 #include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <gtest/gtest.h>
 
-#include "graphblas/io/data_loader.h"
-#include "graphblas/io/data_formatter.h"
 
-using namespace graphblas::io;
+using namespace graphlily::io;
 
 
 template<typename T>
@@ -83,9 +84,12 @@ TEST(DataLoader, LoadCSRMatrixFromFloatNpz) {
     CSRMatrix<float> csr_matrix = load_csr_matrix_from_float_npz("../test_data/eye_10_csr_float32.npz");
     ASSERT_EQ(csr_matrix.num_rows, uint32_t(10));
     ASSERT_EQ(csr_matrix.num_cols, uint32_t(10));
-    check_vector_equal<float>(csr_matrix.adj_data, std::vector<float>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
-    check_vector_equal<uint32_t>(csr_matrix.adj_indices, std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
-    check_vector_equal<uint32_t>(csr_matrix.adj_indptr, std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
+    check_vector_equal<float>(csr_matrix.adj_data,
+                              std::vector<float>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+    check_vector_equal<uint32_t>(csr_matrix.adj_indices,
+                                 std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+    check_vector_equal<uint32_t>(csr_matrix.adj_indptr,
+                                 std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
 }
 
 
@@ -94,9 +98,12 @@ TEST(DataLoader, CSRMatrixConvertFromFloat) {
     CSRMatrix<int> csr_matrix_int = csr_matrix_convert_from_float<int>(csr_matrix_float);
     ASSERT_EQ(csr_matrix_int.num_rows, uint32_t(10));
     ASSERT_EQ(csr_matrix_int.num_cols, uint32_t(10));
-    check_vector_equal<int>(csr_matrix_int.adj_data, std::vector<int>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
-    check_vector_equal<uint32_t>(csr_matrix_int.adj_indices, std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
-    check_vector_equal<uint32_t>(csr_matrix_int.adj_indptr, std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
+    check_vector_equal<int>(csr_matrix_int.adj_data,
+                            std::vector<int>{1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+    check_vector_equal<uint32_t>(csr_matrix_int.adj_indices,
+                                 std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+    check_vector_equal<uint32_t>(csr_matrix_int.adj_indptr,
+                                 std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
 }
 
 

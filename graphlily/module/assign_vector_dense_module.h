@@ -1,5 +1,5 @@
-#ifndef __GRAPHBLAS_ASSIGN_VECTOR_DENSE_MODULE_H
-#define __GRAPHBLAS_ASSIGN_VECTOR_DENSE_MODULE_H
+#ifndef GRAPHLILY_ASSIGN_VECTOR_DENSE_MODULE_H_
+#define GRAPHLILY_ASSIGN_VECTOR_DENSE_MODULE_H_
 
 #include <cstdint>
 #include <vector>
@@ -8,21 +8,21 @@
 
 #include "xcl2.hpp"
 
-#include "../global.h"
-#include "./base_module.h"
+#include "graphlily/global.h"
+#include "graphlily/module/base_module.h"
 
 
-namespace graphblas {
+namespace graphlily {
 namespace module {
 
 template<typename vector_data_t>
 class AssignVectorDenseModule : public BaseModule {
 private:
-    using packed_val_t = struct {vector_data_t data[graphblas::pack_size];};
+    using packed_val_t = struct {vector_data_t data[graphlily::pack_size];};
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
     /*! \brief The mask type */
-    graphblas::MaskType mask_type_;
+    graphlily::MaskType mask_type_;
     /*! \brief Internal copy of mask */
     aligned_dense_vec_t mask_;
     /*! \brief Internal copy of inout */
@@ -40,8 +40,8 @@ public:
      * \brief Set the mask type.
      * \param mask_type The mask type.
      */
-    void set_mask_type(graphblas::MaskType mask_type) {
-        if (mask_type == graphblas::kNoMask) {
+    void set_mask_type(graphlily::MaskType mask_type) {
+        if (mask_type == graphlily::kNoMask) {
             std::cerr << "Please set the mask type" << std::endl;
             exit(EXIT_FAILURE);
         } else {
@@ -109,8 +109,8 @@ public:
      * \param len The length of the mask/inout vector.
      * \param val The value to be assigned to the inout vector.
      */
-    void compute_reference_results(graphblas::aligned_dense_float_vec_t &mask,
-                                   graphblas::aligned_dense_float_vec_t &inout,
+    void compute_reference_results(graphlily::aligned_dense_float_vec_t &mask,
+                                   graphlily::aligned_dense_float_vec_t &inout,
                                    uint32_t len,
                                    float val);
 
@@ -122,19 +122,19 @@ public:
 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h");
+    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h");
     // Data types
-    header << "const unsignedK_SIZE = " << graphblas::pack_size << ";" << std::endl;
+    header << "const unsignedK_SIZE = " << graphlily::pack_size << ";" << std::endl;
     header << "typedef struct {VAL_T data[PACK_SIZE];}" << " PACKED_VAL_T;" << std::endl;
     // Mask
     switch (this->mask_type_) {
-        case graphblas::kMaskWriteToZero:
+        case graphlily::kMaskWriteToZero:
             header << "#define MASK_WRITE_TO_ZERO" << std::endl;
             break;
-        case graphblas::kMaskWriteToOne:
+        case graphlily::kMaskWriteToOne:
             header << "#define MASK_WRITE_TO_ONE" << std::endl;
             break;
         default:
@@ -147,10 +147,10 @@ void AssignVectorDenseModule<vector_data_t>::generate_kernel_header() {
 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream ini(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini");
+    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
     ini << "[connectivity]" << std::endl;
     ini << "sp=kernel_assign_vector_dense_1.mask:DDR[0]" << std::endl;
     ini << "sp=kernel_assign_vector_dense_1.inout:DDR[0]" << std::endl;
@@ -164,7 +164,7 @@ void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_de
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphblas::DDR[0];
+    mask_ext.flags = graphlily::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -183,7 +183,7 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();
     inout_ext.param = 0;
-    inout_ext.flags = graphblas::DDR[0];
+    inout_ext.flags = graphlily::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->inout_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -212,17 +212,17 @@ void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphblas::aligned_dense_float_vec_t &mask,
-                                                                       graphblas::aligned_dense_float_vec_t &inout,
+void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphlily::aligned_dense_float_vec_t &mask,
+                                                                       graphlily::aligned_dense_float_vec_t &inout,
                                                                        uint32_t len,
                                                                        float val) {
-    if (this->mask_type_ == graphblas::kMaskWriteToZero) {
+    if (this->mask_type_ == graphlily::kMaskWriteToZero) {
         for (size_t i = 0; i < len; i++) {
             if (mask[i] == 0) {
                 inout[i] = val;
             }
         }
-    } else if (this->mask_type_ == graphblas::kMaskWriteToOne) {
+    } else if (this->mask_type_ == graphlily::kMaskWriteToOne) {
         for (size_t i = 0; i < len; i++) {
             if (mask[i] != 0) {
                 inout[i] = val;
@@ -235,7 +235,7 @@ void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphblas
 }
 
 
-} // namespace module
-} // namespace graphblas
+}  // namespace module
+}  // namespace graphlily
 
-#endif // __GRAPHBLAS_ASSIGN_VECTOR_DENSE_MODULE_H
+#endif  // GRAPHLILY_ASSIGN_VECTOR_DENSE_MODULE_H_

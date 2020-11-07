@@ -1,11 +1,11 @@
-#ifndef __GRAPHBLAS_MODULE_COLLECTION_H
-#define __GRAPHBLAS_MODULE_COLLECTION_H
+#ifndef GRAPHLILY_MODULE_COLLECTION_H_
+#define GRAPHLILY_MODULE_COLLECTION_H_
 
-#include "../global.h"
-#include "../module/base_module.h"
+#include "graphlily/global.h"
+#include "graphlily/module/base_module.h"
 
 
-namespace graphblas {
+namespace graphlily {
 namespace app {
 
 using namespace module;
@@ -43,7 +43,7 @@ public:
         this->modules_.push_back(module);
         std::string kernel_name = module->get_kernel_name();
         this->kernel_names_.push_back(kernel_name);
-        this->makefile_body_ += graphblas::add_kernel_to_makefile(kernel_name);
+        this->makefile_body_ += graphlily::add_kernel_to_makefile(kernel_name);
         this->num_modules_++;
     }
 
@@ -111,7 +111,7 @@ void ModuleCollection::set_up_runtime(std::string xclbin_file_path) {
     if (this->target_ == "sw_emu" || this->target_ == "hw_emu") {
         setenv("XCL_EMULATION_MODE", this->target_.c_str(), true);
     }
-    this->device_ = graphblas::find_device();
+    this->device_ = graphlily::find_device();
     this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
     // Set this->kernels_
     auto file_buf = xcl::read_binary_file(xclbin_file_path);
@@ -142,7 +142,7 @@ void ModuleCollection::set_up_runtime(std::string xclbin_file_path) {
     }
 }
 
-} // namespace app
-} // namespace graphblas
+}  // namespace app
+}  // namespace graphlily
 
-#endif // __GRAPHBLAS_MODULE_COLLECTION_H
+#endif  // GRAPHLILY_MODULE_COLLECTION_H_

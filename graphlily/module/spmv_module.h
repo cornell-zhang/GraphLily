@@ -1,5 +1,5 @@
-#ifndef __GRAPHBLAS_SPMV_MODULE_H
-#define __GRAPHBLAS_SPMV_MODULE_H
+#ifndef GRAPHLILY_SPMV_MODULE_H_
+#define GRAPHLILY_SPMV_MODULE_H_
 
 #include <cstdint>
 #include <vector>
@@ -8,25 +8,27 @@
 
 #include "xcl2.hpp"
 
-#include "../global.h"
-#include "../io/data_loader.h"
-#include "../io/data_formatter.h"
-#include "./base_module.h"
+#include "graphlily/global.h"
+#include "graphlily/io/data_loader.h"
+#include "graphlily/io/data_formatter.h"
+#include "graphlily/module/base_module.h"
 
-using graphblas::io::CSRMatrix;
-using graphblas::io::CPSRMatrix;
-using graphblas::io::csr2cpsr;
 
-namespace graphblas {
+using graphlily::io::CSRMatrix;
+using graphlily::io::CPSRMatrix;
+using graphlily::io::csr2cpsr;
+
+
+namespace graphlily {
 namespace module {
 
 template<typename matrix_data_t, typename vector_data_t>
 class SpMVModule : public BaseModule {
 private:
     /*! \brief The mask type */
-    graphblas::MaskType mask_type_;
+    graphlily::MaskType mask_type_;
     /*! \brief The semiring */
-    graphblas::SemiringType semiring_;
+    graphlily::SemiringType semiring_;
     /*! \brief The number of channels of the kernel */
     uint32_t num_channels_;
     /*! \brief The length of output buffer of the kernel */
@@ -39,12 +41,12 @@ private:
     uint32_t num_col_partitions_;
 
     using val_t = vector_data_t;
-    using packed_val_t = typename CPSRMatrix<val_t, graphblas::pack_size>::packed_val_t;
-    using packed_idx_t = typename CPSRMatrix<val_t, graphblas::pack_size>::packed_idx_t;
+    using packed_val_t = typename CPSRMatrix<val_t, graphlily::pack_size>::packed_val_t;
+    using packed_idx_t = typename CPSRMatrix<val_t, graphlily::pack_size>::packed_idx_t;
     using mat_pkt_t = struct {packed_idx_t indices; packed_val_t vals;};
-    using partition_indptr_t = struct {graphblas::idx_t start; packed_idx_t nnz;};
+    using partition_indptr_t = struct {graphlily::idx_t start; packed_idx_t nnz;};
 
-    using aligned_idx_t = std::vector<graphblas::idx_t, aligned_allocator<graphblas::idx_t>>;
+    using aligned_idx_t = std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>>;
     using aligned_dense_vec_t = std::vector<val_t, aligned_allocator<val_t>>;
     using aligned_packed_idx_t = std::vector<packed_idx_t, aligned_allocator<packed_idx_t>>;
     using aligned_packed_val_t = std::vector<packed_val_t, aligned_allocator<packed_val_t>>;
@@ -66,7 +68,7 @@ private:
     /*! \brief The sparse matrix in CSR format */
     CSRMatrix<val_t> csr_matrix_;
     /*! \brief The sparse matrix in CPSR format */
-    CPSRMatrix<val_t, graphblas::pack_size> cpsr_matrix_;
+    CPSRMatrix<val_t, graphlily::pack_size> cpsr_matrix_;
 
 public:
     // Device buffers
@@ -103,7 +105,7 @@ public:
      * \brief Set the semiring type.
      * \param semiring The semiring type.
      */
-    void set_semiring(graphblas::SemiringType semiring) {
+    void set_semiring(graphlily::SemiringType semiring) {
         this->semiring_ = semiring;
     }
 
@@ -111,7 +113,7 @@ public:
      * \brief Set the mask type.
      * \param mask_type The mask type.
      */
-    void set_mask_type(graphblas::MaskType mask_type) {
+    void set_mask_type(graphlily::MaskType mask_type) {
         this->mask_type_ = mask_type;
     }
 
@@ -202,8 +204,8 @@ public:
      * \param vector The dense vector.
      * \return The reference results.
      */
-    graphblas::aligned_dense_float_vec_t
-    compute_reference_results(graphblas::aligned_dense_float_vec_t &vector);
+    graphlily::aligned_dense_float_vec_t
+    compute_reference_results(graphlily::aligned_dense_float_vec_t &vector);
 
     /*!
      * \brief Compute reference results.
@@ -211,9 +213,9 @@ public:
      * \param mask The mask.
      * \return The reference results.
      */
-    graphblas::aligned_dense_float_vec_t
-    compute_reference_results(graphblas::aligned_dense_float_vec_t &vector,
-                              graphblas::aligned_dense_float_vec_t &mask);
+    graphlily::aligned_dense_float_vec_t
+    compute_reference_results(graphlily::aligned_dense_float_vec_t &vector,
+                              graphlily::aligned_dense_float_vec_t &mask);
 
     void generate_kernel_header() override;
 
@@ -239,26 +241,26 @@ void SpMVModule<matrix_data_t, vector_data_t>::_get_kernel_config(uint32_t num_c
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
+    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
     header << "const unsigned OUT_BUF_LEN = " << this->out_buf_len_ << ";" << std::endl;
     header << "const unsigned VEC_BUF_LEN = " << this->vec_buf_len_ << ";" << std::endl;
     header << "const unsigned NUM_HBM_CHANNEL = " << this->num_channels_ << ";" << std::endl;
     header << "#define NUM_HBM_CHANNEL " << this->num_channels_ << std::endl;
     header << "const unsigned NUM_PE_TOTAL = "
-           << this->num_channels_ * graphblas::pack_size << ";" << std::endl;
+           << this->num_channels_ * graphlily::pack_size << ";" << std::endl;
     header.close();
 }
 
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphblas::proj_folder_name;
+    std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream ini(graphblas::proj_folder_name + "/" + this->kernel_name_ + ".ini");
+    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
     ini << "[connectivity]" << std::endl;
     // HBM
     for (size_t hbm_idx = 0; hbm_idx < this->num_channels_; hbm_idx++) {
@@ -276,13 +278,13 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
         CSRMatrix<float> const &csr_matrix_float,
         bool skip_empty_rows) {
     this->csr_matrix_float_ = csr_matrix_float;
-    this->csr_matrix_ = graphblas::io::csr_matrix_convert_from_float<val_t>(csr_matrix_float);
+    this->csr_matrix_ = graphlily::io::csr_matrix_convert_from_float<val_t>(csr_matrix_float);
     this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buf_len_ - 1) / this->out_buf_len_;
     this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vec_buf_len_ - 1) / this->vec_buf_len_;
     size_t num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
-    this->cpsr_matrix_ = csr2cpsr<val_t, graphblas::pack_size>(
+    this->cpsr_matrix_ = csr2cpsr<val_t, graphlily::pack_size>(
         this->csr_matrix_,
-        graphblas::idx_marker,
+        graphlily::idx_marker,
         this->out_buf_len_,
         this->vec_buf_len_,
         this->num_channels_,
@@ -342,7 +344,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     for (size_t c = 0; c < this->num_channels_; c++) {
         channel_packets_ext[c].obj = this->channel_packets_[c].data();
         channel_packets_ext[c].param = 0;
-        channel_packets_ext[c].flags = graphblas::HBM[c];
+        channel_packets_ext[c].flags = graphlily::HBM[c];
         size_t channel_packets_size = sizeof(mat_pkt_t) * this->channel_packets_[c].size();
         if (channel_packets_size >= 256 * 1000 * 1000) {
             std::cout << "The capcity of one HBM channel is 256 MB" << std::endl;
@@ -358,7 +360,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     cl_mem_ext_ptr_t results_ext;
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
-    results_ext.flags = graphblas::DDR[0];
+    results_ext.flags = graphlily::DDR[0];
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
         sizeof(val_t) * this->csr_matrix_.num_rows,
@@ -385,34 +387,13 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
 }
 
 
-// template<typename matrix_data_t, typename vector_data_t>
-// uint32_t SpMVModule<matrix_data_t, vector_data_t>::count_elements_skip_empty_rows() {
-//     uint32_t count = 0;
-//     for (size_t c = 0; c < this->num_channels_; c++) {
-//         auto packets = this->channel_packets_[c];
-//         uint32_t num_elements_skip_empty_rows[graphblas::pack_size];
-//         for (size_t i = 0; i < graphblas::pack_size; i++) {
-//             num_elements_skip_empty_rows[i] = packets.size();
-//             for (size_t j = 0; j < packets.size() - 1; j++) {
-//                 if ((packets[j].indices.data[i] == idx_marker) && (packets[j+1].indices.data[i] == idx_marker)) {
-//                     num_elements_skip_empty_rows[i]--;
-//                 }
-//             }
-//         }
-//         count += ((graphblas::pack_size) * (*std::max_element(num_elements_skip_empty_rows,
-//             num_elements_skip_empty_rows + graphblas::pack_size)));
-//     }
-//     return count;
-// }
-
-
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligned_dense_vec_t &vector) {
     this->vector_.assign(vector.begin(), vector.end());
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphblas::DDR[0];
+    vector_ext.flags = graphlily::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -431,7 +412,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphblas::DDR[0];
+    mask_ext.flags = graphlily::DDR[0];
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -463,15 +444,15 @@ for (size_t row_idx = 0; row_idx < this->csr_matrix_float_.num_rows; row_idx++) 
 }                                                                               } \
 
 template<typename matrix_data_t, typename vector_data_t>
-graphblas::aligned_dense_float_vec_t
+graphlily::aligned_dense_float_vec_t
 SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dense_float_vec_t &vector) {
     aligned_dense_float_vec_t reference_results(this->csr_matrix_.num_rows);
     std::fill(reference_results.begin(), reference_results.end(), 0);
     switch (this->semiring_.op) {
-        case graphblas::kMulAdd:
+        case graphlily::kMulAdd:
             SPMV(reference_results[row_idx] += this->csr_matrix_float_.adj_data[i] * vector[idx]);
             break;
-        case graphblas::kLogicalAndOr:
+        case graphlily::kLogicalAndOr:
             SPMV(reference_results[row_idx] = reference_results[row_idx]
                 || (this->csr_matrix_float_.adj_data[i] && vector[idx]));
             break;
@@ -484,11 +465,11 @@ SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dens
 
 
 template<typename matrix_data_t, typename vector_data_t>
-graphblas::aligned_dense_float_vec_t SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(
-        graphblas::aligned_dense_float_vec_t &vector,
-        graphblas::aligned_dense_float_vec_t &mask) {
-    graphblas::aligned_dense_float_vec_t reference_results = this->compute_reference_results(vector);
-    if (this->mask_type_ == graphblas::kMaskWriteToZero) {
+graphlily::aligned_dense_float_vec_t SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(
+        graphlily::aligned_dense_float_vec_t &vector,
+        graphlily::aligned_dense_float_vec_t &mask) {
+    graphlily::aligned_dense_float_vec_t reference_results = this->compute_reference_results(vector);
+    if (this->mask_type_ == graphlily::kMaskWriteToZero) {
         for (size_t i = 0; i < this->csr_matrix_.num_rows; i++) {
             if (mask[i] != 0) {
                 reference_results[i] = 0;
@@ -506,6 +487,6 @@ graphblas::aligned_dense_float_vec_t SpMVModule<matrix_data_t, vector_data_t>::c
 
 
 }  // namespace module
-}  // namespace graphblas
+}  // namespace graphlily
 
-#endif  // __GRAPHBLAS_SPMV_MODULE_H
+#endif  // GRAPHLILY_SPMV_MODULE_H_

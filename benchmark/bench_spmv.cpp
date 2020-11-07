@@ -1,8 +1,10 @@
 #include <iostream>
 #include <chrono>
 
-#include "graphblas/io/data_loader.h"
-#include "graphblas/module/spmv_module.h"
+#include "xcl2.hpp"
+
+#include "graphlily/io/data_loader.h"
+#include "graphlily/module/spmv_module.h"
 
 
 template <typename data_t>
@@ -31,30 +33,30 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
     uint32_t out_buf_len = 320 * 1024;
     uint32_t vec_buf_len = 128 * 1024;
     uint32_t num_hbm_channels = 8;
-    graphblas::module::SpMVModule<graphblas::val_t, graphblas::val_t> spmv(num_hbm_channels,
+    graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> spmv(num_hbm_channels,
                                                                            out_buf_len,
                                                                            vec_buf_len);
     spmv.set_target("hw");
     spmv.set_up_runtime(bitstream);
-    spmv.set_semiring(graphblas::kMulAdd);
-    spmv.set_mask_type(graphblas::kNoMask);
+    spmv.set_semiring(graphlily::ArithmeticSemiring);
+    spmv.set_mask_type(graphlily::kNoMask);
 
     std::string csr_float_npz_path = dataset;
-    CSRMatrix<float> csr_matrix = graphblas::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
+    CSRMatrix<float> csr_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     for (auto &x : csr_matrix.adj_data) x = 1;
 
-    graphblas::io::util_round_csr_matrix_dim(csr_matrix,
-                                             num_channels * graphblas::pack_size,
-                                             graphblas::pack_size);
+    graphlily::io::util_round_csr_matrix_dim(csr_matrix,
+                                             num_channels * graphlily::pack_size,
+                                             graphlily::pack_size);
 
     std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
     std::generate(vector_float.begin(), vector_float.end(), [&]{return float(rand() % 2);});
-    std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>> vector(vector_float.begin(),
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> vector(vector_float.begin(),
                                                                               vector_float.end());
 
     std::vector<float, aligned_allocator<float>> mask_float(csr_matrix.num_cols);
     std::generate(mask_float.begin(), mask_float.end(), [&](){return float(rand() % 2);});
-    std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>> mask(mask_float.begin(),
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> mask(mask_float.begin(),
                                                                             mask_float.end());
 
     bool skip_empty_rows = true;
@@ -84,11 +86,11 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
     std::cout << "Compute THROUGHPUT = " << throughput / (sizeof(unsigned) + sizeof(unsigned))
               << " GOPS" << std::endl;
 
-    std::vector<graphblas::val_t, aligned_allocator<graphblas::val_t>> kernel_results =
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> kernel_results =
         spmv.send_results_device_to_host();
     std::vector<float, aligned_allocator<float>> reference_results =
         spmv.compute_reference_results(vector_float);
-    verify<graphblas::val_t>(reference_results, kernel_results);
+    verify<graphlily::val_t>(reference_results, kernel_results);
     std::cout << "SpMV passed" << std::endl;
 }
 
