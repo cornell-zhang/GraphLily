@@ -8,9 +8,11 @@
 
 #include "./shuffle.h"
 #include "./pe.h"
+#include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
 static bool line_tracing_spmspv = true;
+static bool line_tracing_spmspv_checkout = false;
 #endif
 
 
@@ -111,8 +113,10 @@ static void load_matrix_from_gmem(
 // bram access used for checkout results
 void bram_access_read_2ports(
     // real read ports
-    IDX_T rd_addr[PACK_SIZE * 2],
-    VAL_T rd_data[PACK_SIZE * 2],
+    IDX_T rd_addr0[PACK_SIZE],
+    VAL_T rd_data0[PACK_SIZE],
+    IDX_T rd_addr1[PACK_SIZE],
+    VAL_T rd_data1[PACK_SIZE],
     // bram
     VAL_T bram[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE]
 ){
@@ -122,11 +126,8 @@ void bram_access_read_2ports(
     loop_rd_get_data_unroll:
     for (unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
         #pragma HLS unroll
-        for (unsigned int PTid = 0; PTid < 2; PTid++) {
-            #pragma HLS unroll
-            IDX_T sbbk_addr = rd_addr[BKid * 2 + PTid] >> BANK_ID_NBITS;
-            rd_data[BKid * 2 + PTid] = bram[BKid][sbbk_addr];
-        }
+        rd_data0[BKid] = bram[BKid][rd_addr0[BKid]];
+        rd_data1[BKid] = bram[BKid][rd_addr1[BKid]];
     }
 }
 
@@ -143,12 +144,16 @@ static void checkout_results(
     VAL_T zero
 ) {
     IDX_T npld_before_mask = 0;
-    IDX_T index_arr[PACK_SIZE * 2];
-    VAL_T data_arr[PACK_SIZE * 2];
-    #pragma HLS array_partition variable=index_arr complete
-    #pragma HLS array_partition variable=data_arr complete
+    IDX_T index_arr0[PACK_SIZE];
+    IDX_T index_arr1[PACK_SIZE];
+    VAL_T data_arr0[PACK_SIZE];
+    VAL_T data_arr1[PACK_SIZE];
+    #pragma HLS array_partition variable=index_arr0 complete
+    #pragma HLS array_partition variable=index_arr1 complete
+    #pragma HLS array_partition variable=data_arr0 complete
+    #pragma HLS array_partition variable=data_arr1 complete
 
-    unsigned int num_rounds = (num_rows + 2 * PACK_SIZE - 1) / (PACK_SIZE * 2);
+    unsigned int num_rounds = ((num_rows + 2 * PACK_SIZE) - 1) / (PACK_SIZE * 2);
     loop_over_dense_data_pipeline:
     for (unsigned int round_cnt = 0; round_cnt < num_rounds; round_cnt ++) {
         #pragma HLS pipeline II=1
@@ -157,28 +162,52 @@ static void checkout_results(
         loop_before_read_banks_unroll:
         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
-            loop_before_read_ports_unroll:
-            for (unsigned int Port_id = 0; Port_id < 2; Port_id++) {
-                #pragma HLS unroll
-                index_arr[Bank_id * 2 + Port_id] = Bank_id + (round_cnt * 2 + Port_id) * PACK_SIZE;
-            }
+            index_arr0[Bank_id] = round_cnt * 2;
+            index_arr1[Bank_id] = round_cnt * 2 + 1;
         }
 
-        bram_access_read_2ports(index_arr,data_arr,dense_data);
+        #ifndef __SYNTHESIS__
+        if (line_tracing_spmspv_checkout) {
+            std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / " << num_rounds << "]" << std::endl << std::flush;
+            for (unsigned i = 0; i < PACK_SIZE; i++) {
+                std::cout << "  checking bank[" << i << "][" << index_arr0[i] << "][" << index_arr1[i] << "]"
+                          << std::endl << std::flush;
+            }
+        }
+        #endif
+
+        bram_access_read_2ports(index_arr0, data_arr0, index_arr1, data_arr1, dense_data);
 
         loop_after_read_banks_unroll:
         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
-            loop_after_read_ports_unroll:
-            for (unsigned int Port_id = 0; Port_id < 2; Port_id++) {
-                #pragma HLS unroll
-                if (data_arr[Bank_id * 2 + Port_id] != zero) {
-                    VEC_PKT_T pld;
-                    pld.index = index_arr[Bank_id * 2 + Port_id] + mat_row_id_base;
-                    pld.val = data_arr[Bank_id * 2 + Port_id];
-                    cr_output_streams[Bank_id * 2 + Port_id].write(pld);
-                    local_npld_incr ++;
+            if (data_arr0[Bank_id] != zero) {
+                VEC_PKT_T pld;
+                pld.index = round_cnt * 2 * PACK_SIZE + Bank_id + mat_row_id_base;
+                pld.val = data_arr0[Bank_id];
+                cr_output_streams[Bank_id].write(pld);
+                local_npld_incr ++;
+                #ifndef __SYNTHESIS__
+                if (line_tracing_spmspv_checkout) {
+                    std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / " << num_rounds << "]" << std::endl << std::flush;
+                    std::cout << " non-zero " << pld.val << " found at " << pld.index - mat_row_id_base << " mapped to " << pld.index
+                              << std::endl << std::flush;
                 }
+                #endif
+            }
+            if (data_arr1[Bank_id] != zero) {
+                VEC_PKT_T pld;
+                pld.index = (round_cnt * 2 + 1) * PACK_SIZE + Bank_id + mat_row_id_base;
+                pld.val = data_arr1[Bank_id];
+                cr_output_streams[Bank_id + PACK_SIZE].write(pld);
+                local_npld_incr ++;
+                #ifndef __SYNTHESIS__
+                if (line_tracing_spmspv_checkout) {
+                    std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / " << num_rounds << "]" << std::endl << std::flush;
+                    std::cout << " non-zero " << pld.val << " found at " << pld.index - mat_row_id_base << " mapped to " << pld.index
+                              << std::endl << std::flush;
+                }
+                #endif
             }
         }
         npld_before_mask += local_npld_incr;
@@ -248,7 +277,7 @@ static void reset_output_buffer(
     VAL_T Zero
 ) {
     #pragma HLS pipeline II=1
-    unsigned int num_rounds = (num_rows + 2 * PACK_SIZE - 1) / PACK_SIZE;
+    unsigned int num_rounds = (num_rows + PACK_SIZE - 1) / PACK_SIZE;
     loop_reset_ob:
     for (unsigned int i = 0; i < num_rounds; i++) {
         #pragma HLS pipeline II=1
@@ -315,7 +344,7 @@ static void compute_spmspv(
 
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
-        std::cout << "INFO :[Kernel SpMSpV] Data Loader complete" << std::endl << std::flush;
+        std::cout << "INFO: [Kernel SpMSpV] Data Loader complete" << std::endl << std::flush;
     }
     #endif
 
@@ -328,11 +357,11 @@ static void compute_spmspv(
 
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
-        std::cout << "INFO :[Kernel SpMSpV] Shuffler complete" << std::endl << std::flush;
+        std::cout << "INFO: [Kernel SpMSpV] Shuffler complete" << std::endl << std::flush;
     }
     #endif
 
-    pe_cluster<VAL_T, OP_T, SF_IO_T, PACK_SIZE, BANK_ID_NBITS>(
+    float_pe_cluster<VAL_T, OP_T, SF_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / PACK_SIZE>(
         SF_to_PE_stream,
         output_buffer,
         Op,
@@ -342,14 +371,14 @@ static void compute_spmspv(
 
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
-        std::cout << "INFO :[Kernel SpMSpV] Process Elements complete" << std::endl << std::flush;
+        std::cout << "INFO: [Kernel SpMSpV] Process Elements complete" << std::endl << std::flush;
     }
     #endif
 
 
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
-        std::cout << "INFO :[Kernel SpMSpV] Computation complete" << std::endl << std::flush;
+        std::cout << "INFO: [Kernel SpMSpV] Computation complete" << std::endl << std::flush;
     }
     #endif
 }
@@ -465,7 +494,8 @@ void kernel_spmspv(
     // output buffer
     VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE];
     #pragma HLS array_partition variable=output_buffer dim=1 complete
-    #pragma HLS resource variable=output_buffer core=RAM_2P
+    // #pragma HLS resource variable=output_buffer core=RAM_2P
+    #pragma HLS resource variable=output_buffer core=XPM_MEMORY uram
 
     // result Nnz counter
     IDX_T result_Nnz = 0;
@@ -484,6 +514,14 @@ void kernel_spmspv(
         IDX_T mat_indptr_base = (num_cols + 1) * part_id;
         IDX_T mat_row_id_base = OUT_BUF_LEN * part_id;
         IDX_T result_Nnz_incr;
+        #ifndef __SYNTHESIS__
+        if (line_tracing_spmspv) {
+            std::cout << "INFO: [Kernel SpMSpV] Partition " << part_id <<" start" << std::endl << std::flush;
+            std::cout << "  # of rows this part: " << num_rows_this_part << std::endl << std::flush;
+            std::cout << "          row id base: " << mat_row_id_base << std::endl << std::flush;
+            std::cout << "          indptr base: " << mat_indptr_base << std::endl << std::flush;
+        }
+        #endif
         reset_output_buffer(
             output_buffer,
             num_rows_this_part,
@@ -517,9 +555,6 @@ void kernel_spmspv(
         #ifndef __SYNTHESIS__
         if (line_tracing_spmspv) {
             std::cout << "INFO: [Kernel SpMSpV] Partition " << part_id <<" complete" << std::endl << std::flush;
-            std::cout << "  # of rows this part: " << num_rows_this_part << std::endl << std::flush;
-            std::cout << "          row id base: " << mat_row_id_base << std::endl << std::flush;
-            std::cout << "          indptr base: " << mat_indptr_base << std::endl << std::flush;
             std::cout << "     Nnz written back: " << result_Nnz << std::endl << std::flush;
         }
         #endif

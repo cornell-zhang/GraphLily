@@ -12,7 +12,8 @@ const unsigned BANK_ID_MASK = 7;
 // data types
 typedef unsigned IDX_T;
 typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
-typedef ap_ufixed<32, 16, AP_RND, AP_SAT> VAL_T;
+// typedef ap_ufixed<32, 16, AP_RND, AP_SAT> VAL_T;
+typedef float VAL_T;
 typedef struct {VAL_T data[PACK_SIZE];} PACKED_VAL_T;
 
 typedef struct matrix_packet {

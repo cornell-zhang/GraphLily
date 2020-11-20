@@ -443,16 +443,18 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     // number of active columns = vec_nnz_total
     // loop over all active columns
     for (unsigned active_colid = 0; active_colid < vec_nnz_total; active_colid++) {
+
+        float nnz_from_vec = vector[active_colid + 1].val;
         idx_t current_colid = vector[active_colid + 1].index;
+
         // slice out the current column out of the active columns
-        idx_t col_id_start = this->csc_matrix_.adj_indptr[current_colid];
-        idx_t col_id_end = this->csc_matrix_.adj_indptr[current_colid + 1];
+        idx_t col_start = this->csc_matrix_.adj_indptr[current_colid];
+        idx_t col_end = this->csc_matrix_.adj_indptr[current_colid + 1];
 
         // loop over all nnzs in the current column
-        for (unsigned mat_element_id = col_id_start; mat_element_id < col_id_end; mat_element_id++) {
+        for (unsigned mat_element_id = col_start; mat_element_id < col_end; mat_element_id++) {
             idx_t current_row_id = this->csc_matrix_.adj_indices[mat_element_id];
             float nnz_from_mat = this->csc_matrix_.adj_data[mat_element_id];
-            float nnz_from_vec = vector[active_colid + 1].val;
             float incr;
             switch (this->semiring_.op) {
                 case kMulAdd:
@@ -464,9 +466,13 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
                     reference_results[current_row_id] = reference_results[current_row_id] || incr;
                     break;
                 case kAddMin:
-                    incr = nnz_from_mat + nnz_from_vec;
-                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ?
-                                                         reference_results[current_row_id] : incr;
+                    if (nnz_from_mat > FLOAT_INF || nnz_from_vec > FLOAT_INF) {
+                        incr = FLOAT_INF;
+                    } else {
+                        incr = nnz_from_mat + nnz_from_vec;
+                        if (incr > FLOAT_INF) incr = FLOAT_INF;
+                    }
+                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ? reference_results[current_row_id] : incr;
                     break;
                 default:
                     std::cerr << "ERROR: [Module SpMSpV] Invalid semiring" << std::endl;

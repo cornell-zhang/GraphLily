@@ -10,6 +10,7 @@
 
 #include "./shuffle.h"
 #include "./pe.h"
+#include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
 static bool line_tracing_spmv = false;
@@ -254,7 +255,15 @@ static void compute_spmv_one_channel(
         }
         #endif
 
-        pe_cluster<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / NUM_PE_TOTAL>(
+        // pe_cluster<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / NUM_PE_TOTAL>(
+        //     SF_2_to_PE_stream,
+        //     out_bram,
+        //     Op,
+        //     Zero,
+        //     SF_2_to_PE_num_payloads_stream
+        // );
+
+        float_pe_cluster<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / NUM_PE_TOTAL>(
             SF_2_to_PE_stream,
             out_bram,
             Op,

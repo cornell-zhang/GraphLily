@@ -19,29 +19,31 @@ bool line_tracing_shuffle_1p = false;
 
 // TODO: Do we really need to expose addr_mask as an argument? Can it be inferred?
 // TODO: Is num_in_lane always equal to num_out_lane?
-template<typename PayloadT, unsigned num_in_lane, unsigned num_out_lane, unsigned addr_mask>
+template<unsigned num_in_lane, unsigned num_out_lane, unsigned addr_mask>
 unsigned arbiter_1p(
-    PayloadT in_payload[num_in_lane],
+    unsigned in_addr[num_in_lane],
     bool     in_valid[num_in_lane],
-    bool     in_granted[num_in_lane],
+    // bool     in_granted[num_in_lane],
     bool     in_resend[num_in_lane],
     unsigned xbar_sel[num_out_lane],
     bool     out_valid[num_out_lane],
-    PayloadT out_payload[num_in_lane],
     unsigned rotate_priority
 ) {
     #pragma HLS pipeline II=1
     #pragma HLS latency min=5 max=5
     // #pragma HLS inline
 
-    static unsigned in_addr[num_in_lane];
-    #pragma HLS array_partition variable=in_addr complete
-    loop_A_extract_addr:
-    for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
-        in_addr[ILid] = in_payload[ILid].index;
-    }
+    bool in_granted[num_in_lane];
+    #pragma HLS array_partition variable=in_granted complete
 
-    // prioritized val and addr
+    // static unsigned in_addr[num_in_lane];
+    // #pragma HLS array_partition variable=in_addr complete
+    // loop_A_extract_addr:
+    // for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
+    //     in_addr[ILid] = in_payload[ILid].index;
+    // }
+
+    // prioritized valid and addr
     bool arb_p_in_valid[num_in_lane];
     #pragma HLS array_partition variable=arb_p_in_valid complete
     unsigned arb_p_in_addr[num_in_lane];
@@ -79,23 +81,23 @@ unsigned arbiter_1p(
     for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
         #pragma HLS unroll
         unsigned requested_olid = in_addr[ILid] & addr_mask;
-        // temp_in_granted[ILid] = (in_valid[ILid] && (xbar_sel[requested_olid] == ILid));
         in_granted[ILid] = (in_valid[ILid]
                             && out_valid[requested_olid]
                             && (xbar_sel[requested_olid] == ILid));
-    }
-
-    loop_A_resend:
-    for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
-        #pragma HLS unroll
-        // resend path
         in_resend[ILid] = in_valid[ILid] && !in_granted[ILid];
     }
 
-    loop_A_pass:
-    for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
-        out_payload[ILid] = in_payload[ILid];
-    }
+    // loop_A_resend:
+    // for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
+    //     #pragma HLS unroll
+    //     // resend path
+    //     in_resend[ILid] = in_valid[ILid] && !in_granted[ILid];
+    // }
+
+    // loop_A_pass:
+    // for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
+    //     out_payload[ILid] = in_payload[ILid];
+    // }
 
     return array_popcount<num_in_lane>(in_granted);
 }
@@ -129,8 +131,10 @@ void shuffler_1p(
     // pipeline data registers before arbiter
     PayloadT payload_F[num_in_lane];
     PayloadT payload_A[num_in_lane];
+    unsigned addr_A[num_in_lane];
     #pragma HLS array_partition variable=payload_F complete
     #pragma HLS array_partition variable=payload_A complete
+    #pragma HLS array_partition variable=addr_A complete
 
     // pipeline data registers after arbiter
     PayloadT payload_C[num_in_lane];
@@ -164,10 +168,10 @@ void shuffler_1p(
     #pragma HLS array_partition variable=arbiter_in_valid complete
 
     // arbiter outputs
-    bool arbiter_in_granted[num_in_lane];
+    // bool arbiter_in_granted[num_in_lane];
     unsigned xbar_sel_A[num_out_lane];
     bool xbar_valid_A[num_out_lane];
-    #pragma HLS array_partition variable=arbiter_in_granted complete
+    // #pragma HLS array_partition variable=arbiter_in_granted complete
     #pragma HLS array_partition variable=xbar_sel_A complete
     #pragma HLS array_partition variable=xbar_valid_A complete
 
@@ -182,6 +186,7 @@ void shuffler_1p(
 
         payload_F[i].index = 0;
         payload_A[i].index = 0;
+        addr_A[i] = 0;
         payload_C[i].index = 0;
         payload_F[i].data = (PayloadValT){0,0};
         payload_A[i].data = (PayloadValT){0,0};
@@ -211,8 +216,8 @@ void shuffler_1p(
         #pragma HLS pipeline II=1
 
         #pragma HLS dependence variable=resend inter distance=6 RAW True
-        #pragma HLS dependence variable=payload_A inter distance=6 RAW True
-        #pragma HLS dependence variable=loop_exit inter distance=6 RAW True
+        // #pragma HLS dependence variable=payload_A inter distance=6 RAW True
+        #pragma HLS dependence variable=loop_exit inter distance=8 RAW True
 
         // Fetch stage (F)
         loop_F:
@@ -235,19 +240,20 @@ void shuffler_1p(
         for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
             #pragma HLS unroll
             // prepare arbiter inputs
-            arbiter_in_valid[ILid] = valid_F[ILid];
+            payload_A[ILid] = payload_F[ILid];
             valid_A[ILid] = valid_F[ILid];
+            addr_A[ILid] = payload_F[ILid].index;
+            arbiter_in_valid[ILid] = valid_F[ILid];
         }
         rotate_priority = next_rotate_priority;
         // pipeline arbiter, depth = 6
-        num_granted_A = arbiter_1p<PayloadT, num_in_lane, num_out_lane, addr_mask>(
-            payload_F,
+        num_granted_A = arbiter_1p<num_in_lane, num_out_lane, addr_mask>(
+            addr_A,
             arbiter_in_valid,
-            arbiter_in_granted,
+            // arbiter_in_granted,
             resend,
             xbar_sel_A,
             xbar_valid_A,
-            payload_A,
             rotate_priority
         );
         next_rotate_priority = (rotate_priority + 1) % num_in_lane;

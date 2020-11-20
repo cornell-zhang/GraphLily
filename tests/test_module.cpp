@@ -60,6 +60,52 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
     }
 }
 
+std::string gen_test_case_name_spmspv(graphlily::SemiringType semiring,
+                                      graphlily::MaskType mask_type,
+                                      std::string matrix_name,
+                                      float vector_sparsity) {
+    std::string name = matrix_name + "_";
+
+    switch (semiring.op) {
+    case graphlily::kMulAdd :
+        name += "Arithmetic_";
+        break;
+    case graphlily::kLogicalAndOr :
+        name += "Logical_";
+        break;
+    case graphlily::kAddMin :
+        name += "Tropical_";
+        break;
+    default:
+        std::cout << "ERROR! Unsupported Semiring!" << std::endl;
+        exit(EXIT_FAILURE);
+        break;
+    }
+
+    switch (mask_type) {
+    case graphlily::kNoMask:
+        name += "NoMask_";
+        break;
+    case graphlily::kMaskWriteToOne:
+        name += "WriteToOne_";
+        break;
+    case graphlily::kMaskWriteToZero:
+        name += "WriteToZero_";
+        break;
+    default:
+        std::cout << "ERROR! Unsupported Mask Type!" << std::endl;
+        exit(EXIT_FAILURE);
+        break;
+    }
+
+    float spv = vector_sparsity * 100;
+    char c[20];
+    sprintf(c,"%3.4f%%",spv);
+    name += c;
+
+    return name;
+}
+
 
 void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> &module,
                        graphlily::SemiringType semiring,
@@ -94,14 +140,7 @@ void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily
         reference_results = module.compute_reference_results(vector_float, mask_float);
     }
 
-    // for (int i = 0; i < 10; i++) {
-    //     std::cout << reference_results[i] << " " << kernel_results[i] << std::endl;
-    // }
-    // std::cout << std::endl;
-
-    verify<graphlily::val_t>(reference_results, kernel_results);
 }
-
 
 TEST(SpMV, MultipleCases) {
     uint32_t out_buf_len = 512;
@@ -146,8 +185,11 @@ void _test_spmspv_module(graphlily::module::SpMSpVModule<graphlily::val_t,
                                                          graphlily::index_val_t> &module,
                          graphlily::SemiringType semiring,
                          graphlily::MaskType mask_type,
+                         std::string matrix_id,
                          CSCMatrix<float> const &csc_matrix,
                          float vector_sparsity) {
+
+    std::cout << gen_test_case_name_spmspv(semiring, mask_type, matrix_id, vector_sparsity) << " Start:" << std::endl;
     // data types
     using aligned_sparse_vec_t = std::vector<graphlily::index_val_t, aligned_allocator<graphlily::index_val_t>>;
     using aligned_dense_vec_t = std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>>;
@@ -196,9 +238,17 @@ void _test_spmspv_module(graphlily::module::SpMSpVModule<graphlily::val_t,
 
     aligned_dense_vec_t kernel_results_dense = convert_vector_sparse_to_dense<graphlily::index_val_t,
         graphlily::val_t>(kernel_results, vector_length, semiring.zero);
+    // std::cout << std::setw(10) << "i" << std::setw(10) << "reference" << std::setw(10) << "kernel" << std::setw(10) << "diff" << std::endl;
+    // std::cout << "-------------------------------------------------------" << std::endl;
+    // for (size_t i = 0; i < reference_results.size(); i++) {
+    //     std::cout << std::setw(10) << i
+    //               << std::setw(10) << reference_results[i]
+    //               << std::setw(10) << kernel_results_dense[i]
+    //               << std::setw(10) << kernel_results_dense[i] - reference_results[i] << std::endl;
+    // }
     verify<graphlily::val_t>(reference_results, kernel_results_dense);
+    std::cout << gen_test_case_name_spmspv(semiring, mask_type, matrix_id, vector_sparsity) << " Success!" << std::endl;
 }
-
 
 TEST(SpMSpV, MultipleCases) {
     uint32_t out_buf_len = 512;
@@ -211,18 +261,49 @@ TEST(SpMSpV, MultipleCases) {
 
     std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
                                      "data/sparse_matrix_graph/dense_1K_csr_float32.npz";
+    std::string matrix_id = "dense_1K";
     CSCMatrix<float> csc_matrix = graphlily::io::csr2csc(
         graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path));
-
     // for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
     for (auto &x : csc_matrix.adj_data) x = 1.0;
 
-    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,          csc_matrix, 0.99);
-    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kNoMask,          csc_matrix, 0.99);
-    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, csc_matrix, 0.99);
-    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kMaskWriteToZero, csc_matrix, 0.99);
-    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne,  csc_matrix, 0.99);
-    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kMaskWriteToOne,  csc_matrix, 0.99);
+    CSCMatrix<float> csc_matrix_conflict32;
+    csc_matrix_conflict32.num_rows = 32;
+    csc_matrix_conflict32.num_cols = 32;
+    csc_matrix_conflict32.adj_data.resize(32);
+    for (auto &x : csc_matrix_conflict32.adj_data) x = 1.0;
+    csc_matrix_conflict32.adj_indices.resize(32);
+    csc_matrix_conflict32.adj_indices = {
+        0, 8, 16,24,
+        1, 9, 17,25,
+        2, 10,18,26,
+        3, 11,19,27,
+        4, 12,20,28,
+        5, 13,21,29,
+        6, 14,22,30,
+        7, 15,23,31};
+    csc_matrix_conflict32.adj_indptr.resize(33);
+    csc_matrix_conflict32.adj_indptr = {
+        0,
+        4, 8, 12,16,20,24,28,32,
+        32,32,32,32,32,32,32,32,
+        32,32,32,32,32,32,32,32,
+        32,32,32,32,32,32,32,32};
+
+
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,          "conflict32", csc_matrix_conflict32, 0.01);
+    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kNoMask,          "conflict32", csc_matrix_conflict32, 0.01);
+
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,          matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kNoMask,          matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::TropicalSemiring,   graphlily::kNoMask,          matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kMaskWriteToZero, matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::TropicalSemiring,   graphlily::kMaskWriteToZero, matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne,  matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::LogicalSemiring,    graphlily::kMaskWriteToOne,  matrix_id, csc_matrix, 0.99);
+    _test_spmspv_module(module, graphlily::TropicalSemiring,   graphlily::kMaskWriteToOne,  matrix_id, csc_matrix, 0.99);
+
 
     clean_proj_folder();
 }

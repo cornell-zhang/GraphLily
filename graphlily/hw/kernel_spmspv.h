@@ -1,6 +1,5 @@
 #include "ap_fixed.h"
-
-#define UFINF 65535
+#include "./math_constants.h"
 
 const unsigned PACK_SIZE = 8;
 const unsigned BANK_ID_NBITS = 3;
@@ -9,7 +8,8 @@ const unsigned BANK_ID_MASK = 7;
 // data types
 typedef unsigned IDX_T;
 typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
-typedef ap_ufixed<32, 16, AP_RND, AP_SAT> VAL_T;
+typedef float VAL_T;
+// typedef ap_ufixed<32, 16, AP_RND, AP_SAT> VAL_T;
 typedef struct {VAL_T data[PACK_SIZE];} PACKED_VAL_T;
 
 typedef struct matrix_packet {
@@ -36,7 +36,8 @@ typedef char MASK_T;
 
 const VAL_T MulAddZero = 0;
 const VAL_T AndOrZero  = 0;
-const VAL_T AddMinZero = UFINF;
+// const VAL_T AddMinZero = UFXINF;
+const VAL_T AddMinZero = FLTINF;
 
 const VAL_T MulAddOne = 1;
 const VAL_T AndOrOne  = 1;

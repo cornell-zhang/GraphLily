@@ -712,10 +712,10 @@ FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
       // tileptr
       formatted_matrix.formatted_adj_partptr.push_back(tile_pkt_cnt[t] + formatted_matrix.formatted_adj_partptr.back());
     }
-    std::cout << "Total #of Packets : " << formatted_matrix.formatted_adj_packet.size()  << std::endl;
-    std::cout << "Total #of Tiles   : " << formatted_matrix.num_row_partitions           << std::endl;
-    std::cout << "Size of idxptr    : " << formatted_matrix.formatted_adj_indptr.size()  << std::endl;
-    std::cout << "Size of tileptr   : " << formatted_matrix.formatted_adj_partptr.size() << std::endl;
+    // std::cout << "Total #of Packets : " << formatted_matrix.formatted_adj_packet.size()  << std::endl;
+    // std::cout << "Total #of Tiles   : " << formatted_matrix.num_row_partitions           << std::endl;
+    // std::cout << "Size of idxptr    : " << formatted_matrix.formatted_adj_indptr.size()  << std::endl;
+    // std::cout << "Size of tileptr   : " << formatted_matrix.formatted_adj_partptr.size() << std::endl;
     formatted_matrix.num_packets_total = total_num_packets;
     return formatted_matrix;
 }

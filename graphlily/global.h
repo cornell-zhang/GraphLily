@@ -53,8 +53,9 @@ const int HBM[MAX_HBM_CHANNEL_COUNT] = {
 
 const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 
-// Data types
-using val_t = ap_ufixed<32, 16, AP_RND, AP_SAT>;
+// Data types (please change this according to the kernel!)
+// using val_t = ap_ufixed<32, 16, AP_RND, AP_SAT>;
+using val_t = float;
 typedef uint32_t idx_t;
 const uint32_t idx_marker = 0xffffffff;
 const uint32_t pack_size = 8;
@@ -68,23 +69,26 @@ using aligned_sparse_float_vec_t = std::vector<index_float_t, aligned_allocator<
 
 const uint32_t UINT_INF = 0xffffffff;
 const val_t UFIXED_INF = 65535;
+const val_t FLOAT_INF = 999999999;
 
-// Semiring definition
+// Operation type, named as k<opx><op+>
 enum OperationType {
     kMulAdd = 0,
     kLogicalAndOr = 1,
     kAddMin = 2,
 };
 
+// Semiring definition
 struct SemiringType {
     OperationType op;
-    val_t zero;
-    val_t one;
+    val_t one;  // identity element for operator <x> (a <x> one = a)
+    val_t zero;  // identity element for operator <+> (a <+> zero = a)
 };
 
-const SemiringType ArithmeticSemiring = {kMulAdd, 0, 1};
-const SemiringType LogicalSemiring = {kLogicalAndOr, 0, 1};
-const SemiringType TropicalSemiring = {kAddMin, 1, UFIXED_INF};
+const SemiringType ArithmeticSemiring = {kMulAdd, 1, 0};
+const SemiringType LogicalSemiring = {kLogicalAndOr, 1, 0};
+// const SemiringType TropicalSemiring = {kAddMin, 0, UFIXED_INF};
+const SemiringType TropicalSemiring = {kAddMin, 0, FLOAT_INF};
 
 // Mask type
 enum MaskType {

@@ -176,6 +176,16 @@ void BaseModule::link_kernel_code() {
     std::cout << command << std::endl;
     system(command.c_str());
 
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "float_pe.h"
+                    + " " + graphlily::proj_folder_name + "/" + "float_pe.h";
+    std::cout << command << std::endl;
+    system(command.c_str());
+
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "math_constants.h"
+                    + " " + graphlily::proj_folder_name + "/" + "math_constants.h";
+    std::cout << command << std::endl;
+    system(command.c_str());
+
     command = "cp " + graphlily::root_path + "/graphlily/hw/" + this->kernel_name_ + ".cpp"
                     + " " + graphlily::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     std::cout << command << std::endl;
