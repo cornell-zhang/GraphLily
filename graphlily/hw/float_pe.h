@@ -114,7 +114,7 @@ void float_pe_cluster_part1(
     bool prev_finish = false;
     unsigned num_payload = 0;
     unsigned process_cnt = 0;
-    bool process_complete = false;
+    bool loop_exit = false;
 
     #ifndef __SYNTHESIS__
     int sw_emu_iter_cnt_p1 = 0;
@@ -153,15 +153,11 @@ void float_pe_cluster_part1(
     }
 
     loop_pe_part1:
-    while ( !(prev_finish && process_complete) ) {
+    while (!loop_exit) {
         #pragma HLS pipeline II=1
-        #pragma HLS dependence variable=process_complete inter RAW true distance=10
+        #pragma HLS dependence variable=loop_exit inter RAW true distance=10
 
         // Fetch stage (F)
-        if(!prev_finish) {
-            prev_finish = num_payloads_in.read_nb(num_payload);
-        }
-
         loop_F:
         for (unsigned PEid = 0; PEid < num_PE; PEid++) {
             #pragma HLS unroll
@@ -182,6 +178,7 @@ void float_pe_cluster_part1(
         // ----- end of F stage
 
         // Mul stage (M)
+        unsigned process_cnt_incr = 0;
         loop_M:
         for (unsigned PEid = 0; PEid < num_PE; PEid++) {
             #pragma HLS unroll
@@ -193,10 +190,15 @@ void float_pe_cluster_part1(
                 payload_out_tmp.addr = addr_M[PEid];
                 payload_out_tmp.incr = incr_M[PEid];
                 output_payloads[PEid].write(payload_out_tmp);
+                process_cnt_incr++;
             }
         }
-        process_cnt += array_popcount<num_PE>(valid_M);
-        process_complete = (process_cnt == num_payload);
+        if (!prev_finish) {
+            prev_finish = num_payloads_in.read_nb(num_payload);
+        }
+        process_cnt += process_cnt_incr;
+        bool process_complete = (process_cnt == num_payload);
+        loop_exit = prev_finish && process_complete;
         // ----- end of M stage
 
         // sw_emu line tracing
@@ -238,7 +240,7 @@ void float_pe_cluster_part2(
     bool prev_finish = false;
     unsigned num_payload = 0;
     unsigned process_cnt = 0;
-    bool process_complete = false;
+    bool loop_exit = false;
 
     #ifndef __SYNTHESIS__
     int sw_emu_iter_cnt_p2 = 0;
@@ -261,7 +263,7 @@ void float_pe_cluster_part2(
         next_valid_R[i] = false;
     }
 
-    // R stage (depth 1)
+    // R stage (depth 2)
     float q_R[num_PE];
     #pragma HLS array_partition variable=q_R complete
     float incr_R[num_PE];
@@ -274,6 +276,10 @@ void float_pe_cluster_part2(
     #pragma HLS array_partition variable=in_flight_R1_addr complete
     bool in_flight_R1_valid[num_PE];
     #pragma HLS array_partition variable=in_flight_R1_valid complete
+    unsigned in_flight_R2_addr[num_PE];
+    #pragma HLS array_partition variable=in_flight_R1_addr complete
+    bool in_flight_R2_valid[num_PE];
+    #pragma HLS array_partition variable=in_flight_R1_valid complete
     for (unsigned i = 0; i < num_PE; i++)  {
         #pragma HLS unroll
         q_R[i] = 0;
@@ -281,7 +287,9 @@ void float_pe_cluster_part2(
         addr_R[i] = 0;
         valid_R[i] = false;
         in_flight_R1_addr[i] = 0;
+        in_flight_R2_addr[i] = 0;
         in_flight_R1_valid[i] = false;
+        in_flight_R2_valid[i] = false;
     }
 
     // A stage (depth 6)
@@ -384,14 +392,10 @@ void float_pe_cluster_part2(
     }
 
     loop_pe_part2:
-    while ( !(prev_finish && process_complete) ) {
+    while (!loop_exit) {
         #pragma HLS pipeline II=1
         #pragma HLS dependence variable=output_buffer inter RAW false
-        #pragma HLS dependence variable=process_complete inter RAW true distance=10
-
-        if(!prev_finish) {
-            prev_finish = num_payloads_in.read_nb(num_payload);
-        }
+        #pragma HLS dependence variable=loop_exit inter RAW true distance=11
 
         // Skid stage (S)
         loop_S:
@@ -413,7 +417,8 @@ void float_pe_cluster_part2(
                 incr_S[PEid] = incr_S[PEid];
             }
 
-            match_SR[PEid] = ((addr_S[PEid] == in_flight_R1_addr[PEid]) && valid_S[PEid] && in_flight_R1_valid[PEid]);
+            match_SR[PEid] = ((addr_S[PEid] == in_flight_R1_addr[PEid]) && valid_S[PEid] && in_flight_R1_valid[PEid])
+                          || ((addr_S[PEid] == in_flight_R2_addr[PEid]) && valid_S[PEid] && in_flight_R2_valid[PEid]);
 
             match_SA[PEid] = ((addr_S[PEid] == in_flight_A1_addr[PEid]) && valid_S[PEid] && in_flight_A1_valid[PEid])
                           || ((addr_S[PEid] == in_flight_A2_addr[PEid]) && valid_S[PEid] && in_flight_A2_valid[PEid])
@@ -442,6 +447,7 @@ void float_pe_cluster_part2(
             in_flight_A3_valid[PEid] = in_flight_A2_valid[PEid];
             in_flight_A2_valid[PEid] = in_flight_A1_valid[PEid];
             in_flight_A1_valid[PEid] = in_flight_R1_valid[PEid];
+            in_flight_R2_valid[PEid] = in_flight_R1_valid[PEid];
             in_flight_R1_valid[PEid] = next_valid_R[PEid];
 
             in_flight_W2_addr[PEid] = in_flight_W1_addr[PEid];
@@ -452,6 +458,7 @@ void float_pe_cluster_part2(
             in_flight_A3_addr[PEid] = in_flight_A2_addr[PEid];
             in_flight_A2_addr[PEid] = in_flight_A1_addr[PEid];
             in_flight_A1_addr[PEid] = in_flight_R1_addr[PEid];
+            in_flight_R2_addr[PEid] = in_flight_R1_addr[PEid];
             in_flight_R1_addr[PEid] = addr_S[PEid];
         }
 
@@ -483,6 +490,7 @@ void float_pe_cluster_part2(
         // ----- end of A stage
 
         // Write stage (W)
+        unsigned process_cnt_incr = 0;
         loop_W:
         for (unsigned PEid = 0; PEid < num_PE; PEid++)  {
             #pragma HLS unroll
@@ -491,15 +499,19 @@ void float_pe_cluster_part2(
             new_q_W[PEid] = new_q_A[PEid];
             if (valid_W[PEid]) {
                 output_buffer[PEid][addr_W[PEid] >> addr_shamt] = new_q_W[PEid];
-
+                process_cnt_incr++;
             }
         }
-        process_cnt += array_popcount<num_PE>(valid_W);
-        process_complete = (process_cnt == num_payload);
+        if (!prev_finish) {
+            prev_finish = num_payloads_in.read_nb(num_payload);
+        }
+        process_cnt += process_cnt_incr;
+        bool process_complete = (process_cnt == num_payload);
+        loop_exit = process_complete && prev_finish;
 
         // sw_emu line tracing
         #ifndef __SYNTHESIS__
-        if(line_tracing_float_pe_cluster) {
+        if (line_tracing_float_pe_cluster) {
             std::cout << "INFO: [kernel SpMSpV (float) part2] loop count: " << sw_emu_iter_cnt_p2 << std::endl << std::flush;
         }
         sw_emu_iter_cnt_p2 ++;
@@ -526,7 +538,7 @@ void float_pe_cluster(
     #pragma HLS dataflow
 
     hls::stream<PP_STREAM_T> PP_stream[num_PE];
-    #pragma HLS stream variable=PP_stream depth=16
+    #pragma HLS stream variable=PP_stream depth=32
     hls::stream<unsigned> PP_npld_stream;
     #pragma HLS stream variable=PP_npld_stream depth=2
 

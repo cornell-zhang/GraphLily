@@ -7,7 +7,7 @@
 #include <hls_stream.h>
 
 #include "./shuffle.h"
-#include "./pe.h"
+#include "./ufixed_pe.h"
 #include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
@@ -276,7 +276,6 @@ static void reset_output_buffer(
     IDX_T num_rows,
     VAL_T Zero
 ) {
-    #pragma HLS pipeline II=1
     unsigned int num_rounds = (num_rows + PACK_SIZE - 1) / PACK_SIZE;
     loop_reset_ob:
     for (unsigned int i = 0; i < num_rounds; i++) {
@@ -495,7 +494,12 @@ void kernel_spmspv(
     VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE];
     #pragma HLS array_partition variable=output_buffer dim=1 complete
     // #pragma HLS resource variable=output_buffer core=RAM_2P
-    #pragma HLS resource variable=output_buffer core=XPM_MEMORY uram
+    #pragma HLS resource variable=output_buffer core=XPM_MEMORY uram latency=2
+    /*
+        If we do not specify the latency here, the tool will automatically decide the latency of the URAM,
+        which could cause problems for the PE due to RAW hazards.
+        The URAM latency could be 1, 2, 3, or 4. If specified, it will be applied to both read and write.
+    */
 
     // result Nnz counter
     IDX_T result_Nnz = 0;

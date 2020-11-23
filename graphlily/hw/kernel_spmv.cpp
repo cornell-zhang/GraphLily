@@ -9,7 +9,7 @@
 #include <ap_fixed.h>
 
 #include "./shuffle.h"
-#include "./pe.h"
+#include "./ufixed_pe.h"
 #include "./float_pe.h"
 
 #ifndef __SYNTHESIS__

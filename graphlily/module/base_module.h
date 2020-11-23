@@ -171,8 +171,8 @@ void BaseModule::link_kernel_code() {
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "pe.h"
-                    + " " + graphlily::proj_folder_name + "/" + "pe.h";
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "ufixed_pe.h"
+                    + " " + graphlily::proj_folder_name + "/" + "ufixed_pe.h";
     std::cout << command << std::endl;
     system(command.c_str());
 

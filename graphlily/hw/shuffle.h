@@ -13,6 +13,16 @@
 bool line_tracing_shuffle_1p = false;
 #endif
 
+// pipeline register
+// Its latency is 5.
+// Only use this function to wrap signals that travels along stage A!
+template<typename PayloadT>
+PayloadT pipereg_stage_A (PayloadT in) {
+    #pragma HLS pipeline II=1
+    #pragma HLS latency min=5 max=5
+    return in;
+}
+
 //------------------------------------------------------------
 // arbiters
 //------------------------------------------------------------
@@ -33,8 +43,8 @@ unsigned arbiter_1p(
     #pragma HLS latency min=5 max=5
     // #pragma HLS inline
 
-    bool in_granted[num_in_lane];
-    #pragma HLS array_partition variable=in_granted complete
+    // bool in_granted[num_in_lane];
+    // #pragma HLS array_partition variable=in_granted complete
 
     // static unsigned in_addr[num_in_lane];
     // #pragma HLS array_partition variable=in_addr complete
@@ -77,14 +87,16 @@ unsigned arbiter_1p(
 
     array_cyclic_add<unsigned,num_out_lane,num_in_lane>(xbar_sel, out_valid, rotate_priority);
 
+    unsigned grant_count = 0;
     loop_A_grant:
     for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
         #pragma HLS unroll
         unsigned requested_olid = in_addr[ILid] & addr_mask;
-        in_granted[ILid] = (in_valid[ILid]
-                            && out_valid[requested_olid]
-                            && (xbar_sel[requested_olid] == ILid));
-        in_resend[ILid] = in_valid[ILid] && !in_granted[ILid];
+        bool in_granted = (in_valid[ILid]
+                           && out_valid[requested_olid]
+                           && (xbar_sel[requested_olid] == ILid));
+        in_resend[ILid] = in_valid[ILid] && !in_granted;
+        if (in_granted) grant_count++;
     }
 
     // loop_A_resend:
@@ -99,7 +111,7 @@ unsigned arbiter_1p(
     //     out_payload[ILid] = in_payload[ILid];
     // }
 
-    return array_popcount<num_in_lane>(in_granted);
+    return grant_count;
 }
 
 
@@ -122,7 +134,6 @@ void shuffler_1p(
 ) {
     // pipeline control variables
     bool prev_finish = false;
-    bool all_processed = false;
     unsigned payload_cnt = 0;
     unsigned num_granted_A = 0;
     unsigned num_granted_C = 0;
@@ -155,7 +166,10 @@ void shuffler_1p(
     #pragma HLS array_partition variable=valid_C complete
 
     // resend control
+    PayloadT payload_resend[num_in_lane];
     bool resend[num_in_lane];
+    #pragma HLS data_pack variable=payload_resend
+    #pragma HLS array_partition variable=payload_resend complete
     #pragma HLS array_partition variable=resend complete
 
     // loop control
@@ -191,6 +205,8 @@ void shuffler_1p(
         payload_F[i].data = (PayloadValT){0,0};
         payload_A[i].data = (PayloadValT){0,0};
         payload_C[i].data = (PayloadValT){0,0};
+        payload_resend[i].index = 0;
+        payload_resend[i].data = (PayloadValT){0,0};
 
         valid_A[i] = false;
         valid_F[i] = false;
@@ -214,9 +230,9 @@ void shuffler_1p(
     loop_shuffle_pipeline:
     while (!loop_exit) {
         #pragma HLS pipeline II=1
-
+        #pragma HLS latency min=7 max=7
         #pragma HLS dependence variable=resend inter distance=6 RAW True
-        // #pragma HLS dependence variable=payload_A inter distance=6 RAW True
+        #pragma HLS dependence variable=payload_resend inter distance=6 RAW True
         #pragma HLS dependence variable=loop_exit inter distance=8 RAW True
 
         // Fetch stage (F)
@@ -231,7 +247,7 @@ void shuffler_1p(
                 payload.index = 0;
                 valid_F[ILid] = true;
             }
-            payload_F[ILid] = resend[ILid] ? payload_A[ILid] : payload;
+            payload_F[ILid] = resend[ILid] ? payload_resend[ILid] : payload;
         }
         // ------- end of F stage
 
@@ -257,6 +273,13 @@ void shuffler_1p(
             rotate_priority
         );
         next_rotate_priority = (rotate_priority + 1) % num_in_lane;
+        loop_A_fwd:
+        for (unsigned ILid = 0; ILid < num_in_lane; ILid++) {
+            #pragma HLS unroll
+            payload_resend[ILid] = pipereg_stage_A<PayloadT>(payload_A[ILid]);
+            // payload_resend[ILid].index = pipereg_stage_A<unsigned>(payload_A[ILid].index);
+            // payload_resend[ILid].data = pipereg_stage_A<PayloadValT>(payload_A[ILid].data);
+        }
         // ------- end of A stage
 
         // crossbar stage (C)
@@ -286,7 +309,7 @@ void shuffler_1p(
 
         if (!prev_finish) { prev_finish = num_payloads_in.read_nb(payload_cnt); }
         process_cnt += num_granted_C;
-        all_processed = (process_cnt == payload_cnt);
+        bool all_processed = (process_cnt == payload_cnt);
         loop_exit = all_processed && prev_finish;
     }
 

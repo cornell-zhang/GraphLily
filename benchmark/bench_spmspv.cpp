@@ -244,8 +244,8 @@ int main(int argc, char *argv[]) {
     std::vector<graphlily::SemiringType> semiring_set;
 
     if (target == "hw_emu") {
-        matrix_set.push_back("uniform_100K_100_csr_float32.npz");
-        vector_sparsity_set.push_back(0.9995);
+        matrix_set.push_back("gplus_108K_13M_csr_float32.npz");
+        vector_sparsity_set.push_back(0.99);
     } else {
         matrix_set.push_back("gplus_108K_13M_csr_float32.npz");
         matrix_set.push_back("reddit_233K_115M_csr_float32.npz");
@@ -353,9 +353,12 @@ int main(int argc, char *argv[]) {
                 << std::setw(20) << "performance(GOPS)"
                 << std::setw(20) << "throughput(GB/s)"
                 << std::endl;
-    result_log_file << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
+    // result_log_file << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
 
     for (size_t i = 0; i < benchmark_results.size(); i++)  {
+        if (i % vector_sparsity_set.size() == 0) {
+            result_log_file << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
+        }
         result_log_file << "  "
                 << std::setw(50) << benchmark_results[i].info.name
                 << std::setw(20) << benchmark_results[i].info.semiring_str

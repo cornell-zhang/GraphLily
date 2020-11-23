@@ -1,5 +1,5 @@
-#ifndef GRAPHLILY_HW_PE_H_
-#define GRAPHLILY_HW_PE_H_
+#ifndef GRAPHLILY_HW_UFIXED_PE_H_
+#define GRAPHLILY_HW_UFIXED_PE_H_
 
 #include <iostream>
 #include <iomanip>
@@ -318,4 +318,4 @@ void pe_cluster(
     }
 }
 
-#endif  // GRAPHLILY_HW_PE_H_
+#endif  // GRAPHLILY_HW_UFIXED_PE_H_
