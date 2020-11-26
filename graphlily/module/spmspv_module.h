@@ -57,8 +57,6 @@ private:
     aligned_sparse_vec_t vector_;
     /*! \brief Internal copy of mask */
     aligned_dense_vec_t mask_;
-    /*! \brief The argument index of mask to be used in setArg */
-    uint32_t arg_idx_mask_;
     /*! \brief The kernel results.
                The index field of the first element is the non-zero count of the results */
     aligned_sparse_vec_t results_;
@@ -85,9 +83,15 @@ private:
     void _check_data_type();
 
 public:
-    SpMSpVModule(uint32_t out_buf_len) : BaseModule("kernel_spmspv") {
+    SpMSpVModule(uint32_t out_buf_len) : BaseModule("kernel_spmv_spmspv") {
         this->_check_data_type();
         this->out_buf_len_ = out_buf_len;
+    }
+
+    void set_unused_args() override {
+        for (uint32_t i = 6; i < 6 + graphlily::num_hbm_channels + 3; i++) {
+            this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        }
     }
 
     /*!
@@ -122,8 +126,12 @@ public:
         this->semiring_ = semiring;
         this->mask_type_ = masktype;
         // Set argument
-        OCL_CHECK(err, err = this->kernel_.setArg(8, (char)this->semiring_.op));
-        OCL_CHECK(err, err = this->kernel_.setArg(9, (char)this->mask_type_));
+        OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 5,
+                                                  (char)this->semiring_.op));
+        OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 6,
+                                                  (char)this->mask_type_));
+        OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 7,
+                                                  1));  // 0 is SpMV; 1 is SpMSpV
     }
 
     /*!
@@ -196,56 +204,12 @@ public:
      */
     graphlily::aligned_dense_float_vec_t compute_reference_results(graphlily::aligned_sparse_float_vec_t &vector,
                                                                    graphlily::aligned_dense_float_vec_t &mask);
-
-    void generate_kernel_header() override;
-
-    void generate_kernel_ini() override;
 };
 
 
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_check_data_type() {
     assert((std::is_same<matrix_data_t, vector_data_t>::value));
-}
-
-
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
-    // Kernel configuration
-    header << "const unsigned OUT_BUF_LEN = " << this->out_buf_len_ << ";" << std::endl;
-    header.close();
-}
-
-
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
-
-    // memory channel connectivity
-    ini << "[connectivity]" << std::endl;
-
-    // allocate matrix on DDR1
-    ini << "sp=kernel_spmspv_1.matrix:DDR[1]" << std::endl;
-    ini << "sp=kernel_spmspv_1.mat_indptr:DDR[1]" << std::endl;
-    ini << "sp=kernel_spmspv_1.mat_partptr:DDR[1]" << std::endl;
-
-    // allocate others on DDR0
-    ini << "sp=kernel_spmspv_1.mask:DDR[0]" << std::endl;
-    ini << "sp=kernel_spmspv_1.vector:DDR[0]" << std::endl;
-    ini << "sp=kernel_spmspv_1.result:DDR[0]" << std::endl;
-
-    // enable retiming
-    ini << "[vivado]" << std::endl;
-    ini << "prop=run.__KERNEL__.{STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}={-retiming}" << std::endl;
-
-    ini.close();
 }
 
 
@@ -316,8 +280,10 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
     OCL_CHECK(err, err = this->kernel_.setArg(0, this->channel_packets_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(1, this->channel_indptr_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(2, this->channel_partptr_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(6, this->csc_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(7, this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 3,
+                                              this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 4,
+                                              this->csc_matrix_.num_cols));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
@@ -414,6 +380,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_mask_host_to_
               << std::endl << std::flush;
 }
 
+
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::run() {
     cl_int err;
@@ -421,12 +388,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::run() {
     this->command_queue_.finish();
 }
 
-/*!
- * \brief Compute reference results.
- * \param vector The sparse vector.
- * \param mask The dense mask.
- * \return The reference results in dense format.
- */
+
 template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
 graphlily::aligned_dense_float_vec_t
 SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(
@@ -472,7 +434,8 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
                         incr = nnz_from_mat + nnz_from_vec;
                         if (incr > FLOAT_INF) incr = FLOAT_INF;
                     }
-                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ? reference_results[current_row_id] : incr;
+                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ?
+                        reference_results[current_row_id] : incr;
                     break;
                 default:
                     std::cerr << "ERROR: [Module SpMSpV] Invalid semiring" << std::endl;

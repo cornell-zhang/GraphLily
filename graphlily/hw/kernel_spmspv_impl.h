@@ -1,4 +1,4 @@
-#include "./kernel_spmspv.h"
+#include "./kernel_spmv_spmspv.h"
 
 #include <iostream>
 #include <iomanip>
@@ -7,19 +7,34 @@
 #include <hls_stream.h>
 
 #include "./shuffle.h"
-#include "./ufixed_pe.h"
+// #include "./ufixed_pe.h"
 #include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
-static bool line_tracing_spmspv = true;
+static bool line_tracing_spmspv = false;
 static bool line_tracing_spmspv_checkout = false;
 #endif
 
+typedef struct shuffle_inout_vale_type {
+    VAL_T mat_val;
+    VAL_T vec_val;
+} SF_IO_VAL_T;
+
+typedef struct shuffle_inout_type {
+    IDX_T index;
+    SF_IO_VAL_T data;
+} SF_IO_T;
+
+typedef struct vector_loader_out_type {
+    IDX_T current_column_id;
+    VAL_T vector_value;
+} VL_O_T;
+
 
 // vector loader for spmspv
-static void load_vector_from_gmem(
+void load_vector_from_gmem(
     // vector data, row_id
-    VEC_PKT_T *vector,
+    const SPMSPV_VEC_PKT_T *vector,
     // number of non-zeros
     IDX_T vec_num_nnz,
     // fifo
@@ -35,14 +50,15 @@ static void load_vector_from_gmem(
     }
 }
 
+
 // data loader for spmspv
-static void load_matrix_from_gmem(
+void load_matrix_from_gmem(
     // matrix data, row_id
-    MAT_PKT_T *matrix,
+    const SPMSPV_MAT_PKT_T *matrix,
     // matrix indptr
-    IDX_T *mat_indptr,
+    const IDX_T *mat_indptr,
     // matrix part ptr
-    IDX_T *mat_partptr,
+    const IDX_T *mat_partptr,
     // number of non-zeros
     IDX_T vec_num_nnz,
     // partition base
@@ -84,14 +100,12 @@ static void load_matrix_from_gmem(
         loop_over_pkts_ML:
         for (unsigned int i = 0; i < (col_slice[1] - col_slice[0]); i++) {
             #pragma HLS pipeline II=1
-
-            MAT_PKT_T packet_from_mat = matrix[i + mat_addr_base + col_slice[0]];
-
+            SPMSPV_MAT_PKT_T packet_from_mat = matrix[i + mat_addr_base + col_slice[0]];
             IDX_T tmp_pcnt_incr = 0;
+
             loop_unpack_ML_unroll:
             for (unsigned int k = 0; k < PACK_SIZE; k++) {
                 #pragma HLS unroll
-
                 SF_IO_T input_to_SF;
                 input_to_SF.data.mat_val = packet_from_mat.vals.data[k];
                 input_to_SF.data.vec_val = vec_val;
@@ -107,8 +121,8 @@ static void load_matrix_from_gmem(
         pld_cnt += tmp_pcnt;
     }
     num_payloads.write(pld_cnt);
-
 }
+
 
 // bram access used for checkout results
 void bram_access_read_2ports(
@@ -118,25 +132,26 @@ void bram_access_read_2ports(
     IDX_T rd_addr1[PACK_SIZE],
     VAL_T rd_data1[PACK_SIZE],
     // bram
-    VAL_T bram[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE]
-){
+    const VAL_T bram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
+) {
     #pragma HLS pipeline II=1
     // #pragma HLS inline
 
     loop_rd_get_data_unroll:
     for (unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
         #pragma HLS unroll
-        rd_data0[BKid] = bram[BKid][rd_addr0[BKid]];
-        rd_data1[BKid] = bram[BKid][rd_addr1[BKid]];
+        rd_data0[BKid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr0[BKid] / NUM_HBM_CHANNEL];
+        rd_data1[BKid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr1[BKid] / NUM_HBM_CHANNEL];
     }
 }
 
+
 // change results to sparse
-static void checkout_results(
+void checkout_results(
     // data to be checked
-    VAL_T dense_data[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
+    const VAL_T dense_data[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     // FIFOs
-    hls::stream<VEC_PKT_T> cr_output_streams[PACK_SIZE * 2],
+    hls::stream<SPMSPV_VEC_PKT_T> cr_output_streams[PACK_SIZE * 2],
     // control signals
     hls::stream<IDX_T> &npld_to_wb,
     IDX_T mat_row_id_base,
@@ -168,10 +183,11 @@ static void checkout_results(
 
         #ifndef __SYNTHESIS__
         if (line_tracing_spmspv_checkout) {
-            std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / " << num_rounds << "]" << std::endl << std::flush;
+            std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / "
+                      << num_rounds << "]" << std::endl << std::flush;
             for (unsigned i = 0; i < PACK_SIZE; i++) {
-                std::cout << "  checking bank[" << i << "][" << index_arr0[i] << "][" << index_arr1[i] << "]"
-                          << std::endl << std::flush;
+                std::cout << "  checking bank[" << i << "][" << index_arr0[i] << "]["
+                          << index_arr1[i] << "]" << std::endl << std::flush;
             }
         }
         #endif
@@ -182,30 +198,32 @@ static void checkout_results(
         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
             if (data_arr0[Bank_id] != zero) {
-                VEC_PKT_T pld;
+                SPMSPV_VEC_PKT_T pld;
                 pld.index = round_cnt * 2 * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr0[Bank_id];
                 cr_output_streams[Bank_id].write(pld);
                 local_npld_incr ++;
                 #ifndef __SYNTHESIS__
                 if (line_tracing_spmspv_checkout) {
-                    std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / " << num_rounds << "]" << std::endl << std::flush;
-                    std::cout << " non-zero " << pld.val << " found at " << pld.index - mat_row_id_base << " mapped to " << pld.index
-                              << std::endl << std::flush;
+                    std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / "
+                              << num_rounds << "]" << std::endl << std::flush;
+                    std::cout << " non-zero " << pld.val << " found at " << pld.index - mat_row_id_base
+                              << " mapped to " << pld.index << std::endl << std::flush;
                 }
                 #endif
             }
             if (data_arr1[Bank_id] != zero) {
-                VEC_PKT_T pld;
+                SPMSPV_VEC_PKT_T pld;
                 pld.index = (round_cnt * 2 + 1) * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr1[Bank_id];
                 cr_output_streams[Bank_id + PACK_SIZE].write(pld);
                 local_npld_incr ++;
                 #ifndef __SYNTHESIS__
                 if (line_tracing_spmspv_checkout) {
-                    std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / " << num_rounds << "]" << std::endl << std::flush;
-                    std::cout << " non-zero " << pld.val << " found at " << pld.index - mat_row_id_base << " mapped to " << pld.index
-                              << std::endl << std::flush;
+                    std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / "
+                              << num_rounds << "]" << std::endl << std::flush;
+                    std::cout << " non-zero " << pld.val << " found at " << pld.index - mat_row_id_base
+                              << " mapped to " << pld.index << std::endl << std::flush;
                 }
                 #endif
             }
@@ -217,11 +235,11 @@ static void checkout_results(
 
 
 // write back to ddr (out-of-order)
-static void write_back_gmem(
-    hls::stream<VEC_PKT_T> wb_input_streams[PACK_SIZE * 2],
+void write_back_gmem(
+    hls::stream<SPMSPV_VEC_PKT_T> wb_input_streams[PACK_SIZE * 2],
     hls::stream<IDX_T> &npld_stream,
-    VAL_T *mask,
-    VEC_PKT_T *result,
+    const VAL_T *mask,
+    SPMSPV_VEC_PKT_T *result,
     IDX_T Nnz,
     IDX_T &Nnz_incr,
     VAL_T zero,
@@ -238,7 +256,7 @@ static void write_back_gmem(
     while (!loop_exit) {
         #pragma HLS pipeline II=1
         #pragma HLS dependence variable=loop_exit inter distance=15 RAW True
-        VEC_PKT_T wb_temp;
+        SPMSPV_VEC_PKT_T wb_temp;
         if (wb_input_streams[Lane_id].read_nb(wb_temp)) {
             wb_cnt ++;
             bool do_write;
@@ -270,36 +288,39 @@ static void write_back_gmem(
     Nnz_incr = incr;
 }
 
-// reset output buffer
-static void reset_output_buffer(
-    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
-    IDX_T num_rows,
-    VAL_T Zero
-) {
-    unsigned int num_rounds = (num_rows + PACK_SIZE - 1) / PACK_SIZE;
-    loop_reset_ob:
-    for (unsigned int i = 0; i < num_rounds; i++) {
-        #pragma HLS pipeline II=1
-        for (unsigned int j = 0; j < PACK_SIZE; j++) {
-            #pragma HLS unroll
-            output_buffer[j][i] = Zero;
-        }
-    }
 
-    #ifndef __SYNTHESIS__
-    if (line_tracing_spmspv) {
-        std::cout << "INFO: [Kernel SpMSpV] Output Buffer reset complete" << std::endl << std::flush;
-    }
-    #endif
-}
+// // reset output buffer
+// void reset_output_buffer(
+//     VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
+//     IDX_T num_rows,
+//     VAL_T Zero
+// ) {
+//     #pragma HLS pipeline II=1
+//     unsigned int num_rounds = (num_rows + PACK_SIZE - 1) / PACK_SIZE;
+//     loop_reset_ob:
+//     for (unsigned int i = 0; i < num_rounds; i++) {
+//         #pragma HLS pipeline II=1
+//         for (unsigned int j = 0; j < PACK_SIZE; j++) {
+//             #pragma HLS unroll
+//             output_buffer[j][i] = Zero;
+//         }
+//     }
+
+//     #ifndef __SYNTHESIS__
+//     if (line_tracing_spmspv) {
+//         std::cout << "INFO: [Kernel SpMSpV] Output Buffer reset complete" << std::endl << std::flush;
+//     }
+//     #endif
+// }
+
 
 // compute
-static void compute_spmspv(
-    MAT_PKT_T *matrix,
-    IDX_T *mat_indptr,
-    IDX_T *mat_partptr,
-    VEC_PKT_T *vector,
-    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
+void compute_spmspv(
+    const SPMSPV_MAT_PKT_T *matrix,
+    const IDX_T *mat_indptr,
+    const IDX_T *mat_partptr,
+    const SPMSPV_VEC_PKT_T *vector,
+    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     IDX_T vec_num_nnz,
     IDX_T mat_indptr_base,
     IDX_T mat_row_id_base,
@@ -360,7 +381,15 @@ static void compute_spmspv(
     }
     #endif
 
-    float_pe_cluster<VAL_T, OP_T, SF_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / PACK_SIZE>(
+    // fixed_point_pe_cluster_spmspv<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+    //     SF_to_PE_stream,
+    //     output_buffer,
+    //     Op,
+    //     Zero,
+    //     SF_to_PE_npld_stream
+    // );
+
+    float_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
         SF_to_PE_stream,
         output_buffer,
         Op,
@@ -374,7 +403,6 @@ static void compute_spmspv(
     }
     #endif
 
-
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
         std::cout << "INFO: [Kernel SpMSpV] Computation complete" << std::endl << std::flush;
@@ -382,11 +410,12 @@ static void compute_spmspv(
     #endif
 }
 
+
 // write back
-static void write_back_results(
-    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
-    VEC_PKT_T *result,
-    VAL_T *mask,
+void write_back_results(
+    const VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
+    SPMSPV_VEC_PKT_T *result,
+    const VAL_T *mask,
     IDX_T num_rows,
     IDX_T result_Nnz,
     IDX_T &result_Nnz_incr,
@@ -394,7 +423,7 @@ static void write_back_results(
     VAL_T zero,
     MASK_T mask_type
 ) {
-    hls::stream<VEC_PKT_T> CR_to_WB_stream[PACK_SIZE * 2];
+    hls::stream<SPMSPV_VEC_PKT_T> CR_to_WB_stream[PACK_SIZE * 2];
     hls::stream<IDX_T> CR_to_WB_npld_stream;
     #pragma HLS stream variable=CR_to_WB_npld_stream depth=2
     #pragma HLS stream variable=CR_to_WB_stream depth=64
@@ -434,43 +463,21 @@ static void write_back_results(
     #endif
 }
 
-extern "C" {
+
 void kernel_spmspv(
-    MAT_PKT_T *matrix,   // 0
-    IDX_T *mat_indptr,   // 1
-    IDX_T *mat_partptr,  // 2
-    VEC_PKT_T *vector,   // 3
-    VAL_T *mask,         // 4
-    VEC_PKT_T *result,   // 5
-    IDX_T num_rows,      // 6
-    IDX_T num_cols,      // 7
-    OP_T Op,             // 8
-    MASK_T Mask_type     // 9
+    const SPMSPV_MAT_PKT_T *matrix,
+    const IDX_T *mat_indptr,
+    const IDX_T *mat_partptr,
+    const SPMSPV_VEC_PKT_T *vector,
+    const VAL_T *mask,
+    SPMSPV_VEC_PKT_T *result,
+    IDX_T num_rows,
+    IDX_T num_cols,
+    OP_T Op,
+    MASK_T mask_type,
+    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
 ) {
-    #pragma HLS data_pack variable=matrix
-    #pragma HLS data_pack variable=vector
-    #pragma HLS data_pack variable=result
-
-    #pragma HLS interface m_axi port=matrix       offset=slave bundle=gmem1
-    #pragma HLS interface m_axi port=mat_indptr   offset=slave bundle=gmem0
-    #pragma HLS interface m_axi port=mat_partptr  offset=slave bundle=gmem0
-    #pragma HLS interface m_axi port=mask         offset=slave bundle=gmem0
-    #pragma HLS interface m_axi port=vector       offset=slave bundle=gmem2
-    #pragma HLS interface m_axi port=result       offset=slave bundle=gmem2
-
-    #pragma HLS interface s_axilite port=matrix       bundle=control
-    #pragma HLS interface s_axilite port=mat_indptr   bundle=control
-    #pragma HLS interface s_axilite port=mat_partptr  bundle=control
-    #pragma HLS interface s_axilite port=mask         bundle=control
-    #pragma HLS interface s_axilite port=vector       bundle=control
-    #pragma HLS interface s_axilite port=result       bundle=control
-
-    #pragma HLS interface s_axilite port=num_rows   bundle=control
-    #pragma HLS interface s_axilite port=num_cols   bundle=control
-    #pragma HLS interface s_axilite port=Op         bundle=control
-    #pragma HLS interface s_axilite port=Mask_type  bundle=control
-
-    #pragma HLS interface s_axilite port=return     bundle=control
+    #pragma HLS inline off
 
     IDX_T vec_num_nnz = vector[0].index;
     VAL_T Zero;
@@ -489,17 +496,6 @@ void kernel_spmspv(
         Zero = 0;
         break;
     }
-
-    // output buffer
-    VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE];
-    #pragma HLS array_partition variable=output_buffer dim=1 complete
-    // #pragma HLS resource variable=output_buffer core=RAM_2P
-    #pragma HLS resource variable=output_buffer core=XPM_MEMORY uram latency=2
-    /*
-        If we do not specify the latency here, the tool will automatically decide the latency of the URAM,
-        which could cause problems for the PE due to RAW hazards.
-        The URAM latency could be 1, 2, 3, or 4. If specified, it will be applied to both read and write.
-    */
 
     // result Nnz counter
     IDX_T result_Nnz = 0;
@@ -526,11 +522,22 @@ void kernel_spmspv(
             std::cout << "          indptr base: " << mat_indptr_base << std::endl << std::flush;
         }
         #endif
-        reset_output_buffer(
-            output_buffer,
-            num_rows_this_part,
-            Zero
-        );
+        // reset_output_buffer(
+        //     output_buffer,
+        //     num_rows_this_part,
+        //     Zero
+        // );
+        loop_reset_output_buffer:
+        for (int i = 0; i < (num_rows_this_part + SPMV_NUM_PE_TOTAL - 1) / SPMV_NUM_PE_TOTAL; i++) {
+            #pragma HLS UNROLL factor=2
+            for (int c = 0; c < NUM_HBM_CHANNEL; c++) {
+                #pragma HLS UNROLL
+                for (int PE_idx = 0; PE_idx < PACK_SIZE; PE_idx++) {
+                    #pragma HLS UNROLL
+                    output_buffer[c][PE_idx][i] = Zero;
+                }
+            }
+        }
         compute_spmspv(
             matrix,
             mat_indptr,
@@ -553,19 +560,20 @@ void kernel_spmspv(
             result_Nnz_incr,
             mat_row_id_base,
             Zero,
-            Mask_type
+            mask_type
         );
         result_Nnz += result_Nnz_incr;
         #ifndef __SYNTHESIS__
         if (line_tracing_spmspv) {
-            std::cout << "INFO: [Kernel SpMSpV] Partition " << part_id <<" complete" << std::endl << std::flush;
+            std::cout << "INFO: [Kernel SpMSpV] Partition " << part_id
+                      << " complete" << std::endl << std::flush;
             std::cout << "     Nnz written back: " << result_Nnz << std::endl << std::flush;
         }
         #endif
     }
 
     // attach head
-    VEC_PKT_T result_head;
+    SPMSPV_VEC_PKT_T result_head;
     result_head.index = result_Nnz;
     result_head.val = Zero;
     result[0] = result_head;
@@ -576,5 +584,3 @@ void kernel_spmspv(
     }
     #endif
 }
-
-}  // extern "C"

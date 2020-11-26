@@ -19,6 +19,18 @@ using graphlily::io::CPSRMatrix;
 using graphlily::io::csr2cpsr;
 
 
+namespace {
+template<typename virtual_packed_t, uint32_t virtual_pack_size, typename packed_t, uint32_t pack_size>
+inline packed_t _slice(const virtual_packed_t &in, uint32_t start_idx) {
+    packed_t out;
+    for (size_t i = 0; i < pack_size; i++) {
+        out.data[i] = in.data[i + start_idx];
+    }
+    return out;
+}
+}  // namespace
+
+
 namespace graphlily {
 namespace module {
 
@@ -44,7 +56,7 @@ private:
     using packed_val_t = typename CPSRMatrix<val_t, graphlily::pack_size>::packed_val_t;
     using packed_idx_t = typename CPSRMatrix<val_t, graphlily::pack_size>::packed_idx_t;
     using mat_pkt_t = struct {packed_idx_t indices; packed_val_t vals;};
-    using partition_indptr_t = struct {graphlily::idx_t start; packed_idx_t nnz;};
+    using partition_indptr_t = struct {graphlily::idx_t start; unsigned max_nnz; packed_idx_t nnz;};
 
     using aligned_idx_t = std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>>;
     using aligned_dense_vec_t = std::vector<val_t, aligned_allocator<val_t>>;
@@ -59,16 +71,12 @@ private:
     aligned_dense_vec_t vector_;
     /*! \brief Internal copy of mask */
     aligned_dense_vec_t mask_;
-    /*! \brief The argument index of mask to be used in setArg */
-    uint32_t arg_idx_mask_;
     /*! \brief The kernel results */
     aligned_dense_vec_t results_;
     /*! \brief The sparse matrix using float data type in CSR format */
     CSRMatrix<float> csr_matrix_float_;
     /*! \brief The sparse matrix in CSR format */
     CSRMatrix<val_t> csr_matrix_;
-    /*! \brief The sparse matrix in CPSR format */
-    CPSRMatrix<val_t, graphlily::pack_size> cpsr_matrix_;
 
 public:
     // Device buffers
@@ -83,22 +91,21 @@ private:
      */
     void _check_data_type();
 
-    /*!
-     * \brief Get the kernel configuration.
-     * \param num_channels The number of channels.
-     * \param out_buf_len The length of output buffer.
-     * \param vec_buf_len The length of vector buffer.
-     */
-    void _get_kernel_config(uint32_t num_channels,
-                            uint32_t out_buf_len,
-                            uint32_t vec_buf_len);
-
 public:
     SpMVModule(uint32_t num_channels,
                uint32_t out_buf_len,
-               uint32_t vec_buf_len) : BaseModule("kernel_spmv") {
+               uint32_t vec_buf_len) : BaseModule("kernel_spmv_spmspv") {
         this->_check_data_type();
-        this->_get_kernel_config(num_channels, out_buf_len, vec_buf_len);
+        this->num_channels_ = num_channels;
+        this->out_buf_len_ = out_buf_len;
+        this->vec_buf_len_ = vec_buf_len;
+    }
+
+    void set_unused_args() override {
+        // The first 6 arguments are used by SpMSpV
+        for (int i = 0; i < 6; i++) {
+            this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        }
     }
 
     /*!
@@ -216,60 +223,12 @@ public:
     graphlily::aligned_dense_float_vec_t
     compute_reference_results(graphlily::aligned_dense_float_vec_t &vector,
                               graphlily::aligned_dense_float_vec_t &mask);
-
-    void generate_kernel_header() override;
-
-    void generate_kernel_ini() override;
 };
 
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::_check_data_type() {
     assert((std::is_same<matrix_data_t, vector_data_t>::value));
-}
-
-
-template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::_get_kernel_config(uint32_t num_channels,
-                                                                  uint32_t out_buf_len,
-                                                                  uint32_t vec_buf_len) {
-    this->num_channels_ = num_channels;
-    this->out_buf_len_ = out_buf_len;
-    this->vec_buf_len_ = vec_buf_len;
-}
-
-
-template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
-    header << "const unsigned OUT_BUF_LEN = " << this->out_buf_len_ << ";" << std::endl;
-    header << "const unsigned VEC_BUF_LEN = " << this->vec_buf_len_ << ";" << std::endl;
-    header << "const unsigned NUM_HBM_CHANNEL = " << this->num_channels_ << ";" << std::endl;
-    header << "#define NUM_HBM_CHANNEL " << this->num_channels_ << std::endl;
-    header << "const unsigned NUM_PE_TOTAL = "
-           << this->num_channels_ * graphlily::pack_size << ";" << std::endl;
-    header.close();
-}
-
-
-template<typename matrix_data_t, typename vector_data_t>
-void SpMVModule<matrix_data_t, vector_data_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
-    ini << "[connectivity]" << std::endl;
-    // HBM
-    for (size_t hbm_idx = 0; hbm_idx < this->num_channels_; hbm_idx++) {
-        ini << "sp=kernel_spmv_1.channel_" << hbm_idx << "_matrix:HBM[" << hbm_idx << "]" << std::endl;
-    }
-    ini << "sp=kernel_spmv_1.vector:DDR[0]" << std::endl;
-    ini << "sp=kernel_spmv_1.mask:DDR[0]" << std::endl;
-    ini << "sp=kernel_spmv_1.out:DDR[0]" << std::endl;
-    ini.close();
 }
 
 
@@ -282,51 +241,81 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
     this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buf_len_ - 1) / this->out_buf_len_;
     this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vec_buf_len_ - 1) / this->vec_buf_len_;
     size_t num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
-    this->cpsr_matrix_ = csr2cpsr<val_t, graphlily::pack_size>(
+    const uint32_t virtual_pack_size = graphlily::pack_size * graphlily::num_cycles_float_add;
+    CPSRMatrix<val_t, virtual_pack_size> cpsr_matrix = csr2cpsr<val_t, virtual_pack_size>(
         this->csr_matrix_,
         graphlily::idx_marker,
         this->out_buf_len_,
         this->vec_buf_len_,
         this->num_channels_,
         skip_empty_rows);
-    std::vector<aligned_partition_indptr_t> channel_partition_indptr(this->num_channels_);
-    std::vector<aligned_packed_idx_t> channel_indices(this->num_channels_);
-    std::vector<aligned_packed_val_t> channel_vals(this->num_channels_);
+    // Data types to support virtual pack size
+    using virtual_packed_idx_t = typename CPSRMatrix<val_t, virtual_pack_size>::packed_idx_t;
+    using virtual_packed_val_t = typename CPSRMatrix<val_t, virtual_pack_size>::packed_val_t;
+    using virtual_partition_indptr_t = struct {graphlily::idx_t start; unsigned max_nnz; virtual_packed_idx_t nnz;};
+    using aligned_virtual_packed_idx_t = std::vector<virtual_packed_idx_t, aligned_allocator<virtual_packed_idx_t>>;
+    using aligned_virtual_packed_val_t = std::vector<virtual_packed_val_t, aligned_allocator<virtual_packed_val_t>>;
+    using aligned_virtual_partition_indptr_t = std::vector<virtual_partition_indptr_t, aligned_allocator<virtual_partition_indptr_t>>;
+    // Intermediate data of the above data types
+    std::vector<aligned_virtual_packed_idx_t> channel_indices(this->num_channels_);
+    std::vector<aligned_virtual_packed_val_t> channel_vals(this->num_channels_);
+    std::vector<aligned_virtual_partition_indptr_t> channel_partition_indptr(this->num_channels_);
     this->channel_packets_.resize(this->num_channels_);
     for (size_t c = 0; c < this->num_channels_; c++) {
         channel_partition_indptr[c].resize(num_partitions);
         channel_partition_indptr[c][0].start = 0;
     }
+    // Iterate the channels
     for (size_t c = 0; c < this->num_channels_; c++) {
         for (size_t j = 0; j < this->num_row_partitions_; j++) {
             for (size_t i = 0; i < this->num_col_partitions_; i++) {
-                auto indices_partition = this->cpsr_matrix_.get_packed_indices(j, i, c);
+                auto indices_partition = cpsr_matrix.get_packed_indices(j, i, c);
                 channel_indices[c].insert(channel_indices[c].end(),
                     indices_partition.begin(), indices_partition.end());
-                auto vals_partition = this->cpsr_matrix_.get_packed_data(j, i, c);
+                auto vals_partition = cpsr_matrix.get_packed_data(j, i, c);
                 channel_vals[c].insert(channel_vals[c].end(),
                     vals_partition.begin(), vals_partition.end());
                 assert(indices_partition.size() == vals_partition.size());
-                auto indptr_partition = this->cpsr_matrix_.get_packed_indptr(j, i, c);
+                auto indptr_partition = cpsr_matrix.get_packed_indptr(j, i, c);
                 if (!((j == (this->num_row_partitions_ - 1)) && (i == (this->num_col_partitions_ - 1)))) {
                     channel_partition_indptr[c][j*this->num_col_partitions_ + i + 1].start =
                         channel_partition_indptr[c][j*this->num_col_partitions_ + i].start
                         + indices_partition.size();
                 }
                 channel_partition_indptr[c][j*this->num_col_partitions_ + i].nnz = indptr_partition.back();
+                uint32_t max_nnz = *std::max_element(indptr_partition.back().data,
+                                                     indptr_partition.back().data + virtual_pack_size);
+                assert(indices_partition.size() == max_nnz);
+                channel_partition_indptr[c][j*this->num_col_partitions_ + i].max_nnz = max_nnz;
             }
         }
         assert(channel_indices[c].size() == channel_vals[c].size());
-        this->channel_packets_[c].resize(2*num_partitions + channel_indices[c].size());
+        this->channel_packets_[c].resize(num_partitions*(1+graphlily::num_cycles_float_add)
+                                         + channel_indices[c].size()*graphlily::num_cycles_float_add);
         // partition indptr
         for (size_t i = 0; i < num_partitions; i++) {
-            this->channel_packets_[c][2*i].indices.data[0] = channel_partition_indptr[c][i].start;
-            this->channel_packets_[c][2*i + 1].indices = channel_partition_indptr[c][i].nnz;
+            this->channel_packets_[c][i*(1+graphlily::num_cycles_float_add)].indices.data[0] =
+                channel_partition_indptr[c][i].start * graphlily::num_cycles_float_add;
+            this->channel_packets_[c][i*(1+graphlily::num_cycles_float_add)].indices.data[1] =
+                channel_partition_indptr[c][i].max_nnz * graphlily::num_cycles_float_add;
+            for (size_t k = 0; k < graphlily::num_cycles_float_add; k++) {
+                this->channel_packets_[c][i*(1+graphlily::num_cycles_float_add) + 1 + k].indices =
+                    _slice<virtual_packed_idx_t, virtual_pack_size, packed_idx_t, graphlily::pack_size>(
+                        channel_partition_indptr[c][i].nnz, k*graphlily::pack_size);
+            }
         }
         // matrix indices and vals
+        uint32_t offset = num_partitions*(1+graphlily::num_cycles_float_add);
         for (size_t i = 0; i < channel_indices[c].size(); i++) {
-            this->channel_packets_[c][2*num_partitions + i].indices = channel_indices[c][i];
-            this->channel_packets_[c][2*num_partitions + i].vals = channel_vals[c][i];
+            for (size_t k = 0; k < graphlily::num_cycles_float_add; k++) {
+                uint32_t ii = i * graphlily::num_cycles_float_add + k;
+                this->channel_packets_[c][offset + ii].indices =
+                    _slice<virtual_packed_idx_t, virtual_pack_size, packed_idx_t, graphlily::pack_size>(
+                        channel_indices[c][i], k*graphlily::pack_size);
+                this->channel_packets_[c][offset + ii].vals =
+                    _slice<virtual_packed_val_t, virtual_pack_size, packed_val_t, graphlily::pack_size>(
+                        channel_vals[c][i], k*graphlily::pack_size);
+            }
         }
     }
     this->vector_.resize(this->csr_matrix_.num_cols);
@@ -367,17 +356,15 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
         &results_ext,
         &err));
     // Set arguments
-    size_t arg_idx = 1;  // the first argument (arg_idx = 0) is the dense vector
     for (size_t c = 0; c < this->num_channels_; c++) {
-        OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->channel_packets_buf[c]));
+        OCL_CHECK(err, err = this->kernel_.setArg(6 + c, this->channel_packets_buf[c]));
     }
-    this->arg_idx_mask_ = arg_idx;  // mask is right before results
-    arg_idx++;
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->results_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, this->csr_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->kernel_.setArg(arg_idx++, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 2, this->results_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 3, this->csr_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 4, this->csr_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 5, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 6, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 7, 0));  // 0 is SpMV; 1 is SpMSpV
     // Send data to device
     for (size_t c = 0; c < this->num_channels_; c++) {
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(
@@ -400,7 +387,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
                 sizeof(val_t) * this->csr_matrix_.num_cols,
                 &vector_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(0, this->vector_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 0, this->vector_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
     this->command_queue_.finish();
 }
@@ -419,7 +406,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
                 sizeof(val_t) * this->csr_matrix_.num_rows,
                 &mask_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->arg_idx_mask_, this->mask_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 1, this->mask_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
     this->command_queue_.finish();
 }

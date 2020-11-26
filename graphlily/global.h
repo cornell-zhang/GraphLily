@@ -53,12 +53,16 @@ const int HBM[MAX_HBM_CHANNEL_COUNT] = {
 
 const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 
+// Kernel configurations
+const uint32_t pack_size = 8;
+const uint32_t num_cycles_float_add = 10;
+const uint32_t num_hbm_channels = 8;
+
 // Data types (please change this according to the kernel!)
 // using val_t = ap_ufixed<32, 16, AP_RND, AP_SAT>;
 using val_t = float;
 typedef uint32_t idx_t;
 const uint32_t idx_marker = 0xffffffff;
-const uint32_t pack_size = 8;
 typedef struct {idx_t data[pack_size];} packed_idx_t;
 
 typedef struct {idx_t index; float val;} index_float_t;
@@ -141,11 +145,13 @@ const std::string proj_folder_name = "proj";
 //------------------------------------------
 
 // convert a sparse vector to dense
-template <typename sparse_vec_t, typename dense_vec_t>
-dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector, uint32_t range) {
-    int nnz = sparse_vector[0].index;
+template <typename sparse_vec_t, typename dense_vec_t, typename val_t>
+dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector,
+                                            uint32_t range,
+                                            val_t zero) {
     dense_vec_t dense_vector(range);
-    std::fill(dense_vector.begin(), dense_vector.end(), 0);
+    std::fill(dense_vector.begin(), dense_vector.end(), zero);
+    int nnz = sparse_vector[0].index;
     for (int i = 1; i < nnz + 1; i++) {
         dense_vector[sparse_vector[i].index] = sparse_vector[i].val;
     }

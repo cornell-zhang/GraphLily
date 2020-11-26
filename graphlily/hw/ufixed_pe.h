@@ -73,7 +73,7 @@ ValT pe_add_alu(ValT a, ValT b, ValT z, OpT op, bool en) {
 // TODO: Do we really need to expose addr_shamt as an argument? Can it be inferred?
 template<typename ValT, typename OpT, typename PayloadT,
          unsigned num_PE, unsigned addr_shamt, unsigned bank_size>
-void pe_cluster(
+void ufixed_pe_cluster_spmv_bram(
     hls::stream<PayloadT> input_payloads[num_PE],
     ValT output_buffer[num_PE][bank_size],
     OpT Op,

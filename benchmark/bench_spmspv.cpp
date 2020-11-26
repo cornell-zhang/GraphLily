@@ -88,7 +88,7 @@ BenchCase set_up_bench_case(std::string matrix_file_name, graphlily::SemiringTyp
     }
 
     bcase.semiring = semiring;
-    switch (semiring.op)  {
+    switch (semiring.op) {
     case graphlily::kMulAdd:
         bcase.info.semiring_str = "Arithmetic";
         break;
@@ -191,7 +191,7 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
 
     // convert sparse vector to dense vector
     aligned_dense_vector_t kernel_results_dense(matrix.num_rows,benchmark_case.semiring.zero);
-    for (size_t i = 1; i < kernel_results[0].index + 1; i++)  {
+    for (size_t i = 1; i < kernel_results[0].index + 1; i++) {
         kernel_results_dense[kernel_results[i].index] = kernel_results[i].val;
     }
 
@@ -288,9 +288,9 @@ int main(int argc, char *argv[]) {
 
     spmspv_module.set_up_runtime(xclbin);
 
-    for (size_t mat_id = 0; mat_id < matrix_set.size(); mat_id++)  {
-        for (size_t semiring_id = 0; semiring_id < semiring_set.size(); semiring_id++)  {
-            for (size_t vec_sp_id = 0; vec_sp_id < vector_sparsity_set.size(); vec_sp_id++)  {
+    for (size_t mat_id = 0; mat_id < matrix_set.size(); mat_id++) {
+        for (size_t semiring_id = 0; semiring_id < semiring_set.size(); semiring_id++) {
+            for (size_t vec_sp_id = 0; vec_sp_id < vector_sparsity_set.size(); vec_sp_id++) {
                 benchmark_results.push_back(
                     run_bench_case(
                         spmspv_module,
@@ -307,7 +307,7 @@ int main(int argc, char *argv[]) {
     }
 
     bool all_passed = true;
-    for (size_t i = 0; i < benchmark_results.size(); i++)  {
+    for (size_t i = 0; i < benchmark_results.size(); i++) {
         all_passed = all_passed && (benchmark_results[i].avg_time_ms >= 0);
     }
 
@@ -326,7 +326,7 @@ int main(int argc, char *argv[]) {
                 << std::endl;
     std::cout << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
 
-    for (size_t i = 0; i < benchmark_results.size(); i++)  {
+    for (size_t i = 0; i < benchmark_results.size(); i++) {
         std::cout << "  "
                 << std::setw(50) << benchmark_results[i].info.name
                 << std::setw(20) << benchmark_results[i].info.semiring_str
@@ -355,7 +355,7 @@ int main(int argc, char *argv[]) {
                 << std::endl;
     // result_log_file << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
 
-    for (size_t i = 0; i < benchmark_results.size(); i++)  {
+    for (size_t i = 0; i < benchmark_results.size(); i++) {
         if (i % vector_sparsity_set.size() == 0) {
             result_log_file << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
         }

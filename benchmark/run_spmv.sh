@@ -1,7 +1,9 @@
 make bench_spmv
 
 num_channels=8
-bitstream=/work/shared/common/research/graphblas/bitstreams/spmv_8_channel_8_pack_128K_VecBuf_168MHz.xclbin
+
+bitstream=/work/shared/common/research/graphblas/bitstreams/
+bitstream+=spmv_8_channel_8_pack_128K_VecBuf_320K_OutBuf_II_1_write_188MHz.xclbin
 
 PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
 
