@@ -34,7 +34,17 @@ public:
     cl::Buffer inout_buf;
 
 public:
-    AssignVectorDenseModule() : BaseModule("kernel_assign_vector_dense") {}
+    AssignVectorDenseModule() : BaseModule("kernel_apply") {}
+
+    void set_unused_args() override {
+        this->kernel_.setArg(2, cl::Buffer(this->context_, 0, 4));
+        this->kernel_.setArg(3, cl::Buffer(this->context_, 0, 4));
+        this->kernel_.setArg(4, cl::Buffer(this->context_, 0, 4));
+    }
+
+    void set_mode() override {
+        this->kernel_.setArg(8, 2);  // 2 is kernel_assign_vector_dense
+    }
 
     /*!
      * \brief Set the mask type.
@@ -113,53 +123,12 @@ public:
                                    graphlily::aligned_dense_float_vec_t &inout,
                                    uint32_t len,
                                    float val);
-
-    void generate_kernel_header() override;
-
-    void generate_kernel_ini() override;
 };
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h");
-    // Data types
-    header << "const unsignedK_SIZE = " << graphlily::pack_size << ";" << std::endl;
-    header << "typedef struct {VAL_T data[PACK_SIZE];}" << " PACKED_VAL_T;" << std::endl;
-    // Mask
-    switch (this->mask_type_) {
-        case graphlily::kMaskWriteToZero:
-            header << "#define MASK_WRITE_TO_ZERO" << std::endl;
-            break;
-        case graphlily::kMaskWriteToOne:
-            header << "#define MASK_WRITE_TO_ONE" << std::endl;
-            break;
-        default:
-            std::cerr << "Invalid mask type" << std::endl;
-            break;
-    }
-    header.close();
-}
-
-
-template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
-    ini << "[connectivity]" << std::endl;
-    ini << "sp=kernel_assign_vector_dense_1.mask:DDR[0]" << std::endl;
-    ini << "sp=kernel_assign_vector_dense_1.inout:DDR[0]" << std::endl;
-    ini.close();
-}
-
-
-template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
+    this->kernel_.setArg(7, (char)this->mask_type_);
     this->mask_.assign(mask.begin(), mask.end());
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
@@ -199,12 +168,12 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
-    OCL_CHECK(err, err = this->kernel_.setArg(2, len));
+    OCL_CHECK(err, err = this->kernel_.setArg(5, len));
     // To avoid runtime error of invalid scalar argument size
     if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
-        OCL_CHECK(err, err = this->kernel_.setArg(3, 8, (void*)&val));
+        OCL_CHECK(err, err = this->kernel_.setArg(6, 8, (void*)&val));
     } else {
-        OCL_CHECK(err, err = this->kernel_.setArg(3, val));
+        OCL_CHECK(err, err = this->kernel_.setArg(6, val));
     }
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();
@@ -212,10 +181,12 @@ void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val
 
 
 template<typename vector_data_t>
-void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphlily::aligned_dense_float_vec_t &mask,
-                                                                       graphlily::aligned_dense_float_vec_t &inout,
-                                                                       uint32_t len,
-                                                                       float val) {
+void AssignVectorDenseModule<vector_data_t>::compute_reference_results(
+    graphlily::aligned_dense_float_vec_t &mask,
+    graphlily::aligned_dense_float_vec_t &inout,
+    uint32_t len,
+    float val
+) {
     if (this->mask_type_ == graphlily::kMaskWriteToZero) {
         for (size_t i = 0; i < len; i++) {
             if (mask[i] == 0) {
@@ -233,7 +204,6 @@ void AssignVectorDenseModule<vector_data_t>::compute_reference_results(graphlily
         exit(EXIT_FAILURE);
     }
 }
-
 
 }  // namespace module
 }  // namespace graphlily

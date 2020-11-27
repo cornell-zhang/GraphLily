@@ -22,7 +22,7 @@ using graphlily::io::formatCSC;
 namespace graphlily {
 namespace module {
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
 class SpMSpVModule : public BaseModule {
 private:
     /*! \brief The mask type */
@@ -36,14 +36,12 @@ private:
     /*! \brief The number of packets */
     uint32_t num_packets_;
 
-    // using val_t = vector_data_t;
-    // using index_val_t = struct {val_t val; idx_t index;};
     using packet_t = struct {graphlily::idx_t indices[graphlily::pack_size];
                              matrix_data_t vals[graphlily::pack_size];};
 
     using aligned_idx_t = std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>>;
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
-    using aligned_sparse_vec_t = std::vector<index_val_t, aligned_allocator<index_val_t>>;
+    using aligned_sparse_vec_t = std::vector<idx_val_t, aligned_allocator<idx_val_t>>;
     using aligned_packet_t = std::vector<packet_t, aligned_allocator<packet_t>>;
 
     /*! \brief Matrix packets (indices + vals) */
@@ -94,6 +92,10 @@ public:
         }
     }
 
+    void set_mode() override {
+        this->kernel_.setArg(6 + graphlily::num_hbm_channels + 7, 1);  // 0 is SpMV; 1 is SpMSpV
+    }
+
     /*!
      * \brief Get the number of rows of the sparse matrix.
      * \return The number of rows.
@@ -130,8 +132,6 @@ public:
                                                   (char)this->semiring_.op));
         OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 6,
                                                   (char)this->mask_type_));
-        OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 7,
-                                                  1));  // 0 is SpMV; 1 is SpMSpV
     }
 
     /*!
@@ -207,14 +207,14 @@ public:
 };
 
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::_check_data_type() {
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::_check_data_type() {
     assert((std::is_same<matrix_data_t, vector_data_t>::value));
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::load_and_format_matrix(
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::load_and_format_matrix(
         CSCMatrix<float> const &csc_matrix_float) {
     this->csc_matrix_float_ = csc_matrix_float;
     this->csc_matrix_ = graphlily::io::csc_matrix_convert_from_float<matrix_data_t>(csc_matrix_float);
@@ -235,12 +235,12 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::load_and_format_ma
     // prepare output memory
     this->results_.resize(this->get_num_rows() + 1);
 
-    std::fill(this->results_.begin(), this->results_.end(), (index_val_t){0,0});
+    std::fill(this->results_.begin(), this->results_.end(), (idx_val_t){0, 0});
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_to_device() {
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_device() {
     cl_int err;
     // Handle matrix packet, indptr and partptr
     cl_mem_ext_ptr_t channel_packets_ext;
@@ -306,7 +306,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
     // Allocate memory on the FPGA
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(index_val_t) * (this->get_num_rows() + 1),
+        sizeof(idx_val_t) * (this->get_num_rows() + 1),
         &results_ext,
         &err));
 
@@ -317,8 +317,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_matrix_host_t
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_to_device(
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_device(
         aligned_sparse_vec_t &vector) {
     cl_int err;
 
@@ -334,7 +334,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_t
 
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(index_val_t) * this->vector_.size(),
+                sizeof(idx_val_t) * this->vector_.size(),
                 &vector_ext,
                 &err));
 
@@ -349,8 +349,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_vector_host_t
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_mask_host_to_device(
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_device(
         aligned_dense_vec_t &mask) {
     cl_int err;
 
@@ -381,17 +381,17 @@ void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::send_mask_host_to_
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
-void SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::run() {
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
+void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::run() {
     cl_int err;
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();
 }
 
 
-template<typename matrix_data_t, typename vector_data_t, typename index_val_t>
+template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
 graphlily::aligned_dense_float_vec_t
-SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_results(
+SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::compute_reference_results(
         graphlily::aligned_sparse_float_vec_t &vector,
         graphlily::aligned_dense_float_vec_t &mask) {
     // measure dimensions
@@ -399,7 +399,7 @@ SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>::compute_reference_resul
     unsigned num_rows = this->csc_matrix_.num_rows;
 
     // create result container
-    aligned_dense_float_vec_t reference_results(num_rows,this->semiring_.zero);
+    aligned_dense_float_vec_t reference_results(num_rows, this->semiring_.zero);
 
     // indices of active columns are stored in vec_idx
     // number of active columns = vec_nnz_total

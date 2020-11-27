@@ -34,7 +34,7 @@ typedef struct vector_loader_out_type {
 // vector loader for spmspv
 void load_vector_from_gmem(
     // vector data, row_id
-    const SPMSPV_VEC_PKT_T *vector,
+    const IDX_VAL_T *vector,
     // number of non-zeros
     IDX_T vec_num_nnz,
     // fifo
@@ -151,7 +151,7 @@ void checkout_results(
     // data to be checked
     const VAL_T dense_data[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     // FIFOs
-    hls::stream<SPMSPV_VEC_PKT_T> cr_output_streams[PACK_SIZE * 2],
+    hls::stream<IDX_VAL_T> cr_output_streams[PACK_SIZE * 2],
     // control signals
     hls::stream<IDX_T> &npld_to_wb,
     IDX_T mat_row_id_base,
@@ -198,7 +198,7 @@ void checkout_results(
         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
             if (data_arr0[Bank_id] != zero) {
-                SPMSPV_VEC_PKT_T pld;
+                IDX_VAL_T pld;
                 pld.index = round_cnt * 2 * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr0[Bank_id];
                 cr_output_streams[Bank_id].write(pld);
@@ -213,7 +213,7 @@ void checkout_results(
                 #endif
             }
             if (data_arr1[Bank_id] != zero) {
-                SPMSPV_VEC_PKT_T pld;
+                IDX_VAL_T pld;
                 pld.index = (round_cnt * 2 + 1) * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr1[Bank_id];
                 cr_output_streams[Bank_id + PACK_SIZE].write(pld);
@@ -236,10 +236,10 @@ void checkout_results(
 
 // write back to ddr (out-of-order)
 void write_back_gmem(
-    hls::stream<SPMSPV_VEC_PKT_T> wb_input_streams[PACK_SIZE * 2],
+    hls::stream<IDX_VAL_T> wb_input_streams[PACK_SIZE * 2],
     hls::stream<IDX_T> &npld_stream,
     const VAL_T *mask,
-    SPMSPV_VEC_PKT_T *result,
+    IDX_VAL_T *result,
     IDX_T Nnz,
     IDX_T &Nnz_incr,
     VAL_T zero,
@@ -256,7 +256,7 @@ void write_back_gmem(
     while (!loop_exit) {
         #pragma HLS pipeline II=1
         #pragma HLS dependence variable=loop_exit inter distance=15 RAW True
-        SPMSPV_VEC_PKT_T wb_temp;
+        IDX_VAL_T wb_temp;
         if (wb_input_streams[Lane_id].read_nb(wb_temp)) {
             wb_cnt ++;
             bool do_write;
@@ -319,7 +319,7 @@ void compute_spmspv(
     const SPMSPV_MAT_PKT_T *matrix,
     const IDX_T *mat_indptr,
     const IDX_T *mat_partptr,
-    const SPMSPV_VEC_PKT_T *vector,
+    const IDX_VAL_T *vector,
     VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     IDX_T vec_num_nnz,
     IDX_T mat_indptr_base,
@@ -414,7 +414,7 @@ void compute_spmspv(
 // write back
 void write_back_results(
     const VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
-    SPMSPV_VEC_PKT_T *result,
+    IDX_VAL_T *result,
     const VAL_T *mask,
     IDX_T num_rows,
     IDX_T result_Nnz,
@@ -423,7 +423,7 @@ void write_back_results(
     VAL_T zero,
     MASK_T mask_type
 ) {
-    hls::stream<SPMSPV_VEC_PKT_T> CR_to_WB_stream[PACK_SIZE * 2];
+    hls::stream<IDX_VAL_T> CR_to_WB_stream[PACK_SIZE * 2];
     hls::stream<IDX_T> CR_to_WB_npld_stream;
     #pragma HLS stream variable=CR_to_WB_npld_stream depth=2
     #pragma HLS stream variable=CR_to_WB_stream depth=64
@@ -468,9 +468,9 @@ void kernel_spmspv(
     const SPMSPV_MAT_PKT_T *matrix,
     const IDX_T *mat_indptr,
     const IDX_T *mat_partptr,
-    const SPMSPV_VEC_PKT_T *vector,
+    const IDX_VAL_T *vector,
     const VAL_T *mask,
-    SPMSPV_VEC_PKT_T *result,
+    IDX_VAL_T *result,
     IDX_T num_rows,
     IDX_T num_cols,
     OP_T Op,
@@ -573,7 +573,7 @@ void kernel_spmspv(
     }
 
     // attach head
-    SPMSPV_VEC_PKT_T result_head;
+    IDX_VAL_T result_head;
     result_head.index = result_Nnz;
     result_head.val = Zero;
     result[0] = result_head;

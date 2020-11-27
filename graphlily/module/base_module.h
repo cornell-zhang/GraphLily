@@ -83,6 +83,12 @@ public:
     virtual void set_unused_args() = 0;
 
     /*!
+     * \brief Set the mode. SpMV and SpMSpV are merged into a single kernel; we need to select
+     *        one of them, so called the mode. Similarly, all apply functions are merged into one kernel.
+     */
+    virtual void set_mode() = 0;
+
+    /*!
      * \brief Load the xclbin file and set up runtime.
      * \param xclbin_file_path The xclbin file path.
      */
@@ -115,6 +121,8 @@ void BaseModule::set_up_runtime(std::string xclbin_file_path) {
                                                            &err));
     // Set unused arguments
     this->set_unused_args();
+    // Set the mode
+    this->set_mode();
 }
 
 }  // namespace module

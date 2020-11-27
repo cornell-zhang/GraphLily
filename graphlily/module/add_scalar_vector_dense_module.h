@@ -32,7 +32,18 @@ public:
     cl::Buffer out_buf;
 
 public:
-    eWiseAddModule() : BaseModule("kernel_add_scalar_vector_dense") {}
+    eWiseAddModule() : BaseModule("kernel_apply") {}
+
+    void set_unused_args() override {
+        this->kernel_.setArg(2, cl::Buffer(this->context_, 0, 4));
+        this->kernel_.setArg(3, cl::Buffer(this->context_, 0, 4));
+        this->kernel_.setArg(4, cl::Buffer(this->context_, 0, 4));
+        this->kernel_.setArg(7, char(0));
+    }
+
+    void set_mode() override {
+        this->kernel_.setArg(8, 1);  // 1 is kernel_add_scalar_vector_dense
+    }
 
     /*!
      * \brief Send the input vector from host to device.
@@ -88,37 +99,7 @@ public:
     compute_reference_results(graphlily::aligned_dense_float_vec_t const &in,
                               uint32_t len,
                               float val);
-
-    void generate_kernel_header() override;
-
-    void generate_kernel_ini() override;
 };
-
-
-template<typename vector_data_t>
-void eWiseAddModule<vector_data_t>::generate_kernel_header() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h");
-    // Data types
-    header << "const unsigned PACK_SIZE = " << graphlily::pack_size << ";" << std::endl;
-    header << "typedef struct {VAL_T data[PACK_SIZE];}" << " PACKED_VAL_T;" << std::endl;
-    header.close();
-}
-
-
-template<typename vector_data_t>
-void eWiseAddModule<vector_data_t>::generate_kernel_ini() {
-    std::string command = "mkdir -p " + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-    std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
-    ini << "[connectivity]" << std::endl;
-    ini << "sp=kernel_add_scalar_vector_dense_1.in:DDR[0]" << std::endl;
-    ini << "sp=kernel_add_scalar_vector_dense_1.out:DDR[0]" << std::endl;
-    ini.close();
-}
 
 
 template<typename vector_data_t>
@@ -162,12 +143,13 @@ void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
 template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
-    OCL_CHECK(err, err = this->kernel_.setArg(2, len));
+    // TODO: is the overhead of setArg and enqueueTask large at run time?
+    OCL_CHECK(err, err = this->kernel_.setArg(5, len));
     // To avoid runtime error of invalid scalar argument size
     if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
-        OCL_CHECK(err, err = this->kernel_.setArg(3, 8, (void*)&val));
+        OCL_CHECK(err, err = this->kernel_.setArg(6, 8, (void*)&val));
     } else {
-        OCL_CHECK(err, err = this->kernel_.setArg(3, val));
+        OCL_CHECK(err, err = this->kernel_.setArg(6, val));
     }
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();

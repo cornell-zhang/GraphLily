@@ -2,8 +2,10 @@ make bench_spmv
 
 num_channels=8
 
-bitstream=/work/shared/common/research/graphblas/bitstreams/
-bitstream+=spmv_8_channel_8_pack_128K_VecBuf_320K_OutBuf_II_1_write_188MHz.xclbin
+# bitstream=/work/shared/common/research/graphblas/bitstreams/
+# bitstream+=spmv_8_channel_8_pack_128K_VecBuf_320K_OutBuf_II_1_write_188MHz.xclbin
+
+bitstream=/home/yh457/Develop/graphlily-synthesize/merged_spmv_spmspv_8_channel_build/build_dir.hw/fused.xclbin
 
 PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
 

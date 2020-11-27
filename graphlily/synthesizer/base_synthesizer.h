@@ -107,6 +107,11 @@ void BaseSynthesizer::link_kernel_code() {
                     + " " + graphlily::proj_folder_name + "/" + this->kernel_name_ + ".cpp";
     std::cout << command << std::endl;
     system(command.c_str());
+
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + this->kernel_name_ + ".ini"
+                    + " " + graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini";
+    std::cout << command << std::endl;
+    system(command.c_str());
 }
 
 }  // namespace synthesizer

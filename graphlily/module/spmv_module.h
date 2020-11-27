@@ -108,6 +108,10 @@ public:
         }
     }
 
+    void set_mode() override {
+        this->kernel_.setArg(6 + this->num_channels_ + 7, 0);  // 0 is SpMV; 1 is SpMSpV
+    }
+
     /*!
      * \brief Set the semiring type.
      * \param semiring The semiring type.
@@ -364,7 +368,6 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 4, this->csr_matrix_.num_cols));
     OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 5, (char)this->semiring_.op));
     OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 6, (char)this->mask_type_));
-    OCL_CHECK(err, err = this->kernel_.setArg(6 + this->num_channels_ + 7, 0));  // 0 is SpMV; 1 is SpMSpV
     // Send data to device
     for (size_t c = 0; c < this->num_channels_; c++) {
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(

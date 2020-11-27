@@ -54,7 +54,8 @@ void SpmvSpmspvSynthesizer::generate_kernel_ini() {
     ini << "[connectivity]" << std::endl;
     // SpMV
     for (size_t hbm_idx = 0; hbm_idx < this->num_channels_; hbm_idx++) {
-        ini << "sp=kernel_spmv_spmspv_1.spmv_channel_" << hbm_idx << "_matrix:HBM[" << hbm_idx << "]" << std::endl;
+        ini << "sp=kernel_spmv_spmspv_1.spmv_channel_" << hbm_idx << "_matrix:HBM["
+            << hbm_idx << "]" << std::endl;
     }
     ini << "sp=kernel_spmv_spmspv_1.spmv_vector:DDR[0]" << std::endl;
     ini << "sp=kernel_spmv_spmspv_1.spmv_mask:DDR[0]" << std::endl;

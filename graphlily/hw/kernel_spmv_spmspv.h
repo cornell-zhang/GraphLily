@@ -21,17 +21,14 @@ typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
 typedef float VAL_T;
 typedef struct {VAL_T data[PACK_SIZE];} PACKED_VAL_T;
 
-typedef struct matrix_packet {
+typedef struct {
    PACKED_IDX_T indices;
    PACKED_VAL_T vals;
 } SPMV_MAT_PKT_T;
 
 typedef SPMV_MAT_PKT_T SPMSPV_MAT_PKT_T;
 
-typedef struct vector_packet {
-   IDX_T index;
-   VAL_T val;
-} SPMSPV_VEC_PKT_T;
+typedef struct {IDX_T index; VAL_T val;} IDX_VAL_T;
 
 // semiring
 typedef char OP_T;

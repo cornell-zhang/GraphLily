@@ -1,4 +1,5 @@
 #include "./kernel_spmv_spmspv.h"
+
 #include "./kernel_spmv_impl.h"
 #include "./kernel_spmspv_impl.h"
 
@@ -10,9 +11,9 @@ void kernel_spmv_spmspv(
     const SPMSPV_MAT_PKT_T *spmspv_matrix,
     const IDX_T *spmspv_matrix_indptr,
     const IDX_T *spmspv_matrix_partptr,
-    const SPMSPV_VEC_PKT_T *spmspv_vector,
+    const IDX_VAL_T *spmspv_vector,
     const VAL_T *spmspv_mask,
-    SPMSPV_VEC_PKT_T *spmspv_out,
+    IDX_VAL_T *spmspv_out,
     /*----------------- arguments for SpMV --------------------*/
 #if (NUM_HBM_CHANNEL >= 1)
     const SPMV_MAT_PKT_T *spmv_channel_0_matrix,
@@ -133,9 +134,9 @@ void kernel_spmv_spmspv(
 #pragma HLS INTERFACE m_axi port=spmv_channel_31_matrix offset=slave bundle=spmv_gmem31
 #endif
 
-#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem16
-#pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_gmem17
-#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_gmem18
+#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem32
+#pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_gmem33
+#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_gmem34
 
 #if (NUM_HBM_CHANNEL >= 1)
 #pragma HLS INTERFACE s_axilite port=spmv_channel_0_matrix bundle=control

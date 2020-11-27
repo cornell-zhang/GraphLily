@@ -30,10 +30,9 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 void bench_spmv(uint32_t num_channels, std::string bitstream, std::string dataset) {
-    uint32_t out_buf_len = 320 * 1024;
-    uint32_t vec_buf_len = 128 * 1024;
-    uint32_t num_hbm_channels = 8;
-    graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> spmv(num_hbm_channels,
+    uint32_t out_buf_len = 1000 * 1024;
+    uint32_t vec_buf_len = 30 * 1024;
+    graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> spmv(num_channels,
                                                                            out_buf_len,
                                                                            vec_buf_len);
     spmv.set_target("hw");
@@ -45,9 +44,10 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
     CSRMatrix<float> csr_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     for (auto &x : csr_matrix.adj_data) x = 1;
 
-    graphlily::io::util_round_csr_matrix_dim(csr_matrix,
-                                             num_channels * graphlily::pack_size,
-                                             graphlily::pack_size);
+    graphlily::io::util_round_csr_matrix_dim(
+        csr_matrix,
+        num_channels * graphlily::pack_size * graphlily::num_cycles_float_add,
+        graphlily::pack_size * graphlily::num_cycles_float_add);
 
     std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
     std::generate(vector_float.begin(), vector_float.end(), [&]{return float(rand() % 2);});
@@ -61,9 +61,15 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
 
     bool skip_empty_rows = true;
     spmv.load_and_format_matrix(csr_matrix, skip_empty_rows);
+
+    std::cout << "finished load_and_format_matrix" << std::endl;
+
     spmv.send_matrix_host_to_device();
     spmv.send_vector_host_to_device(vector);
     spmv.send_mask_host_to_device(mask);
+
+    std::cout << "start run" << std::endl;
+
     spmv.run();
 
     uint32_t num_runs = 100;

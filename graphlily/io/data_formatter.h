@@ -91,7 +91,7 @@ void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data
     uint32_t num_rows = adj_indptr.size() - 1;
     assert(num_rows % interleave_stride == 0);
 
-    bool row_is_empty[num_rows];
+    std::vector<bool> row_is_empty(num_rows);
     for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
         if (row_idx < interleave_stride) {
             // The first few rows should be inserted a marker whether empty or not
@@ -107,14 +107,14 @@ void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data
         }
     }
 
-    uint32_t cumulative_sum_nonempty_rows[num_rows];
+    std::vector<uint32_t> cumulative_sum_nonempty_rows(num_rows);
     cumulative_sum_nonempty_rows[0] = !row_is_empty[0];
     for (size_t row_idx = 1; row_idx < num_rows; row_idx++) {
         cumulative_sum_nonempty_rows[row_idx] = cumulative_sum_nonempty_rows[row_idx - 1]
                                                 + !row_is_empty[row_idx];
     }
 
-    data_type val_marker[num_rows];
+    std::vector<data_type> val_marker(num_rows);
     for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
         if (!row_is_empty[row_idx]) {
             val_marker[row_idx] = 1;
@@ -631,10 +631,10 @@ FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
     std::vector<std::vector<MatrixPacketT>> tile_ditpkt_buf(formatted_matrix.num_row_partitions);
 
     // tile nnz counter (temporary)
-    std::vector<unsigned> tile_nnz_cnt(formatted_matrix.num_row_partitions,0);
+    std::vector<unsigned> tile_nnz_cnt(formatted_matrix.num_row_partitions, 0);
 
     // tile packet counter (accumulative)
-    std::vector<unsigned> tile_pkt_cnt(formatted_matrix.num_row_partitions,0);
+    std::vector<unsigned> tile_pkt_cnt(formatted_matrix.num_row_partitions, 0);
 
     uint32_t total_num_packets = 0;
 

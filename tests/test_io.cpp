@@ -89,7 +89,7 @@ TEST(DataLoader, LoadCSRMatrixFromFloatNpz) {
     check_vector_equal<uint32_t>(csr_matrix.adj_indices,
                                  std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
     check_vector_equal<uint32_t>(csr_matrix.adj_indptr,
-                                 std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
+                                 std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
 }
 
 
@@ -103,7 +103,7 @@ TEST(DataLoader, CSRMatrixConvertFromFloat) {
     check_vector_equal<uint32_t>(csr_matrix_int.adj_indices,
                                  std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
     check_vector_equal<uint32_t>(csr_matrix_int.adj_indptr,
-                                 std::vector<uint32_t>{0,1,2,3, 4, 5, 6, 7, 8, 9, 10});
+                                 std::vector<uint32_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
 }
 
 
@@ -114,7 +114,7 @@ TEST(DataLoader, Csr2CSC) {
     ASSERT_EQ(csc_matrix.num_cols, uint32_t(4));
     check_vector_equal<float>(csc_matrix.adj_data, std::vector<float>{1, 5, 2, 7, 3, 6, 4, 8});
     check_vector_equal<uint32_t>(csc_matrix.adj_indices, std::vector<uint32_t>{0, 1, 0, 2, 0, 1, 0, 3});
-    check_vector_equal<uint32_t>(csc_matrix.adj_indptr, std::vector<uint32_t>{0, 2, 4, 6, 8,});
+    check_vector_equal<uint32_t>(csc_matrix.adj_indptr, std::vector<uint32_t>{0, 2, 4, 6, 8, });
 }
 
 
@@ -223,12 +223,12 @@ TEST(DataFormatter, PackRows) {
                                                              packed_indices,
                                                              packed_indptr);
 
-    std::vector<packed_val_t> reference_packed_data_channel_1 = {{1,5}, {2,6}, {3,0}, {4,0}};
-    std::vector<packed_idx_t> reference_packed_indices_channel_1 = {{0,0}, {1,2}, {2,0}, {3,0}};
-    std::vector<packed_idx_t> reference_packed_indptr_channel_1 = {{0,0}, {4,2}};
-    std::vector<packed_val_t> reference_packed_data_channel_2 = {{7,8}};
-    std::vector<packed_idx_t> reference_packed_indices_channel_2 = {{1,3}};
-    std::vector<packed_idx_t> reference_packed_indptr_channel_2 = {{0,0}, {1,1}};
+    std::vector<packed_val_t> reference_packed_data_channel_1 = {{1, 5}, {2, 6}, {3, 0}, {4, 0}};
+    std::vector<packed_idx_t> reference_packed_indices_channel_1 = {{0, 0}, {1, 2}, {2, 0}, {3, 0}};
+    std::vector<packed_idx_t> reference_packed_indptr_channel_1 = {{0, 0}, {4, 2}};
+    std::vector<packed_val_t> reference_packed_data_channel_2 = {{7, 8}};
+    std::vector<packed_idx_t> reference_packed_indices_channel_2 = {{1, 3}};
+    std::vector<packed_idx_t> reference_packed_indptr_channel_2 = {{0, 0}, {1, 1}};
 
     check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         packed_data[0], reference_packed_data_channel_1);
@@ -261,17 +261,17 @@ TEST(DataFormatter, Csr2CpsrColPartitioning) {
     using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
 
     std::vector<packed_val_t> reference_data_col_partition_1_channel_1 =
-        {{1,5}, {2,6}, {3,1}, {4,0}, {1,0}};
+        {{1, 5}, {2, 6}, {3, 1}, {4, 0}, {1, 0}};
     std::vector<packed_idx_t> reference_indices_col_partition_1_channel_1 =
-        {{0,0}, {1,2}, {2,idx_marker}, {3,0}, {idx_marker,0}};
+        {{0, 0}, {1, 2}, {2, idx_marker}, {3, 0}, {idx_marker, 0}};
     std::vector<packed_idx_t> reference_indptr_col_partition_1_channel_1 =
-        {{0,0}, {5,3}}; // a marker is inserted to the end of each row
+        {{0, 0}, {5, 3}}; // a marker is inserted to the end of each row
     std::vector<packed_val_t> reference_data_col_partition_1_channel_2 =
-        {{7,8}, {1,1}};
+        {{7, 8}, {1, 1}};
     std::vector<packed_idx_t> reference_indices_col_partition_1_channel_2 =
-        {{1,3}, {idx_marker,idx_marker}};
+        {{1, 3}, {idx_marker, idx_marker}};
     std::vector<packed_idx_t> reference_indptr_col_partition_1_channel_2 =
-        {{0,0}, {2,2}};
+        {{0, 0}, {2, 2}};
     auto reference_data_col_partition_2_channel_1 = reference_data_col_partition_1_channel_1;
     auto reference_indices_col_partition_2_channel_1 = reference_indices_col_partition_1_channel_1;
     auto reference_indptr_col_partition_2_channel_1 = reference_indptr_col_partition_1_channel_1;
@@ -322,17 +322,17 @@ TEST(DataFormatter, Csr2CpsrRowPartitioning) {
     using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
 
     std::vector<packed_val_t> reference_data_row_partition_1 =
-        {{1,5}, {2,6}, {3,1}, {4,0}, {1,0}};
+        {{1, 5}, {2, 6}, {3, 1}, {4, 0}, {1, 0}};
     std::vector<packed_idx_t> reference_indices_row_partition_1 =
-        {{0,0}, {1,2}, {2,idx_marker}, {3,0}, {idx_marker,0}};
+        {{0, 0}, {1, 2}, {2, idx_marker}, {3, 0}, {idx_marker, 0}};
     std::vector<packed_idx_t> reference_indptr_row_partition_1 =
-        {{0,0}, {5,3}};  // a marker is inserted to the end of each row
+        {{0, 0}, {5, 3}};  // a marker is inserted to the end of each row
     std::vector<packed_val_t> reference_data_row_partition_2 =
-        {{7,8}, {1,1}};
+        {{7, 8}, {1, 1}};
     std::vector<packed_idx_t> reference_indices_row_partition_2 =
-        {{1,3}, {idx_marker,idx_marker}};
+        {{1, 3}, {idx_marker, idx_marker}};
     std::vector<packed_idx_t> reference_indptr_row_partition_2 =
-        {{0,0}, {2,2}};
+        {{0, 0}, {2, 2}};
 
     check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(0, 0, 0), reference_data_row_partition_1);
@@ -383,11 +383,11 @@ TEST(DataFormatter, Csr2CpsrRowPartitioningSkipEmptyRows) {
     using packed_idx_t = CPSRMatrix<float, num_PEs_per_hbm_channel>::packed_idx_t;
 
     std::vector<packed_val_t> reference_data =
-        {{1,1}, {3,2}, {2,2}, {5,4}, {1,2}};
+        {{1, 1}, {3, 2}, {2, 2}, {5, 4}, {1, 2}};
     std::vector<packed_idx_t> reference_indices =
-        {{idx_marker,0}, {0,2}, {idx_marker,idx_marker}, {0,1}, {idx_marker,idx_marker}};
+        {{idx_marker, 0}, {0, 2}, {idx_marker, idx_marker}, {0, 1}, {idx_marker, idx_marker}};
     std::vector<packed_idx_t> reference_indptr =
-        {{0,0}, {1,3}, {3,3}, {3,5}, {5,5}};
+        {{0, 0}, {1, 3}, {3, 3}, {3, 5}, {5, 5}};
 
     check_packed_vector_equal<packed_val_t, num_PEs_per_hbm_channel>(
         cpsr_matrix.get_packed_data(0, 0, 0), reference_data);

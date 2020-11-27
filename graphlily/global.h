@@ -65,11 +65,11 @@ typedef uint32_t idx_t;
 const uint32_t idx_marker = 0xffffffff;
 typedef struct {idx_t data[pack_size];} packed_idx_t;
 
-typedef struct {idx_t index; float val;} index_float_t;
-typedef struct {idx_t index; val_t val;} index_val_t;
+typedef struct {idx_t index; float val;} idx_float_t;
+typedef struct {idx_t index; val_t val;} idx_val_t;
 
 using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
-using aligned_sparse_float_vec_t = std::vector<index_float_t, aligned_allocator<index_float_t>>;
+using aligned_sparse_float_vec_t = std::vector<idx_float_t, aligned_allocator<idx_float_t>>;
 
 const uint32_t UINT_INF = 0xffffffff;
 const val_t UFIXED_INF = 65535;

@@ -85,7 +85,7 @@ unsigned arbiter_1p(
         }
     }
 
-    array_cyclic_add<unsigned,num_out_lane,num_in_lane>(xbar_sel, out_valid, rotate_priority);
+    array_cyclic_add<unsigned, num_out_lane, num_in_lane>(xbar_sel, out_valid, rotate_priority);
 
     unsigned grant_count = 0;
     loop_A_grant:
@@ -202,11 +202,11 @@ void shuffler_1p(
         payload_A[i].index = 0;
         addr_A[i] = 0;
         payload_C[i].index = 0;
-        payload_F[i].data = (PayloadValT){0,0};
-        payload_A[i].data = (PayloadValT){0,0};
-        payload_C[i].data = (PayloadValT){0,0};
+        payload_F[i].data = (PayloadValT){0, 0};
+        payload_A[i].data = (PayloadValT){0, 0};
+        payload_C[i].data = (PayloadValT){0, 0};
         payload_resend[i].index = 0;
-        payload_resend[i].data = (PayloadValT){0,0};
+        payload_resend[i].data = (PayloadValT){0, 0};
 
         valid_A[i] = false;
         valid_F[i] = false;
@@ -243,7 +243,7 @@ void shuffler_1p(
             if (!resend[ILid]) {
                 valid_F[ILid] = input_lanes[ILid].read_nb(payload);
             } else {
-                payload.data = (PayloadValT){0,0};
+                payload.data = (PayloadValT){0, 0};
                 payload.index = 0;
                 valid_F[ILid] = true;
             }

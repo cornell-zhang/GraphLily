@@ -48,8 +48,8 @@ bool verify(std::vector<float, aligned_allocator<float>> &reference_results,
 }
 
 // measure data usage (in Bytes, only measure the matrix)
-double measure_data_usage(graphlily::io::CSCMatrix<float> &matrix, graphlily::aligned_sparse_float_vec_t &vector) {
-
+double measure_data_usage(graphlily::io::CSCMatrix<float> &matrix,
+                          graphlily::aligned_sparse_float_vec_t &vector) {
     double data_usage = 0;
     unsigned vec_nnz_total = vector[0].index;
 
@@ -79,7 +79,10 @@ struct BenchCase {
     double vector_sparsity;
 };
 
-BenchCase set_up_bench_case(std::string matrix_file_name, graphlily::SemiringType semiring, graphlily::MaskType mask_type, double vector_sparsity) {
+BenchCase set_up_bench_case(std::string matrix_file_name,
+                            graphlily::SemiringType semiring,
+                            graphlily::MaskType mask_type,
+                            double vector_sparsity) {
     BenchCase bcase;
     if (matrix_file_name.length() > 35) {
         bcase.info.name = matrix_file_name.substr(0, 33) + "...";
@@ -109,7 +112,7 @@ BenchCase set_up_bench_case(std::string matrix_file_name, graphlily::SemiringTyp
 
     bcase.vector_sparsity = vector_sparsity;
     char c[11];
-    sprintf(c,"%3.5f%%",vector_sparsity * 100);
+    sprintf(c, "%3.5f%%", vector_sparsity * 100);
     bcase.info.spv_str.assign(c);
 
     return bcase;
@@ -123,9 +126,9 @@ struct BenchCaseResult {
     double avg_thpt_GBPS;
 };
 
-BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t, graphlily::val_t, graphlily::index_val_t> &spmspv,
+BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
+                               graphlily::val_t, graphlily::idx_val_t> &spmspv,
                                BenchCase benchmark_case) {
-
     BenchCaseResult benchmark_result;
     benchmark_result.info = benchmark_case.info;
     std::cout << "INFO: [Benchmark] "
@@ -133,10 +136,11 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
               << benchmark_result.info.spv_str << " "
               << benchmark_result.info.semiring_str << std::endl;
 
-    using aligned_sparse_vector_t = std::vector<graphlily::index_val_t, aligned_allocator<graphlily::index_val_t>>;
+    using aligned_sparse_vector_t = std::vector<graphlily::idx_val_t, aligned_allocator<graphlily::idx_val_t>>;
     using aligned_dense_vector_t = std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>>;
 
-    graphlily::io::CSCMatrix<float> matrix = graphlily::io::csr2csc<float>(graphlily::io::load_csr_matrix_from_float_npz(benchmark_case.matrix_path));
+    graphlily::io::CSCMatrix<float> matrix = graphlily::io::csr2csc<float>(
+        graphlily::io::load_csr_matrix_from_float_npz(benchmark_case.matrix_path));
     for (auto &x : matrix.adj_data) x = 0.5;
 
     // generate vector
@@ -179,7 +183,7 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
         mask_float[i] = m;
     }
 
-    spmspv.config_kernel(benchmark_case.semiring,benchmark_case.mask_type);
+    spmspv.config_kernel(benchmark_case.semiring, benchmark_case.mask_type);
     spmspv.load_and_format_matrix(matrix);
     spmspv.send_matrix_host_to_device();
     spmspv.send_vector_host_to_device(vector);
@@ -190,14 +194,15 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
     aligned_sparse_vector_t kernel_results = spmspv.send_results_device_to_host();
 
     // convert sparse vector to dense vector
-    aligned_dense_vector_t kernel_results_dense(matrix.num_rows,benchmark_case.semiring.zero);
+    aligned_dense_vector_t kernel_results_dense(matrix.num_rows, benchmark_case.semiring.zero);
     for (size_t i = 1; i < kernel_results[0].index + 1; i++) {
         kernel_results_dense[kernel_results[i].index] = kernel_results[i].val;
     }
 
-    graphlily::aligned_dense_float_vec_t reference_result = spmspv.compute_reference_results(vector_float,mask_float);
+    graphlily::aligned_dense_float_vec_t reference_result =
+        spmspv.compute_reference_results(vector_float, mask_float);
 
-    bool passed = verify<graphlily::val_t>(reference_result,kernel_results_dense);
+    bool passed = verify<graphlily::val_t>(reference_result, kernel_results_dense);
     // bool passed = true;
     if (!passed) {
         std::cout << "ERROR: [Benchmark] Result mismatch! Aborting..." << std::endl;
@@ -208,7 +213,7 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
     }
     std::cout << "INFO: [Benchmark] Warm-up passed. Benchmark Start" << std::endl;
 
-    double data_usage = measure_data_usage(matrix,vector_float);
+    double data_usage = measure_data_usage(matrix, vector_float);
 
     int num_runs = 20;
     double time_in_us = 0;
@@ -220,10 +225,10 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
     }
     benchmark_result.avg_time_ms = time_in_us / num_runs / 1000;
     benchmark_result.avg_thpt_GBPS = data_usage / 1000 / 1000 / benchmark_result.avg_time_ms;
-    benchmark_result.avg_GOPS = benchmark_result.avg_thpt_GBPS / (sizeof(graphlily::val_t) + sizeof(graphlily::idx_t));
+    benchmark_result.avg_GOPS = benchmark_result.avg_thpt_GBPS / (sizeof(graphlily::val_t)
+        + sizeof(graphlily::idx_t));
 
     return benchmark_result;
-
 }
 
 
@@ -237,7 +242,6 @@ int main(int argc, char *argv[]) {
     }
     std::string target = argv[1];
     std::string xclbin = argv[2];
-
 
     std::vector<std::string> matrix_set;
     std::vector<float> vector_sparsity_set;
@@ -271,7 +275,8 @@ int main(int argc, char *argv[]) {
     std::vector<BenchCaseResult> benchmark_results;
 
     uint32_t out_buf_len = 256 * 1024;
-    graphlily::module::SpMSpVModule<graphlily::val_t, graphlily::val_t, graphlily::index_val_t> spmspv_module(out_buf_len);
+    graphlily::module::SpMSpVModule<graphlily::val_t, graphlily::val_t, graphlily::idx_val_t>
+        spmspv_module(out_buf_len);
 
     spmspv_module.set_target(target);
     if (xclbin == "build") {

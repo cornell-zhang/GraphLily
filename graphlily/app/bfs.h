@@ -18,11 +18,11 @@ private:
     // modules
     using matrix_data_t = unsigned;
     using vector_data_t = unsigned;
-    using index_val_t = struct {graphlily::idx_t index; vector_data_t val;};
+    using idx_val_t = struct {graphlily::idx_t index; vector_data_t val;};
     graphlily::module::SpMVModule<matrix_data_t, vector_data_t> *SpMV_;
     graphlily::module::AssignVectorDenseModule<vector_data_t> *DenseAssign_;
-    graphlily::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t> *SpMSpV_;
-    graphlily::module::AssignVectorSparseModule<vector_data_t, index_val_t> *SparseAssign_;
+    graphlily::module::SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t> *SpMSpV_;
+    graphlily::module::AssignVectorSparseModule<vector_data_t, idx_val_t> *SparseAssign_;
     // Sparse matrix size
     uint32_t matrix_num_rows_;
     uint32_t matrix_num_cols_;
@@ -46,11 +46,11 @@ public:
         this->DenseAssign_ = new graphlily::module::AssignVectorDenseModule<vector_data_t>();
         this->DenseAssign_->set_mask_type(graphlily::kMaskWriteToOne);
         this->add_module(this->DenseAssign_);
-        this->SpMSpV_ = new graphlily::module::SpMSpVModule<matrix_data_t, vector_data_t, index_val_t>(
+        this->SpMSpV_ = new graphlily::module::SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>(
             semiring_, out_buf_len);
         this->SpMSpV_->set_mask_type(graphlily::kMaskWriteToZero);
         this->add_module(this->SpMSpV_);
-        this->SparseAssign_ = new graphlily::module::AssignVectorSparseModule<vector_data_t, index_val_t>();
+        this->SparseAssign_ = new graphlily::module::AssignVectorSparseModule<vector_data_t, idx_val_t>();
         this->SparseAssign_->set_mode(0);
         this->add_module(this->SparseAssign_);
     }
@@ -99,11 +99,11 @@ public:
     }
 
 
-    using aligned_sparse_vec_t = std::vector<index_val_t, aligned_allocator<index_val_t>>;
+    using aligned_sparse_vec_t = std::vector<idx_val_t, aligned_allocator<idx_val_t>>;
     aligned_dense_vec_t run_push_only(uint32_t source, uint32_t num_iterations) {
         // The sparse input vector
         aligned_sparse_vec_t spmspv_input(2);
-        index_val_t head;
+        idx_val_t head;
         graphlily::idx_t nnz = 1; // one source vertex
         head.index = nnz;
         spmspv_input[0] = head;
@@ -123,7 +123,7 @@ public:
             this->SpMSpV_->run();
             this->SpMSpV_->copy_buffer_device_to_device(this->SpMSpV_->results_buf,
                                                         this->SpMSpV_->vector_buf,
-                                                        sizeof(index_val_t) * (1 + this->matrix_num_rows_));
+                                                        sizeof(idx_val_t) * (1 + this->matrix_num_rows_));
             this->SparseAssign_->run(i + 1);
         }
 
@@ -134,7 +134,7 @@ public:
     aligned_dense_vec_t run_pull_push(uint32_t source, uint32_t num_iterations) {
         // The sparse input vector
         aligned_sparse_vec_t spmspv_input(2);
-        index_val_t head;
+        idx_val_t head;
         graphlily::idx_t nnz = 1; // one source vertex
         head.index = nnz;
         spmspv_input[0] = head;
@@ -154,7 +154,7 @@ public:
             this->SpMSpV_->run();
             this->SpMSpV_->copy_buffer_device_to_device(this->SpMSpV_->results_buf,
                                                         this->SpMSpV_->vector_buf,
-                                                        sizeof(index_val_t) * (1 + this->matrix_num_rows_));
+                                                        sizeof(idx_val_t) * (1 + this->matrix_num_rows_));
             this->SparseAssign_->run(i + 1);
         }
 

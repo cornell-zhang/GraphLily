@@ -27,11 +27,17 @@ test_io: test_io.cpp $(xcl2_SRCS)
 	mv test_io $(BUILD_DIR)/
 	cd $(BUILD_DIR); ./test_io
 
-test_module: test_module.cpp $(xcl2_SRCS)
-	g++ $(CXXFLAGS) test_module.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
+test_module_spmv_spmspv: test_module_spmv_spmspv.cpp $(xcl2_SRCS)
+	g++ $(CXXFLAGS) test_module_spmv_spmspv.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)
-	mv test_module $(BUILD_DIR)/
-	cd $(BUILD_DIR); ./test_module
+	mv test_module_spmv_spmspv $(BUILD_DIR)/
+	cd $(BUILD_DIR); ./test_module_spmv_spmspv
+
+test_module_apply: test_module_apply.cpp $(xcl2_SRCS)
+	g++ $(CXXFLAGS) test_module_apply.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
+	mkdir -p $(BUILD_DIR)
+	mv test_module_apply $(BUILD_DIR)/
+	cd $(BUILD_DIR); ./test_module_apply
 
 test_app: test_app.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) test_app.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
@@ -39,7 +45,7 @@ test_app: test_app.cpp $(xcl2_SRCS)
 	mv test_app $(BUILD_DIR)/
 	cd $(BUILD_DIR); ./test_app
 
-all: test_io test_module test_app
+all: test_io test_module_spmv_spmspv test_module_apply test_app
 
 clean:
 	rm -rf $(BUILD_DIR)
