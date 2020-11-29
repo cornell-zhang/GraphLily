@@ -7,7 +7,7 @@
 namespace graphlily {
 namespace synthesizer {
 
-template <typename T>
+template<typename T>
 void _generate_makefile_impl(T* t) {
     std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
@@ -19,7 +19,7 @@ void _generate_makefile_impl(T* t) {
 }
 
 
-template <typename T>
+template<typename T>
 void _synthesize_impl(T* t) {
     std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
@@ -49,13 +49,21 @@ protected:
     std::string target_;
 
 private:
-    template <typename T> friend void _generate_makefile_impl(T* t);
-    template <typename T> friend void _synthesize_impl(T* t);
+    template<typename T> friend void _generate_makefile_impl(T* t);
+    template<typename T> friend void _synthesize_impl(T* t);
 
 public:
     BaseSynthesizer(std::string kernel_name) {
         this->kernel_name_ = kernel_name;
         this->makefile_body_ = graphlily::add_kernel_to_makefile(this->kernel_name_);
+    }
+
+    /*!
+     * \brief Get the kernel name.
+     * \return The kernel name.
+     */
+    std::string get_kernel_name() {
+        return this->kernel_name_;
     }
 
     /*!

@@ -65,8 +65,11 @@ typedef uint32_t idx_t;
 const uint32_t idx_marker = 0xffffffff;
 typedef struct {idx_t data[pack_size];} packed_idx_t;
 
-typedef struct {idx_t index; float val;} idx_float_t;
 typedef struct {idx_t index; val_t val;} idx_val_t;
+typedef struct {idx_t index; float val;} idx_float_t;
+
+using aligned_dense_vec_t = std::vector<val_t, aligned_allocator<val_t>>;
+using aligned_sparse_vec_t = std::vector<idx_val_t, aligned_allocator<idx_val_t>>;
 
 using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
 using aligned_sparse_float_vec_t = std::vector<idx_float_t, aligned_allocator<idx_float_t>>;
@@ -145,7 +148,7 @@ const std::string proj_folder_name = "proj";
 //------------------------------------------
 
 // convert a sparse vector to dense
-template <typename sparse_vec_t, typename dense_vec_t, typename val_t>
+template<typename sparse_vec_t, typename dense_vec_t, typename val_t>
 dense_vec_t convert_sparse_vec_to_dense_vec(const sparse_vec_t &sparse_vector,
                                             uint32_t range,
                                             val_t zero) {

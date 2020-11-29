@@ -2,7 +2,7 @@
 #define GRAPHLILY_HW_UTIL_H_
 
 
-template <typename T, unsigned len>
+template<typename T, unsigned len>
 void array_shift_left(T array[len], T array_dest[len], unsigned rotate) {
     #pragma HLS inline
     // #pragma HLS latency min=0 max=0
@@ -15,7 +15,7 @@ void array_shift_left(T array[len], T array_dest[len], unsigned rotate) {
 }
 
 
-template <typename T, unsigned len, unsigned maximum>
+template<typename T, unsigned len, unsigned maximum>
 void array_cyclic_add(T array[len], bool array_valid[len], unsigned inc) {
     #pragma HLS inline
     // #pragma HLS latency min=0 max=0

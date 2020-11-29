@@ -7,7 +7,7 @@
 #include "graphlily/module/spmv_module.h"
 
 
-template <typename data_t>
+template<typename data_t>
 void verify(std::vector<float, aligned_allocator<float>> &reference_results,
             std::vector<data_t, aligned_allocator<data_t>> &kernel_results) {
     if (!(reference_results.size() == kernel_results.size())) {

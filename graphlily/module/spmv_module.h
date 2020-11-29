@@ -106,6 +106,9 @@ public:
         for (int i = 0; i < 6; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
+        if (this->mask_type_ == graphlily::kNoMask) {
+            this->kernel_.setArg(6 + this->num_channels_ + 1, cl::Buffer(this->context_, 0, 4));
+        }
     }
 
     void set_mode() override {

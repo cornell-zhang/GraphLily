@@ -173,10 +173,11 @@ void _test_spmspv_module(graphlily::module::SpMSpVModule<graphlily::val_t,
                          CSCMatrix<float> const &csc_matrix,
                          float vector_sparsity) {
     std::cout << gen_test_case_name_spmspv(semiring, mask_type, matrix_id, vector_sparsity) << std::endl;
-    // data types
-    using aligned_sparse_vec_t = std::vector<graphlily::idx_val_t, aligned_allocator<graphlily::idx_val_t>>;
-    using aligned_dense_vec_t = std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>>;
-    module.config_kernel(semiring, mask_type);
+    using aligned_dense_vec_t = graphlily::aligned_dense_vec_t;
+    using aligned_sparse_vec_t = graphlily::aligned_sparse_vec_t;
+
+    module.set_semiring(semiring);
+    module.set_mask_type(mask_type);
 
     // generate vector
     unsigned vector_length = csc_matrix.num_cols;

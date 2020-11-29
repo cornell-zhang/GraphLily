@@ -25,7 +25,7 @@ std::string line(int len) {
 const std::string matrix_dataset_dir = "/work/shared/common/research/graphblas/data/sparse_matrix_graph/";
 
 // verify results
-template <typename DataT>
+template<typename DataT>
 bool verify(std::vector<float, aligned_allocator<float>> &reference_results,
             std::vector<DataT, aligned_allocator<DataT>> &kernel_results) {
     if (!(reference_results.size() == kernel_results.size())) {
@@ -179,11 +179,12 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
     graphlily::aligned_dense_float_vec_t mask_float(matrix.num_cols);
     for (int i = 0; i < matrix.num_cols; i++) {
         float m = (rand() % 2) ? (graphlily::val_t)1 : benchmark_case.semiring.zero;
-        mask[i] = (graphlily::val_t)m;
+        mask[i] = (graphlily::val_t);
         mask_float[i] = m;
     }
 
-    spmspv.config_kernel(benchmark_case.semiring, benchmark_case.mask_type);
+    spmspv.set_semiring(benchmark_case.semiring);
+    spmspv.set_mask_type(benchmark_case.mask_type);
     spmspv.load_and_format_matrix(matrix);
     spmspv.send_matrix_host_to_device();
     spmspv.send_vector_host_to_device(vector);

@@ -73,6 +73,7 @@ public:
      * \brief Bind the mask buffer to an existing buffer.
      */
     void bind_mask_buf(cl::Buffer src_buf) {
+        this->kernel_.setArg(7, (char)this->mask_type_);
         this->mask_buf = src_buf;
         this->kernel_.setArg(0, this->mask_buf);
     }

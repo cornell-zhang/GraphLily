@@ -31,7 +31,7 @@ struct CSRMatrix {
 
 
 // Create a csr matrix from raw input.
-template <typename data_type>
+template<typename data_type>
 CSRMatrix<data_type> create_csr_matrix(uint32_t num_rows,
                                        uint32_t num_cols,
                                        std::vector<data_type> const &adj_data,
@@ -72,7 +72,7 @@ CSRMatrix<float> load_csr_matrix_from_float_npz(std::string csr_float_npz_path) 
 
 // Convert a float csr matrix to another data type.
 // TODO: does ap_int make formatting slower than float?
-template <typename data_type>
+template<typename data_type>
 CSRMatrix<data_type> csr_matrix_convert_from_float(CSRMatrix<float> const &in) {
     CSRMatrix<data_type> out;
     out.num_rows = in.num_rows;
@@ -105,7 +105,7 @@ struct CSCMatrix {
 
 
 // Convert csr to csc.
-template <typename data_type>
+template<typename data_type>
 CSCMatrix<data_type> csr2csc(CSRMatrix<data_type> const &csr_matrix) {
     CSCMatrix<data_type> csc_matrix;
     csc_matrix.num_rows = csr_matrix.num_rows;
@@ -145,7 +145,7 @@ CSCMatrix<data_type> csr2csc(CSRMatrix<data_type> const &csr_matrix) {
 
 
 // Convert a float csc matrix to another data type.
-template <typename data_type>
+template<typename data_type>
 CSCMatrix<data_type> csc_matrix_convert_from_float(CSCMatrix<float> const &in) {
     CSCMatrix<data_type> out;
     out.num_rows = in.num_rows;

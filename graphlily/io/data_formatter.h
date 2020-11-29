@@ -453,7 +453,7 @@ void util_pack_rows(std::vector<data_type> const &adj_data,
  *
  * \return The output matrix in CPSR format.
  */
-template <typename data_type, uint32_t num_PEs_per_hbm_channel>
+template<typename data_type, uint32_t num_PEs_per_hbm_channel>
 CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> const &csr_matrix,
                                                         uint32_t idx_marker,
                                                         uint32_t out_buf_len,

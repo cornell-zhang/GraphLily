@@ -25,6 +25,13 @@ public:
         this->kernel_name_ = kernel_name;
     }
 
+    virtual ~BaseModule() {
+        this->device_ = nullptr;
+        this->context_ = nullptr;
+        this->kernel_ = nullptr;
+        this->command_queue_ = nullptr;
+    }
+
     /*!
      * \brief Get the kernel name.
      * \return The kernel name.

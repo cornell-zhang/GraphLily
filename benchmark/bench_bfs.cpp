@@ -18,11 +18,11 @@ void bench_bfs(uint32_t num_channels, std::string bitstream, std::string dataset
 
     uint32_t source = 0;
     uint32_t num_iterations = 10;
-    auto kernel_results = bfs.run_push_only(source, num_iterations);
+    auto kernel_results = bfs.push(source, num_iterations);
     uint32_t num_runs = 1;
     auto t1 = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < num_runs; i++) {
-        kernel_results = bfs.run_push_only(source, num_iterations);
+        kernel_results = bfs.push(source, num_iterations);
     }
     auto t2 = std::chrono::high_resolution_clock::now();
     float average_time_in_sec = float(std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count())

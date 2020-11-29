@@ -18,8 +18,6 @@ protected:
     uint32_t num_modules_ = 0;
     /*! \brief The kernel names */
     std::vector<std::string> kernel_names_;
-    /*! \brief The makefile body */
-    std::string makefile_body_;
     /*! \brief The target; can be sw_emu, hw_emu, hw */
     std::string target_;
 
@@ -29,12 +27,18 @@ protected:
     std::vector<cl::Kernel> kernels_;
     std::vector<cl::CommandQueue> command_queues_;
 
-private:
-    template <typename T> friend void module::_set_target_impl(T* t, std::string target);
-    template <typename T> friend void module::_generate_makefile_impl(T* t);
-    template <typename T> friend void module::_compile_impl(T* t);
-
 public:
+    ModuleCollection() {};
+
+    /*!
+     * \brief Free up resources in the destructor.
+     */
+    ~ModuleCollection() {
+        for (size_t i = 0; i < this->num_modules_; i++) {
+            delete this->modules_[i];
+        }
+    }
+
     /*!
      * \brief Add a module.
      * \param module The module to be added.
@@ -43,7 +47,6 @@ public:
         this->modules_.push_back(module);
         std::string kernel_name = module->get_kernel_name();
         this->kernel_names_.push_back(kernel_name);
-        this->makefile_body_ += graphlily::add_kernel_to_makefile(kernel_name);
         this->num_modules_++;
     }
 
@@ -51,48 +54,8 @@ public:
      * \brief Set the target.
      */
     void set_target(std::string target) {
-        _set_target_impl<ModuleCollection>(this, target);
-    }
-
-    /*!
-     * \brief Generate the kernel header file.
-     */
-    void generate_kernel_header() {
-        for (size_t i = 0; i < this->num_modules_; i++) {
-            this->modules_[i]->generate_kernel_header();
-        }
-    }
-
-    /*!
-     * \brief Generate the kernel .ini configuration file.
-     */
-    void generate_kernel_ini() {
-        for (size_t i = 0; i < this->num_modules_; i++) {
-            this->modules_[i]->generate_kernel_ini();
-        }
-    }
-
-    /*!
-     * \brief Link the kernel cpp file to the proj directory.
-     */
-    void link_kernel_code() {
-        for (size_t i = 0; i < this->num_modules_; i++) {
-            this->modules_[i]->link_kernel_code();
-        }
-    }
-
-    /*!
-     * \brief Generate the Makefile.
-     */
-    void generate_makefile() {
-        _generate_makefile_impl<ModuleCollection>(this);
-    }
-
-    /*!
-     * \brief Compile the kernel according to this->target_.
-     */
-    void compile() {
-        _compile_impl<ModuleCollection>(this);
+       assert(target == "sw_emu" || target == "hw_emu" || target == "hw");
+       this->target_ = target;
     }
 
     /*!
@@ -139,6 +102,14 @@ void ModuleCollection::set_up_runtime(std::string xclbin_file_path) {
         this->modules_[i]->set_context(this->context_);
         this->modules_[i]->set_kernel(this->kernels_[i]);
         this->modules_[i]->set_command_queue(this->command_queues_[i]);
+    }
+    // Set unused arguments for each module
+    for (size_t i = 0; i < this->num_modules_; i++) {
+        this->modules_[i]->set_unused_args();
+    }
+    // Set the mode for each module
+    for (size_t i = 0; i < this->num_modules_; i++) {
+        this->modules_[i]->set_mode();
     }
 }
 

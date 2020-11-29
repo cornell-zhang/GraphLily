@@ -121,17 +121,19 @@ public:
     }
 
     /*!
-     * \brief Change the kernel semiring and masktype
+     * \brief Set the semiring type.
+     * \param semiring The semiring type.
      */
-    void config_kernel(graphlily::SemiringType semiring, graphlily::MaskType masktype) {
-        cl_int err;
+    void set_semiring(graphlily::SemiringType semiring) {
         this->semiring_ = semiring;
-        this->mask_type_ = masktype;
-        // Set argument
-        OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 5,
-                                                  (char)this->semiring_.op));
-        OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 6,
-                                                  (char)this->mask_type_));
+    }
+
+    /*!
+     * \brief Set the mask type.
+     * \param mask_type The mask type.
+     */
+    void set_mask_type(graphlily::MaskType mask_type) {
+        this->mask_type_ = mask_type;
     }
 
     /*!
@@ -202,8 +204,10 @@ public:
      * \param mask The dense mask.
      * \return The reference results in dense format.
      */
-    graphlily::aligned_dense_float_vec_t compute_reference_results(graphlily::aligned_sparse_float_vec_t &vector,
-                                                                   graphlily::aligned_dense_float_vec_t &mask);
+    graphlily::aligned_dense_float_vec_t compute_reference_results(
+        graphlily::aligned_sparse_float_vec_t &vector,
+        graphlily::aligned_dense_float_vec_t &mask
+    );
 };
 
 
@@ -280,10 +284,10 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     OCL_CHECK(err, err = this->kernel_.setArg(0, this->channel_packets_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(1, this->channel_indptr_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(2, this->channel_partptr_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 3,
-                                              this->csc_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 4,
-                                              this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 3, this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 4, this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 5, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 6, (char)this->mask_type_));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
@@ -323,7 +327,6 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
     cl_int err;
 
     // copy the input vector
-    this->vector_.resize(vector.size());
     std::copy(vector.begin(), vector.end(), this->vector_.begin());
 
     // Handle vector

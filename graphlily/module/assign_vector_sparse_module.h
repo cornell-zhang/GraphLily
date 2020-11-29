@@ -92,6 +92,10 @@ public:
      * \brief Bind the new_frontier buffer to an existing buffer.
      */
     void bind_new_frontier_buf(cl::Buffer src_buf) {
+        if (!this->generate_new_frontier_) {
+            std::cout << "[ERROR]: this->generate_new_frontier_ should be true" << std::endl;
+            exit(EXIT_FAILURE);
+        }
         this->new_frontier_buf = src_buf;
         this->kernel_.setArg(4, this->new_frontier_buf);
     }
