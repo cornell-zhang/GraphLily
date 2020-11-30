@@ -35,7 +35,7 @@ ValT pe_mul_alu(ValT a, ValT b, ValT z, OpT op, bool en) {
             out = a + b;
             break;
         default:
-            out = z;  // TODO: what is z?
+            out = z;  // z is the zero value in this semiring
             break;
     }
     return en ? out : z;

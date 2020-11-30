@@ -48,8 +48,7 @@ float pe_float_mul_alu(float a, float b, float z, OpT op, bool en) {
             out = float_sat_add(a, b);
             break;
         default:
-            out = z;  // TODO: what is z?
-                      // -- z is the zero value in this semiring
+            out = z;  // z is the zero value in this semiring
             break;
     }
     return en ? out : z;

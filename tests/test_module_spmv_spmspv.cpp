@@ -275,11 +275,10 @@ TEST(SpMSpV, MultipleCases) {
     _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
         "dense1K", csc_matrix_dense1K, 0.50);
 
-    // // TODO: below two datasets failed software emulation; seems partitioning is not properly handled
-    // _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
-    //     "uniform10K10", csc_matrix_uniform10K10, 0.50);
-    // _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
-    //     "google+", csc_matrix_gpuls, 0.99);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
+        "uniform10K10", csc_matrix_uniform10K10, 0.50);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
+        "google+", csc_matrix_gpuls, 0.99);
 
     _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
         "dense1K", csc_matrix_dense1K, 0.99);

@@ -113,7 +113,7 @@ void load_matrix_from_gmem(
                 // discard paddings
                 if (packet_from_mat.vals.data[k] != Zero) {
                     DL_to_SF_stream[k].write(input_to_SF);
-                    tmp_pcnt_incr ++;
+                    tmp_pcnt_incr++;
                 }
             }
             tmp_pcnt += tmp_pcnt_incr;
@@ -141,7 +141,7 @@ void bram_access_read_2ports(
     for (unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
         #pragma HLS unroll
         rd_data0[BKid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr0[BKid] / NUM_HBM_CHANNEL];
-        rd_data1[BKid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr1[BKid] / NUM_HBM_CHANNEL];
+        rd_data1[BKid] = bram[rd_addr1[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr1[BKid] / NUM_HBM_CHANNEL];
     }
 }
 
@@ -170,7 +170,7 @@ void checkout_results(
 
     unsigned int num_rounds = ((num_rows + 2 * PACK_SIZE) - 1) / (PACK_SIZE * 2);
     loop_over_dense_data_pipeline:
-    for (unsigned int round_cnt = 0; round_cnt < num_rounds; round_cnt ++) {
+    for (unsigned int round_cnt = 0; round_cnt < num_rounds; round_cnt++) {
         #pragma HLS pipeline II=1
         IDX_T local_npld_incr = 0;
 
@@ -202,7 +202,7 @@ void checkout_results(
                 pld.index = round_cnt * 2 * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr0[Bank_id];
                 cr_output_streams[Bank_id].write(pld);
-                local_npld_incr ++;
+                local_npld_incr++;
                 #ifndef __SYNTHESIS__
                 if (line_tracing_spmspv_checkout) {
                     std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / "
@@ -217,7 +217,7 @@ void checkout_results(
                 pld.index = (round_cnt * 2 + 1) * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr1[Bank_id];
                 cr_output_streams[Bank_id + PACK_SIZE].write(pld);
-                local_npld_incr ++;
+                local_npld_incr++;
                 #ifndef __SYNTHESIS__
                 if (line_tracing_spmspv_checkout) {
                     std::cout << "INFO: [kernel SpMSpV checkout results][" << round_cnt << " / "
@@ -258,7 +258,7 @@ void write_back_gmem(
         #pragma HLS dependence variable=loop_exit inter distance=15 RAW True
         IDX_VAL_T wb_temp;
         if (wb_input_streams[Lane_id].read_nb(wb_temp)) {
-            wb_cnt ++;
+            wb_cnt++;
             bool do_write;
             switch (mask_type) {
                 case NOMASK:
@@ -276,7 +276,7 @@ void write_back_gmem(
             }
             if (do_write) {
                 result[Nnz + incr + 1] = wb_temp;
-                incr ++;
+                incr++;
             }
         }
         if (!checkout_finish) {

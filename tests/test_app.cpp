@@ -65,9 +65,9 @@ TEST(BFS, PullPush) {
     auto kernel_results = bfs.pull(source, num_iterations);
     verify<graphlily::val_t>(reference_results, kernel_results);
 
-    // // push
-    // kernel_results = bfs.push(source, num_iterations);
-    // verify<graphlily::val_t>(reference_results, kernel_results);
+    // push
+    kernel_results = bfs.push(source, num_iterations);
+    verify<graphlily::val_t>(reference_results, kernel_results);
 
     // // pull_push
     // kernel_results = bfs.pull_push(source, num_iterations);
