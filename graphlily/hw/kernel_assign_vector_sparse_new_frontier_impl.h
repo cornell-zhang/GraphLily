@@ -1,4 +1,4 @@
-#include "./kernel_apply.h"
+#include "./overlay.h"
 
 
 void kernel_assign_vector_sparse_new_frontier(

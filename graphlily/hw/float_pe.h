@@ -213,7 +213,7 @@ void float_pe_cluster_part1(
                           << (valid_M[i] ? "M " : ". ") << std::endl << std::flush;
             }
         }
-        sw_emu_iter_cnt_p1 ++;
+        sw_emu_iter_cnt_p1++;
         if (sw_emu_early_abort && sw_emu_iter_cnt_p1 > sw_emu_iter_limit) {
             std::cout << "ERROR: [kernel SpMSpV (float) part1] sw_emu iteration limit("
                       << sw_emu_iter_limit << ") exceeded!" << std::endl << std::flush;
@@ -515,7 +515,7 @@ void float_pe_cluster_spmv_uram_part2(
             std::cout << "INFO: [kernel SpMSpV (float) part2] loop count: "
                       << sw_emu_iter_cnt_p2 << std::endl << std::flush;
         }
-        sw_emu_iter_cnt_p2 ++;
+        sw_emu_iter_cnt_p2++;
         if (sw_emu_early_abort && sw_emu_iter_cnt_p2 > sw_emu_iter_limit) {
             std::cout << "ERROR: [kernel SpMSpV (float) part2] sw_emu iteration limit("
                       << sw_emu_iter_limit << ") exceeded!" << std::endl << std::flush;
@@ -842,7 +842,7 @@ void float_pe_cluster_spmspv_uram_part2(
             std::cout << "INFO: [kernel SpMSpV (float) part2] loop count: "
                       << sw_emu_iter_cnt_p2 << std::endl << std::flush;
         }
-        sw_emu_iter_cnt_p2 ++;
+        sw_emu_iter_cnt_p2++;
         if (sw_emu_early_abort && sw_emu_iter_cnt_p2 > sw_emu_iter_limit) {
             std::cout << "ERROR: [kernel SpMSpV (float) part2] sw_emu iteration limit("
                       << sw_emu_iter_limit << ") exceeded!" << std::endl << std::flush;

@@ -1,19 +1,17 @@
-#include "./kernel_spmv_spmspv.h"
+#include "./overlay.h"
 
 #include "./kernel_spmv_impl.h"
 #include "./kernel_spmspv_impl.h"
 
+#include "./kernel_add_scalar_vector_dense_impl.h"
+#include "./kernel_assign_vector_dense_impl.h"
+#include "./kernel_assign_vector_sparse_no_new_frontier_impl.h"
+#include "./kernel_assign_vector_sparse_new_frontier_impl.h"
+
 
 extern "C" {
 
-void kernel_spmv_spmspv(
-    /*----------------- arguments for SpMSpV -------------------*/
-    const SPMSPV_MAT_PKT_T *spmspv_matrix,
-    const IDX_T *spmspv_matrix_indptr,
-    const IDX_T *spmspv_matrix_partptr,
-    const IDX_VAL_T *spmspv_vector,
-    const VAL_T *spmspv_mask,
-    IDX_VAL_T *spmspv_out,
+void overlay(
     /*----------------- arguments for SpMV --------------------*/
 #if (NUM_HBM_CHANNEL >= 1)
     const SPMV_MAT_PKT_T *spmv_channel_0_matrix,
@@ -59,35 +57,26 @@ void kernel_spmv_spmspv(
     const SPMV_MAT_PKT_T *spmv_channel_30_matrix,
     const SPMV_MAT_PKT_T *spmv_channel_31_matrix,
 #endif
-    const PACKED_VAL_T *spmv_vector,
-    const PACKED_VAL_T *spmv_mask,
-    PACKED_VAL_T *spmv_out,
-    /*-------- arguments shared by SpMSpV and SpMV -------------*/
-    unsigned num_rows,
-    unsigned num_cols,
-    OP_T Op,
-    MASK_T mask_type,
-    unsigned mode  // 0 is SpMV; 1 is SpMSpV
+    PACKED_VAL_T *spmv_vector,              // NUM_HBM_CHANNEL + 0
+    PACKED_VAL_T *spmv_mask,                // NUM_HBM_CHANNEL + 1
+    PACKED_VAL_T *spmv_out,                 // NUM_HBM_CHANNEL + 2
+    /*----------------- arguments for SpMSpV -------------------*/
+    const SPMSPV_MAT_PKT_T *spmspv_matrix,  // NUM_HBM_CHANNEL + 3
+    const IDX_T *spmspv_matrix_indptr,      // NUM_HBM_CHANNEL + 4
+    const IDX_T *spmspv_matrix_partptr,     // NUM_HBM_CHANNEL + 5
+    IDX_VAL_T *spmspv_vector,               // NUM_HBM_CHANNEL + 6
+    VAL_T *spmspv_mask,                     // NUM_HBM_CHANNEL + 7
+    IDX_VAL_T *spmspv_out,                  // NUM_HBM_CHANNEL + 8
+    /*-------- arguments for apply kernels -------------*/
+    unsigned length,                        // NUM_HBM_CHANNEL + 9
+    VAL_T val,                              // NUM_HBM_CHANNEL + 10
+    /*-------- arguments shared by all kernels -------------*/
+    unsigned num_rows,                      // NUM_HBM_CHANNEL + 11
+    unsigned num_cols,                      // NUM_HBM_CHANNEL + 12
+    OP_T Op,                                // NUM_HBM_CHANNEL + 13
+    MASK_T mask_type,                       // NUM_HBM_CHANNEL + 14
+    unsigned mode                           // NUM_HBM_CHANNEL + 15
 ) {
-/*----------------- arguments for SpMSpV -------------------*/
-#pragma HLS interface m_axi port=spmspv_matrix         offset=slave bundle=spmspv_gmem1
-#pragma HLS interface m_axi port=spmspv_matrix_indptr  offset=slave bundle=spmspv_gmem0
-#pragma HLS interface m_axi port=spmspv_matrix_partptr offset=slave bundle=spmspv_gmem0
-#pragma HLS interface m_axi port=spmspv_vector         offset=slave bundle=spmspv_gmem2
-#pragma HLS interface m_axi port=spmspv_mask           offset=slave bundle=spmspv_gmem0
-#pragma HLS interface m_axi port=spmspv_out            offset=slave bundle=spmspv_gmem2
-
-#pragma HLS interface s_axilite port=spmspv_matrix         bundle=control
-#pragma HLS interface s_axilite port=spmspv_matrix_indptr  bundle=control
-#pragma HLS interface s_axilite port=spmspv_matrix_partptr bundle=control
-#pragma HLS interface s_axilite port=spmspv_vector         bundle=control
-#pragma HLS interface s_axilite port=spmspv_mask           bundle=control
-#pragma HLS interface s_axilite port=spmspv_out            bundle=control
-
-#pragma HLS data_pack variable=spmspv_matrix
-#pragma HLS data_pack variable=spmspv_vector
-#pragma HLS data_pack variable=spmspv_out
-
 /*----------------- arguments for SpMV -------------------*/
 #if (NUM_HBM_CHANNEL >= 1)
 #pragma HLS INTERFACE m_axi port=spmv_channel_0_matrix offset=slave bundle=spmv_gmem0
@@ -106,8 +95,8 @@ void kernel_spmv_spmspv(
 #pragma HLS INTERFACE m_axi port=spmv_channel_7_matrix offset=slave bundle=spmv_gmem7
 #endif
 #if (NUM_HBM_CHANNEL >= 16)
-#pragma HLS INTERFACE m_axi port=spmv_channel_8_matrix  offset=slave bundle=spmv_gmem8
-#pragma HLS INTERFACE m_axi port=spmv_channel_9_matrix  offset=slave bundle=spmv_gmem9
+#pragma HLS INTERFACE m_axi port=spmv_channel_8_matrix offset=slave bundle=spmv_gmem8
+#pragma HLS INTERFACE m_axi port=spmv_channel_9_matrix offset=slave bundle=spmv_gmem9
 #pragma HLS INTERFACE m_axi port=spmv_channel_10_matrix offset=slave bundle=spmv_gmem10
 #pragma HLS INTERFACE m_axi port=spmv_channel_11_matrix offset=slave bundle=spmv_gmem11
 #pragma HLS INTERFACE m_axi port=spmv_channel_12_matrix offset=slave bundle=spmv_gmem12
@@ -136,7 +125,7 @@ void kernel_spmv_spmspv(
 
 #pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem32
 #pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_gmem33
-#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_gmem34
+#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_gmem32
 
 #if (NUM_HBM_CHANNEL >= 1)
 #pragma HLS INTERFACE s_axilite port=spmv_channel_0_matrix bundle=control
@@ -155,8 +144,8 @@ void kernel_spmv_spmspv(
 #pragma HLS INTERFACE s_axilite port=spmv_channel_7_matrix bundle=control
 #endif
 #if (NUM_HBM_CHANNEL >= 16)
-#pragma HLS INTERFACE s_axilite port=spmv_channel_8_matrix  bundle=control
-#pragma HLS INTERFACE s_axilite port=spmv_channel_9_matrix  bundle=control
+#pragma HLS INTERFACE s_axilite port=spmv_channel_8_matrix bundle=control
+#pragma HLS INTERFACE s_axilite port=spmv_channel_9_matrix bundle=control
 #pragma HLS INTERFACE s_axilite port=spmv_channel_10_matrix bundle=control
 #pragma HLS INTERFACE s_axilite port=spmv_channel_11_matrix bundle=control
 #pragma HLS INTERFACE s_axilite port=spmv_channel_12_matrix bundle=control
@@ -236,7 +225,30 @@ void kernel_spmv_spmspv(
 #pragma HLS DATA_PACK variable=spmv_mask
 #pragma HLS DATA_PACK variable=spmv_out
 
-/*-------- arguments shared by SpMSpV and SpMV -------------*/
+/*----------------- arguments for SpMSpV -------------------*/
+#pragma HLS interface m_axi port=spmspv_matrix         offset=slave bundle=spmspv_gmem0
+#pragma HLS interface m_axi port=spmspv_matrix_indptr  offset=slave bundle=spmspv_gmem1
+#pragma HLS interface m_axi port=spmspv_matrix_partptr offset=slave bundle=spmspv_gmem1
+#pragma HLS interface m_axi port=spmspv_vector         offset=slave bundle=spmspv_gmem2
+#pragma HLS interface m_axi port=spmspv_mask           offset=slave bundle=spmspv_gmem3
+#pragma HLS interface m_axi port=spmspv_out            offset=slave bundle=spmspv_gmem2
+
+#pragma HLS interface s_axilite port=spmspv_matrix         bundle=control
+#pragma HLS interface s_axilite port=spmspv_matrix_indptr  bundle=control
+#pragma HLS interface s_axilite port=spmspv_matrix_partptr bundle=control
+#pragma HLS interface s_axilite port=spmspv_vector         bundle=control
+#pragma HLS interface s_axilite port=spmspv_mask           bundle=control
+#pragma HLS interface s_axilite port=spmspv_out            bundle=control
+
+#pragma HLS data_pack variable=spmspv_matrix
+#pragma HLS data_pack variable=spmspv_vector
+#pragma HLS data_pack variable=spmspv_out
+
+/*-------- arguments for apply kernels -------------*/
+#pragma HLS INTERFACE s_axilite port=length bundle=control
+#pragma HLS INTERFACE s_axilite port=val bundle=control
+
+/*-------- arguments shared by all kernels ---------*/
 #pragma HLS INTERFACE s_axilite port=num_rows bundle=control
 #pragma HLS INTERFACE s_axilite port=num_cols bundle=control
 #pragma HLS INTERFACE s_axilite port=Op bundle=control
@@ -255,81 +267,125 @@ void kernel_spmv_spmspv(
         The URAM latency could be 1, 2, 3, or 4. If specified, it will be applied to both read and write.
     */
 
-    if (mode == 1) {
-        #ifndef __SYNTHESIS__
-        std::cout << "Running SpMSpV" << std::endl;
-        #endif
-        kernel_spmspv(
-            spmspv_matrix,
-            spmspv_matrix_indptr,
-            spmspv_matrix_partptr,
-            spmspv_vector,
-            spmspv_mask,
-            spmspv_out,
-            num_rows,
-            num_cols,
-            Op,
-            mask_type,
-            out_uram
-        );
-    } else {
-        #ifndef __SYNTHESIS__
-        std::cout << "Running SpMV" << std::endl;
-        #endif
-        kernel_spmv(
+    switch (mode) {
+        case 1: {
+            #ifndef __SYNTHESIS__
+            std::cout << "Running SpMV" << std::endl;
+            #endif
+            kernel_spmv(
 #if (NUM_HBM_CHANNEL >= 1)
-            spmv_channel_0_matrix,
+                spmv_channel_0_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 2)
-            spmv_channel_1_matrix,
+                spmv_channel_1_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 4)
-            spmv_channel_2_matrix,
-            spmv_channel_3_matrix,
+                spmv_channel_2_matrix,
+                spmv_channel_3_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 8)
-            spmv_channel_4_matrix,
-            spmv_channel_5_matrix,
-            spmv_channel_6_matrix,
-            spmv_channel_7_matrix,
+                spmv_channel_4_matrix,
+                spmv_channel_5_matrix,
+                spmv_channel_6_matrix,
+                spmv_channel_7_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 16)
-            spmv_channel_8_matrix,
-            spmv_channel_9_matrix,
-            spmv_channel_10_matrix,
-            spmv_channel_11_matrix,
-            spmv_channel_12_matrix,
-            spmv_channel_13_matrix,
-            spmv_channel_14_matrix,
-            spmv_channel_15_matrix,
+                spmv_channel_8_matrix,
+                spmv_channel_9_matrix,
+                spmv_channel_10_matrix,
+                spmv_channel_11_matrix,
+                spmv_channel_12_matrix,
+                spmv_channel_13_matrix,
+                spmv_channel_14_matrix,
+                spmv_channel_15_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 32)
-            spmv_channel_16_matrix,
-            spmv_channel_17_matrix,
-            spmv_channel_18_matrix,
-            spmv_channel_19_matrix,
-            spmv_channel_20_matrix,
-            spmv_channel_21_matrix,
-            spmv_channel_22_matrix,
-            spmv_channel_23_matrix,
-            spmv_channel_24_matrix,
-            spmv_channel_25_matrix,
-            spmv_channel_26_matrix,
-            spmv_channel_27_matrix,
-            spmv_channel_28_matrix,
-            spmv_channel_29_matrix,
-            spmv_channel_30_matrix,
-            spmv_channel_31_matrix,
+                spmv_channel_16_matrix,
+                spmv_channel_17_matrix,
+                spmv_channel_18_matrix,
+                spmv_channel_19_matrix,
+                spmv_channel_20_matrix,
+                spmv_channel_21_matrix,
+                spmv_channel_22_matrix,
+                spmv_channel_23_matrix,
+                spmv_channel_24_matrix,
+                spmv_channel_25_matrix,
+                spmv_channel_26_matrix,
+                spmv_channel_27_matrix,
+                spmv_channel_28_matrix,
+                spmv_channel_29_matrix,
+                spmv_channel_30_matrix,
+                spmv_channel_31_matrix,
 #endif
-            spmv_vector,
-            spmv_mask,
-            spmv_out,
-            num_rows,
-            num_cols,
-            Op,
-            mask_type,
-            out_uram
-        );
+                spmv_vector,
+                spmv_mask,
+                spmv_out,
+                num_rows,
+                num_cols,
+                Op,
+                mask_type,
+                out_uram
+            );
+            break;
+        }
+        case 2: {
+            #ifndef __SYNTHESIS__
+            std::cout << "Running SpMSpV" << std::endl;
+            #endif
+            kernel_spmspv(
+                spmspv_matrix,
+                spmspv_matrix_indptr,
+                spmspv_matrix_partptr,
+                spmspv_vector,
+                spmspv_mask,
+                spmspv_out,
+                num_rows,
+                num_cols,
+                Op,
+                mask_type,
+                out_uram
+            );
+            break;
+        }
+        case 3: {
+            #ifndef __SYNTHESIS__
+            std::cout << "Running kernel_add_scalar_vector_dense" << std::endl;
+            #endif
+            kernel_add_scalar_vector_dense(spmv_vector,
+                                           spmv_mask,
+                                           length,
+                                           val);
+            break;
+        }
+        case 4: {
+            #ifndef __SYNTHESIS__
+            std::cout << "Running kernel_assign_vector_dense" << std::endl;
+            #endif
+            kernel_assign_vector_dense(spmv_vector,
+                                       spmv_mask,
+                                       length,
+                                       val,
+                                       mask_type);
+            break;
+        }
+        case 5: {
+            #ifndef __SYNTHESIS__
+            std::cout << "Running kernel_assign_vector_sparse_no_new_frontier" << std::endl;
+            #endif
+            kernel_assign_vector_sparse_no_new_frontier(spmspv_vector,
+                                                        spmspv_mask,
+                                                        val);
+            break;
+        }
+        case 6: {
+            #ifndef __SYNTHESIS__
+            std::cout << "Running kernel_assign_vector_sparse_new_frontier" << std::endl;
+            #endif
+            kernel_assign_vector_sparse_new_frontier(spmspv_vector,
+                                                     spmspv_mask,
+                                                     spmspv_out);
+            break;
+        }
     }
 }
 

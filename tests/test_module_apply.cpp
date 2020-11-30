@@ -3,7 +3,8 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include "graphlily/synthesizer/apply_synthesizer.h"
+#include "graphlily/synthesizer/overlay_synthesizer.h"
+
 #include "graphlily/module/assign_vector_dense_module.h"
 #include "graphlily/module/assign_vector_sparse_module.h"
 #include "graphlily/module/add_scalar_vector_dense_module.h"
@@ -17,6 +18,8 @@
 
 
 std::string target = "sw_emu";
+uint32_t out_buf_len = 512 * graphlily::num_cycles_float_add;
+uint32_t vec_buf_len = 512 * graphlily::num_cycles_float_add;
 
 
 void clean_proj_folder() {
@@ -37,10 +40,36 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 }
 
 
-TEST(SynthesizeApplyKernel, NULL) {
-    graphlily::synthesizer::ApplySynthesizer synthesizer;
+TEST(Synthesize, NULL) {
+    graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
+                                                           out_buf_len,
+                                                           vec_buf_len);
     synthesizer.set_target(target);
     synthesizer.synthesize();
+}
+
+
+TEST(AddScalarVectorDense, Basic) {
+    graphlily::module::eWiseAddModule<graphlily::val_t> module;
+    module.set_target(target);
+    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+
+    uint32_t length = 128;
+    graphlily::val_t val = 0.14;
+    float val_float = float(val);
+    std::vector<float, aligned_allocator<float>> in_float(length);
+    std::generate(in_float.begin(), in_float.end(), [&](){return float(rand() % 10) / 100;});
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> in(in_float.begin(), in_float.end());
+
+    module.send_in_host_to_device(in);
+    module.allocate_out_buf(length);
+    module.run(length, val);
+    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> kernel_out =
+        module.send_out_device_to_host();
+    std::vector<float, aligned_allocator<float>> reference_out =
+        module.compute_reference_results(in_float, length, val_float);
+
+    verify<graphlily::val_t>(reference_out, kernel_out);
 }
 
 
@@ -173,30 +202,6 @@ TEST(AssignVectorSparseNewFrontier, Basic) {
 }
 
 
-TEST(AddScalarVectorDense, Basic) {
-    graphlily::module::eWiseAddModule<graphlily::val_t> module;
-    module.set_target(target);
-    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-
-    uint32_t length = 128;
-    graphlily::val_t val = 0.14;
-    float val_float = float(val);
-    std::vector<float, aligned_allocator<float>> in_float(length);
-    std::generate(in_float.begin(), in_float.end(), [&](){return float(rand() % 10) / 100;});
-    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> in(in_float.begin(), in_float.end());
-
-    module.send_in_host_to_device(in);
-    module.allocate_out_buf(length);
-    module.run(length, val);
-    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> kernel_out =
-        module.send_out_device_to_host();
-    std::vector<float, aligned_allocator<float>> reference_out =
-        module.compute_reference_results(in_float, length, val_float);
-
-    verify<graphlily::val_t>(reference_out, kernel_out);
-}
-
-
 TEST(CopyBufferBindBuffer, Basic) {
     graphlily::module::AssignVectorDenseModule<graphlily::val_t> module;
     module.set_target(target);
@@ -252,7 +257,7 @@ TEST(CopyBufferBindBuffer, Basic) {
 }
 
 
-TEST(CleanApplyKernel, NULL) {
+TEST(Clean, NULL) {
     clean_proj_folder();
 }
 

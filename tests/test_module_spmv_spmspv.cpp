@@ -3,7 +3,8 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include "graphlily/synthesizer/spmv_spmspv_synthesizer.h"
+#include "graphlily/synthesizer/overlay_synthesizer.h"
+
 #include "graphlily/module/spmv_module.h"
 #include "graphlily/module/spmspv_module.h"
 
@@ -81,10 +82,10 @@ std::string gen_test_case_name_spmspv(graphlily::SemiringType semiring,
 }
 
 
-TEST(SynthesizeSpmvSpmspvKernel, NULL) {
-    graphlily::synthesizer::SpmvSpmspvSynthesizer synthesizer(graphlily::num_hbm_channels,
-                                                              out_buf_len,
-                                                              vec_buf_len);
+TEST(Synthesize, NULL) {
+    graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
+                                                           out_buf_len,
+                                                           vec_buf_len);
     synthesizer.set_target(target);
     synthesizer.synthesize();
 }
@@ -301,7 +302,7 @@ TEST(SpMSpV, MultipleCases) {
 }
 
 
-TEST(CleanSpmvSpmspvKernel, NULL) {
+TEST(Clean, NULL) {
     clean_proj_folder();
 }
 

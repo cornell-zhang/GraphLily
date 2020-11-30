@@ -665,7 +665,7 @@ FormattedCSCMatrix<MatrixPacketT> formatCSC(CSCMatrix<DataT> const &csc_matrix,
         unsigned dest_tile = csc_matrix.adj_indices[start + j] / out_buf_len;
         tile_data_buf[dest_tile].push_back(csc_matrix.adj_data[start + j]);
         tile_idx_buf[dest_tile].push_back(csc_matrix.adj_indices[start + j]);
-        tile_nnz_cnt[dest_tile] ++;
+        tile_nnz_cnt[dest_tile]++;
       }
 
       // column padding and data packing for every tile

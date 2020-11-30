@@ -81,19 +81,25 @@ private:
     void _check_data_type();
 
 public:
-    SpMSpVModule(uint32_t out_buf_len) : BaseModule("kernel_spmv_spmspv") {
+    SpMSpVModule(uint32_t out_buf_len) : BaseModule("overlay") {
         this->_check_data_type();
         this->out_buf_len_ = out_buf_len;
     }
 
     void set_unused_args() override {
-        for (uint32_t i = 6; i < 6 + graphlily::num_hbm_channels + 3; i++) {
+        for (uint32_t i = 0; i < graphlily::num_hbm_channels + 3; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        }
+        for (uint32_t i = graphlily::num_hbm_channels + 9; i < graphlily::num_hbm_channels + 11; i++) {
+            this->kernel_.setArg(i, (unsigned)NULL);
+        }
+        if (this->mask_type_ == graphlily::kNoMask) {
+            this->kernel_.setArg(graphlily::num_hbm_channels + 7, cl::Buffer(this->context_, 0, 4));
         }
     }
 
     void set_mode() override {
-        this->kernel_.setArg(6 + graphlily::num_hbm_channels + 7, 1);  // 0 is SpMV; 1 is SpMSpV
+        this->kernel_.setArg(graphlily::num_hbm_channels + 15, 2);  // 2 is SpMSpV
     }
 
     /*!
@@ -281,13 +287,13 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
         &err));
 
     // Set arguments
-    OCL_CHECK(err, err = this->kernel_.setArg(0, this->channel_packets_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(1, this->channel_indptr_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(2, this->channel_partptr_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 3, this->csc_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 4, this->csc_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 5, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->kernel_.setArg(6 + graphlily::num_hbm_channels + 6, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 3, this->channel_packets_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 4, this->channel_indptr_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 5, this->channel_partptr_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 11, this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 12, this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 14, (char)this->mask_type_));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
@@ -315,7 +321,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
         &err));
 
     // Set argument
-    OCL_CHECK(err, err = this->kernel_.setArg(5, this->results_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 8, this->results_buf));
     std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
               << std::endl << std::flush;
 }
@@ -342,7 +348,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
                 &err));
 
     // set argument
-    OCL_CHECK(err, err = this->kernel_.setArg(3, this->vector_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 6, this->vector_buf));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
@@ -374,7 +380,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
                 &err));
 
     // set argument
-    OCL_CHECK(err, err = this->kernel_.setArg(4, this->mask_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->mask_buf));
 
     // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));

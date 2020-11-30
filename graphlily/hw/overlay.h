@@ -1,5 +1,5 @@
-#ifndef GRAPHLILY_HW_SPMV_SPMSPV_H_
-#define GRAPHLILY_HW_SPMV_SPMSPV_H_
+#ifndef GRAPHLILY_HW_OVERLAY_H_
+#define GRAPHLILY_HW_OVERLAY_H_
 
 #include "ap_fixed.h"
 #include "./math_constants.h"
@@ -12,7 +12,7 @@ const unsigned NUM_BANK_PER_HBM_CHANNEL = PACK_SIZE / NUM_PORT_PER_BANK;
 const unsigned BANK_ID_NBITS = 3;
 const unsigned BANK_ID_MASK = 7;
 
-const unsigned NUM_CYCLES_FLOAT_ADD = 10;
+const unsigned NUM_CYCLES_FLOAT_ADD = 12;
 
 // data types
 typedef unsigned IDX_T;
@@ -51,6 +51,9 @@ typedef char MASK_T;
 #define WRITETOZERO 1
 #define WRITETOONE  2
 
+// Kernel configurations
+const unsigned BATCH_SIZE = 128;
+
 // Below kernel configurations will be overwritten by the compiler
 // const unsigned OUT_BUF_LEN =;
 // const unsigned VEC_BUF_LEN =;
@@ -58,4 +61,4 @@ typedef char MASK_T;
 // #define NUM_HBM_CHANNEL x
 // const unsigned SPMV_NUM_PE_TOTAL = PACK_SIZE * NUM_HBM_CHANNEL;
 
-// #endif  // GRAPHLILY_HW_SPMV_SPMSPV_H_
+// #endif  // GRAPHLILY_HW_OVERLAY_H_

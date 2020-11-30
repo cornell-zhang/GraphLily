@@ -1,4 +1,4 @@
-#include "./kernel_spmv_spmspv.h"
+#include "./overlay.h"
 
 #include <stdlib.h>
 #include <assert.h>
