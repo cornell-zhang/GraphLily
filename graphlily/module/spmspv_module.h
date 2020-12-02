@@ -58,6 +58,8 @@ private:
     /*! \brief The kernel results.
                The index field of the first element is the non-zero count of the results */
     aligned_sparse_vec_t results_;
+    /*! \brief The nnz of the results */
+    idx_val_t results_nnz_[1];
     /*! \brief The sparse matrix using float data type*/
     CSCMatrix<float> csc_matrix_float_;
     /*! \brief The sparse matrix */
@@ -73,6 +75,7 @@ public:
     cl::Buffer vector_buf;
     cl::Buffer mask_buf;
     cl::Buffer results_buf;
+    cl::Buffer results_nnz_buf;
 
 private:
     /*!
@@ -205,6 +208,14 @@ public:
     }
 
     /*!
+     * \brief Get the nnz of the results. The host uses the information to do the scheduling.
+     */
+    uint32_t get_results_nnz() {
+        this->copy_buffer_device_to_device(this->results_buf, this->results_nnz_buf, sizeof(idx_val_t) * 1);
+        return this->results_nnz_[0].index;
+    }
+
+    /*!
      * \brief Compute reference results.
      * \param vector The sparse vector.
      * \param mask The dense mask.
@@ -269,7 +280,6 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     channel_partptr_ext.param = 0;
     channel_partptr_ext.flags = graphlily::DDR[1];
 
-    // Allocate memory on the FPGA
     OCL_CHECK(err, this->channel_packets_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
         sizeof(packet_t) * this->num_packets_,
@@ -286,7 +296,6 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
         &channel_partptr_ext,
         &err));
 
-    // Set arguments
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 3, this->channel_packets_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 4, this->channel_indptr_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 5, this->channel_partptr_buf));
@@ -295,7 +304,6 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)this->semiring_.op));
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 14, (char)this->mask_type_));
 
-    // Send data to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
         this->channel_packets_buf,
         this->channel_indptr_buf,
@@ -313,14 +321,23 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     results_ext.param = 0;
     results_ext.flags = graphlily::DDR[0];
 
-    // Allocate memory on the FPGA
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
         sizeof(idx_val_t) * (this->get_num_rows() + 1),
         &results_ext,
         &err));
 
-    // Set argument
+    cl_mem_ext_ptr_t results_nnz_ext;
+    results_nnz_ext.obj = this->results_nnz_;
+    results_nnz_ext.param = 0;
+    results_nnz_ext.flags = graphlily::DDR[0];
+
+    OCL_CHECK(err, this->results_nnz_buf = cl::Buffer(this->context_,
+                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+                sizeof(idx_val_t) * 1,
+                &results_nnz_ext,
+                &err));
+
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 8, this->results_buf));
     std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
               << std::endl << std::flush;

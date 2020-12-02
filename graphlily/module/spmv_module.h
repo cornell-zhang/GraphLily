@@ -182,6 +182,11 @@ public:
     void send_mask_host_to_device(aligned_dense_vec_t &mask);
 
     /*!
+     * \brief Bind the mask buffer to an existing buffer.
+     */
+    void bind_mask_buf(cl::Buffer src_buf);
+
+    /*!
      * \brief Run the module.
      */
     void run();
@@ -417,6 +422,13 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
     OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
     this->command_queue_.finish();
+}
+
+
+template<typename matrix_data_t, typename vector_data_t>
+void SpMVModule<matrix_data_t, vector_data_t>::bind_mask_buf(cl::Buffer src_buf) {
+    this->mask_buf = src_buf;
+    this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf);
 }
 
 

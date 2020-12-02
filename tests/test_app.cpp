@@ -61,17 +61,18 @@ TEST(BFS, PullPush) {
 
     auto reference_results = bfs.compute_reference_results(source, num_iterations);
 
+    // pull push
+    float threshold = 0.1;
+    auto kernel_results = bfs.pull_push(source, num_iterations, threshold);
+    verify<graphlily::val_t>(reference_results, kernel_results);
+
     // pull
-    auto kernel_results = bfs.pull(source, num_iterations);
+    kernel_results = bfs.pull(source, num_iterations);
     verify<graphlily::val_t>(reference_results, kernel_results);
 
     // push
     kernel_results = bfs.push(source, num_iterations);
     verify<graphlily::val_t>(reference_results, kernel_results);
-
-    // // pull_push
-    // kernel_results = bfs.pull_push(source, num_iterations);
-    // verify<graphlily::val_t>(reference_results, kernel_results);
 }
 
 

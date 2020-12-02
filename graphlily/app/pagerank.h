@@ -77,7 +77,7 @@ public:
         this->SpMV_->send_vector_host_to_device(rank);
         this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
         this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);
-        for (size_t i = 1; i <= num_iterations; i++) {
+        for (size_t iter = 1; iter <= num_iterations; iter++) {
             this->SpMV_->run();
             this->eWiseAdd_->run(this->matrix_num_rows_, (1 - damping) / this->matrix_num_rows_);
         }
@@ -87,7 +87,7 @@ public:
 
     aligned_dense_float_vec_t compute_reference_results(float damping, uint32_t num_iterations) {
         aligned_dense_float_vec_t rank(this->matrix_num_rows_, 1.0 / this->matrix_num_rows_);
-        for (size_t i = 1; i <= num_iterations; i++) {
+        for (size_t iter = 1; iter <= num_iterations; iter++) {
             rank = this->SpMV_->compute_reference_results(rank);
             rank = this->eWiseAdd_->compute_reference_results(rank,
                                                               this->matrix_num_rows_,

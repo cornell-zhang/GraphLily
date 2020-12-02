@@ -99,12 +99,12 @@ public:
         this->SpMV_->send_mask_host_to_device(distance);
         this->DenseAssign_->bind_mask_buf(this->SpMV_->vector_buf);
         this->DenseAssign_->bind_inout_buf(this->SpMV_->mask_buf);
-        for (size_t i = 1; i <= num_iterations; i++) {
+        for (size_t iter = 1; iter <= num_iterations; iter++) {
             this->SpMV_->run();
             this->SpMV_->copy_buffer_device_to_device(this->SpMV_->results_buf,
                                                       this->SpMV_->vector_buf,
                                                       sizeof(graphlily::val_t) * this->matrix_num_rows_);
-            this->DenseAssign_->run(this->matrix_num_rows_, i + 1);
+            this->DenseAssign_->run(this->matrix_num_rows_, iter + 1);
         }
         return this->SpMV_->send_mask_device_to_host();
     }
@@ -128,71 +128,73 @@ public:
         this->SpMSpV_->send_mask_host_to_device(distance);
         this->SparseAssign_->bind_mask_buf(this->SpMSpV_->vector_buf);
         this->SparseAssign_->bind_inout_buf(this->SpMSpV_->mask_buf);
-        for (size_t i = 1; i <= num_iterations; i++) {
+        for (size_t iter = 1; iter <= num_iterations; iter++) {
             this->SpMSpV_->run();
-            // TODO: the size of buffer to be copied should be sizeof(graphlily::idx_val_t) * (1 + nnz)
             this->SpMSpV_->copy_buffer_device_to_device(
                 this->SpMSpV_->results_buf,
                 this->SpMSpV_->vector_buf,
-                sizeof(graphlily::idx_val_t) * (1 + this->matrix_num_rows_));
-            this->SparseAssign_->run(i + 1);
+                sizeof(graphlily::idx_val_t) * (1 + this->SpMSpV_->get_results_nnz()));
+            this->SparseAssign_->run(iter + 1);
         }
 
         return this->SpMSpV_->send_mask_device_to_host();
     }
 
 
-    // aligned_dense_vec_t pull_push(uint32_t source, uint32_t num_iterations) {
-    //     // The sparse input vector
-    //     aligned_sparse_vec_t spmspv_input(2);
-    //     idx_val_t head;
-    //     graphlily::idx_t nnz = 1; // one source vertex
-    //     head.index = nnz;
-    //     spmspv_input[0] = head;
-    //     spmspv_input[1] = {source, 1};
+    aligned_dense_vec_t pull_push(uint32_t source, uint32_t num_iterations, float threshold = 0.05) {
+        // The sparse input vector
+        aligned_sparse_vec_t spmspv_input(2);
+        idx_val_t head;
+        graphlily::idx_t nnz = 1;  // one source vertex
+        head.index = nnz;
+        spmspv_input[0] = head;
+        spmspv_input[1] = {source, 1};
 
-    //     // The dense distance vector
-    //     aligned_dense_vec_t distance(this->matrix_num_rows_, 0);
-    //     distance[source] = 1;
+        // The dense distance vector
+        aligned_dense_vec_t distance(this->matrix_num_rows_, 0);
+        distance[source] = 1;
 
-    //     // Push
-    //     this->SpMSpV_->send_vector_host_to_device(spmspv_input);
-    //     this->SpMSpV_->send_mask_host_to_device(distance);
-    //     this->SparseAssign_->bind_mask_buf(this->SpMSpV_->vector_buf);
-    //     this->SparseAssign_->bind_inout_buf(this->SpMSpV_->mask_buf);
-    //     for (size_t i = 1; i < 5; i++) {
-    //         this->SpMSpV_->run();
-    //         this->SpMSpV_->copy_buffer_device_to_device(
-    //             this->SpMSpV_->results_buf,
-    //             this->SpMSpV_->vector_buf,
-    //             sizeof(graphlily::idx_val_t) * (1 + this->matrix_num_rows_));
-    //         this->SparseAssign_->run(i + 1);
-    //     }
+        // Push
+        this->SpMSpV_->send_vector_host_to_device(spmspv_input);
+        this->SpMSpV_->send_mask_host_to_device(distance);
+        this->SparseAssign_->bind_mask_buf(this->SpMSpV_->vector_buf);
+        this->SparseAssign_->bind_inout_buf(this->SpMSpV_->mask_buf);
+        uint32_t iter = 1;
+        uint32_t vector_nnz;
+        do {
+            this->SpMSpV_->run();
+            vector_nnz = this->SpMSpV_->get_results_nnz();
+            this->SpMSpV_->copy_buffer_device_to_device(
+                this->SpMSpV_->results_buf,
+                this->SpMSpV_->vector_buf,
+                sizeof(graphlily::idx_val_t) * (1 + vector_nnz));
+            this->SparseAssign_->run(iter + 1);
+            iter++;
+        } while (iter <= num_iterations && (float(vector_nnz) / this->matrix_num_rows_ < threshold));
 
-    //     // Switch
-    //     this->SpMV_->send_mask_host_to_device(distance);  // TODO: SpMV and SpMSpV should share distance
-    //     this->SpMSpV_->copy_buffer_device_to_device(this->SpMSpV_->mask_buf,
-    //                                                 this->SpMV_->mask_buf,
-    //                                                 sizeof(graphlily::val_t) * this->matrix_num_rows_);
-    //     aligned_sparse_vec_t spmspv_result = this->SpMSpV_->send_results_device_to_host();
-    //     aligned_dense_vec_t spmv_input = graphlily::convert_sparse_vec_to_dense_vec<aligned_sparse_vec_t,
-    //         aligned_dense_vec_t>(spmspv_result, this->matrix_num_rows_);
+        // Switch from push to pull
+        this->SpMV_->bind_mask_buf(this->SpMSpV_->mask_buf);
+        aligned_sparse_vec_t spmspv_result = this->SpMSpV_->send_results_device_to_host();
+        aligned_dense_vec_t spmv_input = graphlily::convert_sparse_vec_to_dense_vec<
+            aligned_sparse_vec_t, aligned_dense_vec_t, graphlily::val_t>(spmspv_result,
+                                                                         this->matrix_num_rows_,
+                                                                         graphlily::LogicalSemiring.zero);
+        this->SpMV_->send_vector_host_to_device(spmv_input);
 
-    //     // Pull
-    //     this->SpMV_->send_vector_host_to_device(spmv_input);
-    //     this->DenseAssign_->bind_mask_buf(this->SpMV_->vector_buf);
-    //     this->DenseAssign_->bind_inout_buf(this->SpMV_->mask_buf);
-    //     for (size_t i = 5; i <= num_iterations; i++) {
-    //         this->SpMV_->run();
-    //         this->SpMV_->copy_buffer_device_to_device(
-    //             this->SpMV_->results_buf,
-    //             this->SpMV_->vector_buf,
-    //             sizeof(graphlily::val_t) * this->matrix_num_rows_);
-    //         this->DenseAssign_->run(this->matrix_num_rows_, i + 1);
-    //     }
+        // Pull
+        this->DenseAssign_->bind_mask_buf(this->SpMV_->vector_buf);
+        this->DenseAssign_->bind_inout_buf(this->SpMV_->mask_buf);
+        for ( ; iter <= num_iterations; iter++) {
+            this->SpMV_->run();
+            this->SpMV_->copy_buffer_device_to_device(
+                this->SpMV_->results_buf,
+                this->SpMV_->vector_buf,
+                sizeof(graphlily::val_t) * this->matrix_num_rows_);
+            this->DenseAssign_->run(this->matrix_num_rows_, iter + 1);
+        }
 
-    //     return this->SpMV_->send_mask_device_to_host();
-    // }
+        return this->SpMSpV_->send_mask_device_to_host();  // the mask of SpMV on the host is not valid
+    }
 
 
     aligned_dense_float_vec_t compute_reference_results(uint32_t source, uint32_t num_iterations) {
@@ -200,9 +202,9 @@ public:
         aligned_dense_float_vec_t distance(this->matrix_num_rows_, 0);
         input[source] = 1;
         distance[source] = 1;
-        for (size_t i = 1; i <= num_iterations; i++) {
+        for (size_t iter = 1; iter <= num_iterations; iter++) {
             input = this->SpMV_->compute_reference_results(input, distance);
-            this->DenseAssign_->compute_reference_results(input, distance, this->matrix_num_rows_, i + 1);
+            this->DenseAssign_->compute_reference_results(input, distance, this->matrix_num_rows_, iter + 1);
         }
         return distance;
     }
