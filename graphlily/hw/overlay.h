@@ -58,7 +58,7 @@ const unsigned BATCH_SIZE = 128;
 // const unsigned OUT_BUF_LEN =;
 // const unsigned VEC_BUF_LEN =;
 // const unsigned NUM_HBM_CHANNEL =;
-// #define NUM_HBM_CHANNEL x
-// const unsigned SPMV_NUM_PE_TOTAL = PACK_SIZE * NUM_HBM_CHANNEL;
+// #define NUM_HBM_CHANNEL
+// #define SPMV_NUM_PE_TOTAL
 
 // #endif  // GRAPHLILY_HW_OVERLAY_H_

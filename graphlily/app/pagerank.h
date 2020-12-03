@@ -23,7 +23,9 @@ private:
     uint32_t num_channels_;
     uint32_t out_buf_len_;
     uint32_t vec_buf_len_;
-
+    // Semiring
+    graphlily::SemiringType semiring_ = graphlily::ArithmeticSemiring;
+    // Data types
     using aligned_dense_vec_t = graphlily::aligned_dense_vec_t;
     using aligned_sparse_vec_t = graphlily::aligned_sparse_vec_t;
     using aligned_dense_float_vec_t = graphlily::aligned_dense_float_vec_t;
@@ -38,7 +40,7 @@ public:
             this->num_channels_,
             this->out_buf_len_,
             this->vec_buf_len_);
-        this->SpMV_->set_semiring(graphlily::ArithmeticSemiring);
+        this->SpMV_->set_semiring(semiring_);
         this->SpMV_->set_mask_type(graphlily::kNoMask);
         this->add_module(this->SpMV_);
 

@@ -7,6 +7,7 @@
 #include "graphlily/synthesizer/overlay_synthesizer.h"
 #include "graphlily/app/bfs.h"
 #include "graphlily/app/pagerank.h"
+#include "graphlily/app/sssp.h"
 
 #include <iostream>
 #include <ap_fixed.h>
@@ -64,6 +65,9 @@ TEST(BFS, PullPush) {
     // pull push
     float threshold = 0.1;
     auto kernel_results = bfs.pull_push(source, num_iterations, threshold);
+    // for (int i = 0; i < 10; i++) {
+    //     std::cout << reference_results[i] << " " << kernel_results[i] << std::endl;
+    // }
     verify<graphlily::val_t>(reference_results, kernel_results);
 
     // pull
@@ -91,6 +95,38 @@ TEST(PageRank, Pull) {
     uint32_t num_iterations = 10;
     auto kernel_results = pagerank.pull(damping, num_iterations);
     auto reference_results = pagerank.compute_reference_results(damping, num_iterations);
+    verify<graphlily::val_t>(reference_results, kernel_results);
+}
+
+
+TEST(SSSP, PullPush) {
+    graphlily::app::SSSP sssp(graphlily::num_hbm_channels, out_buf_len, vec_buf_len);
+    sssp.set_target(target);
+    sssp.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+
+    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+                                     "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
+
+    bool skip_empty_rows = true;
+    sssp.load_and_format_matrix(csr_float_npz_path, skip_empty_rows);
+    sssp.send_matrix_host_to_device();
+
+    uint32_t source = 0;
+    uint32_t num_iterations = 10;
+
+    auto reference_results = sssp.compute_reference_results(source, num_iterations);
+
+    // pull push
+    float threshold = 0.1;
+    auto kernel_results = sssp.pull_push(source, num_iterations, threshold);
+    verify<graphlily::val_t>(reference_results, kernel_results);
+
+    // pull
+    kernel_results = sssp.pull(source, num_iterations);
+    verify<graphlily::val_t>(reference_results, kernel_results);
+
+    // push
+    kernel_results = sssp.push(source, num_iterations);
     verify<graphlily::val_t>(reference_results, kernel_results);
 }
 

@@ -36,10 +36,8 @@ void OverlaySynthesizer::generate_kernel_header() {
     std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
     header << "const unsigned OUT_BUF_LEN = " << this->out_buf_len_ << ";" << std::endl;
     header << "const unsigned VEC_BUF_LEN = " << this->vec_buf_len_ << ";" << std::endl;
-    header << "const unsigned NUM_HBM_CHANNEL = " << this->num_channels_ << ";" << std::endl;
     header << "#define NUM_HBM_CHANNEL " << this->num_channels_ << std::endl;
-    header << "const unsigned SPMV_NUM_PE_TOTAL = "
-           << this->num_channels_ * graphlily::pack_size << ";" << std::endl;
+    header << "#define SPMV_NUM_PE_TOTAL " << this->num_channels_ * graphlily::pack_size << std::endl;
     header << std::endl;
     header << "#endif  // GRAPHLILY_HW_OVERLAY_H_" << std::endl;
     header.close();

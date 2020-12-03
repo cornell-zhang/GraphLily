@@ -349,6 +349,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
         channel_packets_ext[c].param = 0;
         channel_packets_ext[c].flags = graphlily::HBM[c];
         size_t channel_packets_size = sizeof(mat_pkt_t) * this->channel_packets_[c].size();
+        // std::cout << "channel_packets_size: " << channel_packets_size << std::endl;
         if (channel_packets_size >= 256 * 1000 * 1000) {
             std::cout << "The capcity of one HBM channel is 256 MB" << std::endl;
             exit(EXIT_FAILURE);
@@ -454,7 +455,7 @@ template<typename matrix_data_t, typename vector_data_t>
 graphlily::aligned_dense_float_vec_t
 SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dense_float_vec_t &vector) {
     aligned_dense_float_vec_t reference_results(this->csr_matrix_.num_rows);
-    std::fill(reference_results.begin(), reference_results.end(), 0);
+    std::fill(reference_results.begin(), reference_results.end(), this->semiring_.zero);
     switch (this->semiring_.op) {
         case graphlily::kMulAdd:
             SPMV(reference_results[row_idx] += this->csr_matrix_float_.adj_data[i] * vector[idx]);
@@ -462,6 +463,10 @@ SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dens
         case graphlily::kLogicalAndOr:
             SPMV(reference_results[row_idx] = reference_results[row_idx]
                 || (this->csr_matrix_float_.adj_data[i] && vector[idx]));
+            break;
+        case graphlily::kAddMin:
+            SPMV(reference_results[row_idx] = std::min(reference_results[row_idx],
+                this->csr_matrix_float_.adj_data[i] + vector[idx]));
             break;
         default:
             std::cerr << "Invalid semiring" << std::endl;
