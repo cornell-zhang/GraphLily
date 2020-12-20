@@ -93,8 +93,12 @@ public:
         for (uint32_t i = 0; i < graphlily::num_hbm_channels + 3; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        for (uint32_t i = graphlily::num_hbm_channels + 9; i < graphlily::num_hbm_channels + 11; i++) {
-            this->kernel_.setArg(i, (unsigned)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 9, (unsigned)NULL);
+        // To avoid runtime error of invalid scalar argument size
+        if (!std::is_same<vector_data_t, float>::value) {
+            this->kernel_.setArg(graphlily::num_hbm_channels + 10, (long long)NULL);
+        } else {
+            this->kernel_.setArg(graphlily::num_hbm_channels + 10, (unsigned)NULL);
         }
         if (this->mask_type_ == graphlily::kNoMask) {
             this->kernel_.setArg(graphlily::num_hbm_channels + 7, cl::Buffer(this->context_, 0, 4));
@@ -270,15 +274,15 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
 
     channel_packets_ext.obj = this->channel_packets_.data();
     channel_packets_ext.param = 0;
-    channel_packets_ext.flags = graphlily::DDR[1];
+    channel_packets_ext.flags = graphlily::DDR[0];
 
     channel_indptr_ext.obj = this->channel_indptr_.data();
     channel_indptr_ext.param = 0;
-    channel_indptr_ext.flags = graphlily::DDR[1];
+    channel_indptr_ext.flags = graphlily::DDR[0];
 
     channel_partptr_ext.obj = this->channel_partptr_.data();
     channel_partptr_ext.param = 0;
-    channel_partptr_ext.flags = graphlily::DDR[1];
+    channel_partptr_ext.flags = graphlily::DDR[0];
 
     OCL_CHECK(err, this->channel_packets_buf = cl::Buffer(this->context_,
         CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -319,7 +323,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
 
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
-    results_ext.flags = graphlily::DDR[0];
+    results_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 2];
 
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -330,7 +334,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     cl_mem_ext_ptr_t results_nnz_ext;
     results_nnz_ext.obj = this->results_nnz_;
     results_nnz_ext.param = 0;
-    results_nnz_ext.flags = graphlily::DDR[0];
+    results_nnz_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 2];
 
     OCL_CHECK(err, this->results_nnz_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -356,7 +360,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphlily::DDR[0];
+    vector_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
 
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -367,7 +371,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
     // set argument
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 6, this->vector_buf));
 
-    // Send data to device
+    // Send vector to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
     this->command_queue_.finish();
     std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device."
@@ -380,29 +384,29 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
         aligned_dense_vec_t &mask) {
     cl_int err;
 
-    // copy the input vector
+    // copy the input mask
     this->mask_.resize(mask.size());
     std::copy(mask.begin(), mask.end(), this->mask_.begin());
 
-    // Handle vector
-    cl_mem_ext_ptr_t vector_ext;
-    vector_ext.obj = this->mask_.data();
-    vector_ext.param = 0;
-    vector_ext.flags = graphlily::DDR[0];
+    // Handle mask
+    cl_mem_ext_ptr_t mask_ext;
+    mask_ext.obj = this->mask_.data();
+    mask_ext.param = 0;
+    mask_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 1];
 
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(vector_data_t) * this->mask_.size(),
-                &vector_ext,
+                &mask_ext,
                 &err));
 
     // set argument
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->mask_buf));
 
-    // Send data to device
+    // Send mask to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
     this->command_queue_.finish();
-    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device."
+    std::cout << "INFO: [Module SpMSpV - send mask] mask successfully send to device."
               << std::endl << std::flush;
 }
 

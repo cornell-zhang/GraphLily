@@ -239,10 +239,10 @@ void compute_spmv_one_channel(
     hls::stream<SF_1_IO_T> SF_1_to_VL_stream[PACK_SIZE];
     hls::stream<SF_2_IO_T> VL_to_SF_2_stream[PACK_SIZE];
     hls::stream<SF_2_IO_T> SF_2_to_PE_stream[PACK_SIZE];
-    #pragma HLS stream variable=ML_to_SF_1_stream depth=256
-    #pragma HLS stream variable=SF_1_to_VL_stream depth=256
-    #pragma HLS stream variable=VL_to_SF_2_stream depth=256
-    #pragma HLS stream variable=SF_2_to_PE_stream depth=256
+    #pragma HLS stream variable=ML_to_SF_1_stream depth=FIFO_DEPTH
+    #pragma HLS stream variable=SF_1_to_VL_stream depth=FIFO_DEPTH
+    #pragma HLS stream variable=VL_to_SF_2_stream depth=FIFO_DEPTH
+    #pragma HLS stream variable=SF_2_to_PE_stream depth=FIFO_DEPTH
 
     // Dataflow pipeline
     {
@@ -301,7 +301,7 @@ void compute_spmv_one_channel(
         }
         #endif
 
-        // fixed_point_pe_cluster_spmv<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        // ufixed_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
         //     SF_2_to_PE_stream,
         //     out_uram,
         //     Op,

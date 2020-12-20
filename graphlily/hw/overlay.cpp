@@ -123,9 +123,9 @@ void overlay(
 #pragma HLS INTERFACE m_axi port=spmv_channel_31_matrix offset=slave bundle=spmv_gmem31
 #endif
 
-#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem32
-#pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_gmem33
-#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_gmem32
+#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_spmspv_gmem0
+#pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_spmspv_gmem1
+#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_spmspv_gmem2
 
 #if (NUM_HBM_CHANNEL >= 1)
 #pragma HLS INTERFACE s_axilite port=spmv_channel_0_matrix bundle=control
@@ -228,10 +228,10 @@ void overlay(
 /*----------------- arguments for SpMSpV -------------------*/
 #pragma HLS interface m_axi port=spmspv_matrix         offset=slave bundle=spmspv_gmem0
 #pragma HLS interface m_axi port=spmspv_matrix_indptr  offset=slave bundle=spmspv_gmem1
-#pragma HLS interface m_axi port=spmspv_matrix_partptr offset=slave bundle=spmspv_gmem1
-#pragma HLS interface m_axi port=spmspv_vector         offset=slave bundle=spmspv_gmem2
-#pragma HLS interface m_axi port=spmspv_mask           offset=slave bundle=spmspv_gmem3
-#pragma HLS interface m_axi port=spmspv_out            offset=slave bundle=spmspv_gmem2
+#pragma HLS interface m_axi port=spmspv_matrix_partptr offset=slave bundle=spmspv_gmem2
+#pragma HLS interface m_axi port=spmspv_vector         offset=slave bundle=spmv_spmspv_gmem0
+#pragma HLS interface m_axi port=spmspv_mask           offset=slave bundle=spmv_spmspv_gmem1
+#pragma HLS interface m_axi port=spmspv_out            offset=slave bundle=spmv_spmspv_gmem2
 
 #pragma HLS interface s_axilite port=spmspv_matrix         bundle=control
 #pragma HLS interface s_axilite port=spmspv_matrix_indptr  bundle=control
@@ -256,11 +256,16 @@ void overlay(
 #pragma HLS INTERFACE s_axilite port=mode bundle=control
 #pragma HLS INTERFACE s_axilite port=return bundle=control
 
-    VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
-    #pragma HLS ARRAY_PARTITION variable=out_uram complete dim=1
-    #pragma HLS ARRAY_PARTITION variable=out_uram complete dim=2
-    // #pragma HLS resource variable=out_uram core=RAM_2P
-    #pragma HLS resource variable=out_uram core=XPM_MEMORY uram latency=2
+    VAL_T out_uram_spmv[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
+    #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=1
+    #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=2
+    #pragma HLS resource variable=out_uram_spmv core=XPM_MEMORY uram latency=2
+
+    VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
+    #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=1
+    #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=2
+    #pragma HLS resource variable=out_uram_spmspv core=XPM_MEMORY uram latency=2
+
     /*
         If we do not specify the latency here, the tool will automatically decide the latency of the URAM,
         which could cause problems for the PE due to RAW hazards.
@@ -324,7 +329,7 @@ void overlay(
                 num_cols,
                 Op,
                 mask_type,
-                out_uram
+                out_uram_spmv
             );
             break;
         }
@@ -343,7 +348,7 @@ void overlay(
                 num_cols,
                 Op,
                 mask_type,
-                out_uram
+                out_uram_spmspv
             );
             break;
         }
@@ -351,8 +356,8 @@ void overlay(
             #ifndef __SYNTHESIS__
             std::cout << "Running kernel_add_scalar_vector_dense" << std::endl;
             #endif
-            kernel_add_scalar_vector_dense(spmv_vector,
-                                           spmv_mask,
+            kernel_add_scalar_vector_dense(spmv_out,
+                                           spmv_vector,
                                            length,
                                            val);
             break;
@@ -381,9 +386,9 @@ void overlay(
             #ifndef __SYNTHESIS__
             std::cout << "Running kernel_assign_vector_sparse_new_frontier" << std::endl;
             #endif
-            kernel_assign_vector_sparse_new_frontier(spmspv_vector,
+            kernel_assign_vector_sparse_new_frontier(spmspv_out,
                                                      spmspv_mask,
-                                                     spmspv_out);
+                                                     spmspv_vector);
             break;
         }
     }

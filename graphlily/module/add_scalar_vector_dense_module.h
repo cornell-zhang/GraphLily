@@ -38,7 +38,8 @@ public:
         for (uint32_t i = 0; i < graphlily::num_hbm_channels; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        for (uint32_t i = graphlily::num_hbm_channels + 2; i < graphlily::num_hbm_channels + 9; i++) {
+        this->kernel_.setArg(graphlily::num_hbm_channels + 1, cl::Buffer(this->context_, 0, 4));
+        for (uint32_t i = graphlily::num_hbm_channels + 3; i <= graphlily::num_hbm_channels + 8; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         this->kernel_.setArg(graphlily::num_hbm_channels + 11, (unsigned)NULL);
@@ -66,7 +67,7 @@ public:
      */
     void bind_in_buf(cl::Buffer src_buf) {
         this->in_buf = src_buf;
-        this->kernel_.setArg(graphlily::num_hbm_channels + 0, this->in_buf);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 2, this->in_buf);
     }
 
     /*!
@@ -74,7 +75,7 @@ public:
      */
     void bind_out_buf(cl::Buffer src_buf) {
         this->out_buf = src_buf;
-        this->kernel_.setArg(graphlily::num_hbm_channels + 1, this->out_buf);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 0, this->out_buf);
     }
 
     /*!
@@ -114,14 +115,14 @@ void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_dense_vec_t &
     cl_mem_ext_ptr_t in_ext;
     in_ext.obj = this->in_.data();
     in_ext.param = 0;
-    in_ext.flags = graphlily::DDR[0];
+    in_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 2];
     cl_int err;
     OCL_CHECK(err, this->in_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(vector_data_t) * this->in_.size(),
                 &in_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 0, this->in_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 2, this->in_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->in_buf}, 0));
     this->command_queue_.finish();
 }
@@ -133,14 +134,14 @@ void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
     cl_mem_ext_ptr_t out_ext;
     out_ext.obj = this->out_.data();
     out_ext.param = 0;
-    out_ext.flags = graphlily::DDR[0];
+    out_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
     cl_int err;
     OCL_CHECK(err, this->out_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                 sizeof(vector_data_t) * this->out_.size(),
                 &out_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 1, this->out_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 0, this->out_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->out_buf}, 0));
     this->command_queue_.finish();
 }
@@ -152,7 +153,7 @@ void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     // TODO: is the overhead of setArg and enqueueTask large at run time?
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 9, len));
     // To avoid runtime error of invalid scalar argument size
-    if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
+    if (!std::is_same<vector_data_t, float>::value) {
         OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 10, 8, (void*)&val));
     } else {
         OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 10, val));

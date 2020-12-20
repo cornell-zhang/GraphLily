@@ -55,16 +55,16 @@ void OverlaySynthesizer::generate_kernel_ini() {
         ini << "sp=overlay_1.spmv_channel_" << hbm_idx << "_matrix:HBM["
             << hbm_idx << "]" << std::endl;
     }
-    ini << "sp=overlay_1.spmv_vector:DDR[0]" << std::endl;
-    ini << "sp=overlay_1.spmv_mask:DDR[0]" << std::endl;
-    ini << "sp=overlay_1.spmv_out:DDR[0]" << std::endl;
+    ini << "sp=overlay_1.spmv_vector:HBM[" << this->num_channels_ + 0 << "]" << std::endl;
+    ini << "sp=overlay_1.spmv_mask:HBM[" << this->num_channels_ + 1 << "]" << std::endl;
+    ini << "sp=overlay_1.spmv_out:HBM[" << this->num_channels_ + 2 << "]" << std::endl;
     // SpMSpV
-    ini << "sp=overlay_1.spmspv_matrix:DDR[1]" << std::endl;
-    ini << "sp=overlay_1.spmspv_matrix_indptr:DDR[1]" << std::endl;
-    ini << "sp=overlay_1.spmspv_matrix_partptr:DDR[1]" << std::endl;
-    ini << "sp=overlay_1.spmspv_vector:DDR[0]" << std::endl;
-    ini << "sp=overlay_1.spmspv_mask:DDR[0]" << std::endl;
-    ini << "sp=overlay_1.spmspv_out:DDR[0]" << std::endl;
+    ini << "sp=overlay_1.spmspv_matrix:DDR[0]" << std::endl;
+    ini << "sp=overlay_1.spmspv_matrix_indptr:DDR[0]" << std::endl;
+    ini << "sp=overlay_1.spmspv_matrix_partptr:DDR[0]" << std::endl;
+    ini << "sp=overlay_1.spmspv_vector:HBM[" << this->num_channels_ + 0 << "]" << std::endl;
+    ini << "sp=overlay_1.spmspv_mask:HBM[" << this->num_channels_ + 1 << "]" << std::endl;
+    ini << "sp=overlay_1.spmspv_out:HBM[" << this->num_channels_ + 2 << "]" << std::endl;
     // enable retiming
     ini << "[vivado]" << std::endl;
     ini << "prop=run.__KERNEL__.{STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}={-retiming}" << std::endl;

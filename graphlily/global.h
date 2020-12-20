@@ -59,7 +59,7 @@ const uint32_t num_cycles_float_add = 12;
 const uint32_t num_hbm_channels = 8;
 
 // Data types (please change this according to the kernel!)
-// using val_t = ap_ufixed<32, 16, AP_RND, AP_SAT>;
+// using val_t = ap_ufixed<32, 8, AP_RND, AP_SAT>;
 using val_t = float;
 typedef uint32_t idx_t;
 const uint32_t idx_marker = 0xffffffff;
@@ -75,7 +75,7 @@ using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
 using aligned_sparse_float_vec_t = std::vector<idx_float_t, aligned_allocator<idx_float_t>>;
 
 const uint32_t UINT_INF = 0xffffffff;
-const val_t UFIXED_INF = 65535;
+const val_t UFIXED_INF = 255;
 const val_t FLOAT_INF = 999999999;
 
 // Operation type, named as k<opx><op+>

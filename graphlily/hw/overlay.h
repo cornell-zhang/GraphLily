@@ -17,7 +17,7 @@ const unsigned NUM_CYCLES_FLOAT_ADD = 12;
 // data types
 typedef unsigned IDX_T;
 typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
-// typedef ap_ufixed<32, 16, AP_RND, AP_SAT> VAL_T;
+// typedef ap_ufixed<32, 8, AP_RND, AP_SAT> VAL_T;
 typedef float VAL_T;
 typedef struct {VAL_T data[PACK_SIZE];} PACKED_VAL_T;
 
@@ -52,6 +52,7 @@ typedef char MASK_T;
 #define WRITETOONE  2
 
 // Kernel configurations
+const unsigned FIFO_DEPTH = 8;
 const unsigned BATCH_SIZE = 128;
 
 // Below kernel configurations will be overwritten by the compiler

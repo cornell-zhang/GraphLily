@@ -146,8 +146,8 @@ TEST(SpMV, MultipleCases) {
         csr_matrix,
         graphlily::num_hbm_channels * graphlily::pack_size * graphlily::num_cycles_float_add,
         graphlily::pack_size * graphlily::num_cycles_float_add);
-    // for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
-    for (auto &x : csr_matrix.adj_data) x = 1.0;
+    for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
+    // for (auto &x : csr_matrix.adj_data) x = 1.0;
 
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, csr_matrix, false);
     _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kNoMask, csr_matrix, false);
@@ -240,17 +240,17 @@ TEST(SpMSpV, MultipleCases) {
     // dense 1K x 1K
     CSCMatrix<float> csc_matrix_dense1K = graphlily::io::csr2csc(
         graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "dense_1K_csr_float32.npz"));
-    for (auto &x : csc_matrix_dense1K.adj_data) x = 1.0;
+    for (auto &x : csc_matrix_dense1K.adj_data) x = 1.0 / csc_matrix_dense1K.num_rows;
 
     // uniform (10K x 10K avg. degree 10)
     CSCMatrix<float> csc_matrix_uniform10K10 = graphlily::io::csr2csc(
         graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "uniform_10K_10_csr_float32.npz"));
-    for (auto &x : csc_matrix_uniform10K10.adj_data) x = 1.0;
+    for (auto &x : csc_matrix_uniform10K10.adj_data) x = 1.0 / csc_matrix_uniform10K10.num_rows;
 
     // google plus (108K x 108K, 13M Nnz)
     CSCMatrix<float> csc_matrix_gpuls = graphlily::io::csr2csc(
         graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "gplus_108K_13M_csr_float32.npz"));
-    for (auto &x : csc_matrix_gpuls.adj_data) x = 1.0;
+    for (auto &x : csc_matrix_gpuls.adj_data) x = 1.0 / csc_matrix_gpuls.num_rows;
 
     // bank conflict test case
     CSCMatrix<float> csc_matrix_conflict;
@@ -258,7 +258,7 @@ TEST(SpMSpV, MultipleCases) {
     csc_matrix_conflict.num_rows = conflict_matirx_size;
     csc_matrix_conflict.num_cols = conflict_matirx_size;
     csc_matrix_conflict.adj_data.resize(conflict_matirx_size/8*conflict_matirx_size);
-    for (auto &x : csc_matrix_conflict.adj_data) x = 1.0;
+    for (auto &x : csc_matrix_conflict.adj_data) x = 1.0 / csc_matrix_conflict.num_rows;
     csc_matrix_conflict.adj_indices.resize(conflict_matirx_size/8*conflict_matirx_size);
     for (size_t i = 0; i < conflict_matirx_size; i++) {
         for (size_t j = 0; j < conflict_matirx_size/8; j++) {
@@ -267,7 +267,7 @@ TEST(SpMSpV, MultipleCases) {
     }
     csc_matrix_conflict.adj_indptr.resize(conflict_matirx_size + 1);
     for (size_t i = 0; i < conflict_matirx_size + 1; i++) {
-        csc_matrix_conflict.adj_indptr[i] = i * (conflict_matirx_size/8);
+        csc_matrix_conflict.adj_indptr[i] = i * (conflict_matirx_size / 8);
     }
 
     _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,

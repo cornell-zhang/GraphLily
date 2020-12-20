@@ -140,7 +140,7 @@ void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_de
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphlily::DDR[0];
+    mask_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -159,7 +159,7 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();
     inout_ext.param = 0;
-    inout_ext.flags = graphlily::DDR[0];
+    inout_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 1];
     cl_int err;
     OCL_CHECK(err, this->inout_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -177,7 +177,7 @@ void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val
     cl_int err;
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 9, len));
     // To avoid runtime error of invalid scalar argument size
-    if (std::is_same<vector_data_t, ap_ufixed<32, 1>>::value) {
+    if (!std::is_same<vector_data_t, float>::value) {
         OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 10, 8, (void*)&val));
     } else {
         OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 10, val));

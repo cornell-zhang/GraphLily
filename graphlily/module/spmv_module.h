@@ -105,8 +105,12 @@ public:
         for (uint32_t i = this->num_channels_ + 3; i < this->num_channels_ + 9; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        for (uint32_t i = this->num_channels_ + 9; i < this->num_channels_ + 11; i++) {
-            this->kernel_.setArg(i, (unsigned)NULL);
+        this->kernel_.setArg(this->num_channels_ + 9, (unsigned)NULL);
+        // To avoid runtime error of invalid scalar argument size
+        if (!std::is_same<vector_data_t, float>::value) {
+            this->kernel_.setArg(this->num_channels_ + 10, (long long)NULL);
+        } else {
+            this->kernel_.setArg(this->num_channels_ + 10, (unsigned)NULL);
         }
         if (this->mask_type_ == graphlily::kNoMask) {
             this->kernel_.setArg(this->num_channels_ + 1, cl::Buffer(this->context_, 0, 4));
@@ -364,7 +368,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     cl_mem_ext_ptr_t results_ext;
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
-    results_ext.flags = graphlily::DDR[0];
+    results_ext.flags = graphlily::HBM[this->num_channels_ + 2];
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
         sizeof(val_t) * this->csr_matrix_.num_rows,
@@ -394,7 +398,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphlily::DDR[0];
+    vector_ext.flags = graphlily::HBM[this->num_channels_ + 0];
     cl_int err;
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -413,7 +417,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphlily::DDR[0];
+    mask_ext.flags = graphlily::HBM[this->num_channels_ + 1];
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
