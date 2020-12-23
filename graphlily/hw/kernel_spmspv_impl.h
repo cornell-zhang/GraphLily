@@ -7,8 +7,8 @@
 #include <hls_stream.h>
 
 #include "./shuffle.h"
-// #include "./ufixed_pe.h"
-#include "./float_pe.h"
+#include "./ufixed_pe.h"
+// #include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
 static bool line_tracing_spmspv = false;
@@ -132,7 +132,7 @@ void bram_access_read_2ports(
     IDX_T rd_addr1[PACK_SIZE],
     VAL_T rd_data1[PACK_SIZE],
     // bram
-    const VAL_T bram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
+    const VAL_T bram[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
 ) {
     #pragma HLS pipeline II=1
     // #pragma HLS inline
@@ -149,7 +149,7 @@ void bram_access_read_2ports(
 // change results to sparse
 void checkout_results(
     // data to be checked
-    const VAL_T dense_data[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
+    const VAL_T dense_data[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     // FIFOs
     hls::stream<IDX_VAL_T> cr_output_streams[PACK_SIZE * 2],
     // control signals
@@ -291,7 +291,7 @@ void write_back_gmem(
 
 // // reset output buffer
 // void reset_output_buffer(
-//     VAL_T output_buffer[PACK_SIZE][OUT_BUF_LEN / PACK_SIZE],
+//     VAL_T output_buffer[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE],
 //     IDX_T num_rows,
 //     VAL_T Zero
 // ) {
@@ -320,7 +320,7 @@ void compute_spmspv(
     const IDX_T *mat_indptr,
     const IDX_T *mat_partptr,
     const IDX_VAL_T *vector,
-    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
+    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     IDX_T vec_num_nnz,
     IDX_T mat_indptr_base,
     IDX_T mat_row_id_base,
@@ -381,21 +381,21 @@ void compute_spmspv(
     }
     #endif
 
-    // ufixed_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
-    //     SF_to_PE_stream,
-    //     output_buffer,
-    //     Op,
-    //     Zero,
-    //     SF_to_PE_npld_stream
-    // );
-
-    float_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+    ufixed_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
         SF_to_PE_stream,
         output_buffer,
         Op,
         Zero,
         SF_to_PE_npld_stream
     );
+
+    // float_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+    //     SF_to_PE_stream,
+    //     output_buffer,
+    //     Op,
+    //     Zero,
+    //     SF_to_PE_npld_stream
+    // );
 
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
@@ -413,7 +413,7 @@ void compute_spmspv(
 
 // write back
 void write_back_results(
-    const VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
+    const VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     IDX_VAL_T *result,
     const VAL_T *mask,
     IDX_T num_rows,
@@ -475,7 +475,7 @@ void kernel_spmspv(
     IDX_T num_cols,
     OP_T Op,
     MASK_T mask_type,
-    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
+    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
 ) {
     #pragma HLS inline off
 
@@ -501,18 +501,18 @@ void kernel_spmspv(
     IDX_T result_Nnz = 0;
 
     // total number of parts
-    IDX_T num_parts = (num_rows + OUT_BUF_LEN - 1) / OUT_BUF_LEN;
+    IDX_T num_parts = (num_rows + SPMSPV_OUT_BUF_LEN - 1) / SPMSPV_OUT_BUF_LEN;
 
     // number of rows in the last part
-    IDX_T num_rows_last_part = (num_rows % OUT_BUF_LEN) ? (num_rows % OUT_BUF_LEN) : OUT_BUF_LEN;
+    IDX_T num_rows_last_part = (num_rows % SPMSPV_OUT_BUF_LEN) ? (num_rows % SPMSPV_OUT_BUF_LEN) : SPMSPV_OUT_BUF_LEN;
 
     // loop over parts
     loop_over_parts:
     for (unsigned int part_id = 0; part_id < num_parts; part_id++) {
         #pragma HLS pipeline off
-        IDX_T num_rows_this_part = (part_id == (num_parts - 1)) ? num_rows_last_part : OUT_BUF_LEN;
+        IDX_T num_rows_this_part = (part_id == (num_parts - 1)) ? num_rows_last_part : SPMSPV_OUT_BUF_LEN;
         IDX_T mat_indptr_base = (num_cols + 1) * part_id;
-        IDX_T mat_row_id_base = OUT_BUF_LEN * part_id;
+        IDX_T mat_row_id_base = SPMSPV_OUT_BUF_LEN * part_id;
         IDX_T result_Nnz_incr;
         #ifndef __SYNTHESIS__
         if (line_tracing_spmspv) {

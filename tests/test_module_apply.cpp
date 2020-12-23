@@ -18,8 +18,9 @@
 
 
 std::string target = "sw_emu";
-uint32_t out_buf_len = 512 * graphlily::num_cycles_float_add;
-uint32_t vec_buf_len = 512 * graphlily::num_cycles_float_add;
+uint32_t spmv_out_buf_len = 1024 * graphlily::spmv_row_interleave_factor;
+uint32_t spmspv_out_buf_len = 512 * graphlily::spmv_row_interleave_factor;
+uint32_t vec_buf_len = 256 * graphlily::spmv_row_interleave_factor;
 
 
 void clean_proj_folder() {
@@ -42,7 +43,8 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 TEST(Synthesize, NULL) {
     graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
-                                                           out_buf_len,
+                                                           spmv_out_buf_len,
+                                                           spmspv_out_buf_len,
                                                            vec_buf_len);
     synthesizer.set_target(target);
     synthesizer.synthesize();
@@ -55,7 +57,7 @@ TEST(AddScalarVectorDense, Basic) {
     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     uint32_t length = 128;
-    graphlily::val_t val = 0.14;
+    graphlily::val_t val = 1;
     float val_float = float(val);
     std::vector<float, aligned_allocator<float>> in_float(length);
     std::generate(in_float.begin(), in_float.end(), [&](){return float(rand() % 10) / 100;});
@@ -110,7 +112,7 @@ TEST(AssignVectorSparseNoNewFrontier, Basic) {
 
     float mask_sparsity = 0.9;
     uint32_t inout_size = 8192;
-    graphlily::val_t val = 3.14;
+    graphlily::val_t val = 3;
     float val_float = float(val);
     unsigned length = (unsigned)floor(inout_size * (1 - mask_sparsity));
     unsigned mask_indices_increment = inout_size / length;
@@ -149,10 +151,12 @@ TEST(AssignVectorSparseNewFrontier, Basic) {
     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     float mask_sparsity = 0.9;
-    uint32_t inout_size = 8192;
+    uint32_t inout_size = 128;
     float inf;
     if (std::is_same<graphlily::val_t, float>::value) {
         inf = float(graphlily::FLOAT_INF);
+    } else if (std::is_same<graphlily::val_t, unsigned>::value) {
+        inf = float(graphlily::UINT_INF);
     } else {
         inf = float(graphlily::UFIXED_INF);
     }
@@ -170,15 +174,14 @@ TEST(AssignVectorSparseNewFrontier, Basic) {
         mask[i].val = mask_float[i].val;
         mask[i].index = mask_float[i].index;
     }
-    graphlily::aligned_dense_float_vec_t reference_inout(inout_size);
-    std::generate(reference_inout.begin(), reference_inout.end(),
-        [&](){return (((rand() % 10) > 5) ? 3.14 : inf);});
+
     std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> kernel_inout(inout_size);
-    for (size_t i = 0; i < reference_inout.size(); i++) {
-        kernel_inout[i] = reference_inout[i];
-    }
-    graphlily::aligned_sparse_float_vec_t reference_new_frontier;
+    std::generate(kernel_inout.begin(), kernel_inout.end(),
+        [&](){return (((rand() % 10) > 5) ? 5 : inf);});
+    graphlily::aligned_dense_float_vec_t reference_inout(kernel_inout.begin(), kernel_inout.end());
+
     std::vector<graphlily::idx_val_t, aligned_allocator<graphlily::idx_val_t>> kernel_new_frontier;
+    graphlily::aligned_sparse_float_vec_t reference_new_frontier;
 
     module.send_mask_host_to_device(mask);
     module.send_inout_host_to_device(kernel_inout);

@@ -17,8 +17,9 @@
 
 
 std::string target = "sw_emu";
-uint32_t out_buf_len = 512 * graphlily::num_cycles_float_add;
-uint32_t vec_buf_len = 512 * graphlily::num_cycles_float_add;
+uint32_t spmv_out_buf_len = 1024 * graphlily::spmv_row_interleave_factor;
+uint32_t spmspv_out_buf_len = 512 * graphlily::spmv_row_interleave_factor;
+uint32_t vec_buf_len = 256 * graphlily::spmv_row_interleave_factor;
 
 
 void clean_proj_folder() {
@@ -84,7 +85,8 @@ std::string gen_test_case_name_spmspv(graphlily::SemiringType semiring,
 
 TEST(Synthesize, NULL) {
     graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
-                                                           out_buf_len,
+                                                           spmv_out_buf_len,
+                                                           spmspv_out_buf_len,
                                                            vec_buf_len);
     synthesizer.set_target(target);
     synthesizer.synthesize();
@@ -134,7 +136,7 @@ void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily
 
 TEST(SpMV, MultipleCases) {
     graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> module(graphlily::num_hbm_channels,
-                                                                             out_buf_len,
+                                                                             spmv_out_buf_len,
                                                                              vec_buf_len);
     module.set_target(target);
     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
@@ -144,10 +146,9 @@ TEST(SpMV, MultipleCases) {
     CSRMatrix<float> csr_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         csr_matrix,
-        graphlily::num_hbm_channels * graphlily::pack_size * graphlily::num_cycles_float_add,
-        graphlily::pack_size * graphlily::num_cycles_float_add);
+        graphlily::num_hbm_channels * graphlily::pack_size * graphlily::spmv_row_interleave_factor,
+        graphlily::pack_size * graphlily::spmv_row_interleave_factor);
     for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
-    // for (auto &x : csr_matrix.adj_data) x = 1.0;
 
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, csr_matrix, false);
     _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kNoMask, csr_matrix, false);
@@ -231,7 +232,7 @@ void _test_spmspv_module(graphlily::module::SpMSpVModule<graphlily::val_t,
 TEST(SpMSpV, MultipleCases) {
     graphlily::module::SpMSpVModule<graphlily::val_t,
                                     graphlily::val_t,
-                                    graphlily::idx_val_t> module(out_buf_len);
+                                    graphlily::idx_val_t> module(spmspv_out_buf_len);
     module.set_target(target);
     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 

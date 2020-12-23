@@ -45,28 +45,28 @@ public:
         for (uint32_t i = 0; i < graphlily::num_hbm_channels + 6; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
+        this->kernel_.setArg(graphlily::num_hbm_channels + 14, (unsigned)NULL);
         this->kernel_.setArg(graphlily::num_hbm_channels + 9, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 11, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 12, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 14, (char)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 10, (unsigned)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 11, (char)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 12, (char)NULL);
         if (!this->generate_new_frontier_) {
             this->kernel_.setArg(graphlily::num_hbm_channels + 8, cl::Buffer(this->context_, 0, 4));
         }
         if (this->generate_new_frontier_) {
-            if (!std::is_same<vector_data_t, float>::value) {
-                this->kernel_.setArg(graphlily::num_hbm_channels + 10, (long long)NULL);
+            if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
+                this->kernel_.setArg(graphlily::num_hbm_channels + 15, (long long)NULL);
             } else {
-                this->kernel_.setArg(graphlily::num_hbm_channels + 10, (unsigned)NULL);
+                this->kernel_.setArg(graphlily::num_hbm_channels + 15, (unsigned)NULL);
             }
         }
     }
 
     void set_mode() override {
         if (this->generate_new_frontier_) {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 15, 6);
+            this->kernel_.setArg(graphlily::num_hbm_channels + 13, 6);
         } else {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 15, 5);
+            this->kernel_.setArg(graphlily::num_hbm_channels + 13, 5);
         }
     }
 
@@ -251,10 +251,10 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::run(vector_d
         exit(EXIT_FAILURE);
     }
     // To avoid runtime error of invalid scalar argument size
-    if (!std::is_same<vector_data_t, float>::value) {
-       this->kernel_.setArg(graphlily::num_hbm_channels + 10, 8, (void*)&val);
+    if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
+       this->kernel_.setArg(graphlily::num_hbm_channels + 15, 8, (void*)&val);
     } else {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 10, val);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 15, val);
     }
     this->command_queue_.enqueueTask(this->kernel_);
     this->command_queue_.finish();

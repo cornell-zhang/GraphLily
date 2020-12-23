@@ -10,8 +10,8 @@
 
 #include "./util.h"
 #include "./shuffle.h"
-// #include "./ufixed_pe.h"
-#include "./float_pe.h"
+#include "./ufixed_pe.h"
+// #include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
 static bool line_tracing_spmv = false;
@@ -48,12 +48,12 @@ void matrix_loader_hbm_to_stream_one_channel(
 ) {
     IDX_T partition_start;
     unsigned total_size;
-    PACKED_IDX_T partition_size[NUM_CYCLES_FLOAT_ADD];
+    PACKED_IDX_T partition_size[SPMV_ROW_INTERLEAVE_FACTOR];
     #pragma HLS ARRAY_PARTITION variable=partition_size complete
 
-    for (int ii = 0; ii < NUM_CYCLES_FLOAT_ADD + 1; ii++) {
+    for (int ii = 0; ii < SPMV_ROW_INTERLEAVE_FACTOR + 1; ii++) {
         #pragma HLS PIPELINE
-        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[(NUM_CYCLES_FLOAT_ADD+1)*partition_idx + ii];
+        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[(SPMV_ROW_INTERLEAVE_FACTOR+1)*partition_idx + ii];
         if (ii == 0) {
             partition_start = mat_pkt.indices.data[0];
             total_size = mat_pkt.indices.data[1];
@@ -69,9 +69,9 @@ void matrix_loader_hbm_to_stream_one_channel(
         payload_count[k] = 0;
     }
 
-    IDX_T row_idx[NUM_CYCLES_FLOAT_ADD][PACK_SIZE];
+    IDX_T row_idx[SPMV_ROW_INTERLEAVE_FACTOR][PACK_SIZE];
     #pragma HLS ARRAY_PARTITION variable=row_idx complete dim=0
-    for (int ii = 0; ii < NUM_CYCLES_FLOAT_ADD; ii++) {
+    for (int ii = 0; ii < SPMV_ROW_INTERLEAVE_FACTOR; ii++) {
         #pragma HLS UNROLL
         for (int k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
@@ -84,15 +84,15 @@ void matrix_loader_hbm_to_stream_one_channel(
     for (int i = 0; i < total_size; i++) {
         #pragma HLS PIPELINE II=1
         SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[i + partition_start +
-                                                    (NUM_CYCLES_FLOAT_ADD + 1)*num_partitions];
+                                                    (SPMV_ROW_INTERLEAVE_FACTOR + 1)*num_partitions];
         for (unsigned k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
-            unsigned stream_idx = i % NUM_CYCLES_FLOAT_ADD;
-            if (i / NUM_CYCLES_FLOAT_ADD < partition_size[stream_idx].data[k]) {
+            unsigned stream_idx = i % SPMV_ROW_INTERLEAVE_FACTOR;
+            if (i / SPMV_ROW_INTERLEAVE_FACTOR < partition_size[stream_idx].data[k]) {
                 if (mat_pkt.indices.data[k] == IDX_MARKER) {
                      // Be careful: mat_pkt.vals.data[k] can not be larger than power(2, 16)
                     row_idx[stream_idx][k] += (PACK_SIZE
-                                               * NUM_CYCLES_FLOAT_ADD
+                                               * SPMV_ROW_INTERLEAVE_FACTOR
                                                * (unsigned)mat_pkt.vals.data[k]);
                     // row_idx[k] += PACK_SIZE;  // Row index within each packed stream of rows
                 } else {
@@ -223,7 +223,7 @@ void compute_spmv_one_channel(
     VAL_T Zero,                                                                                     // in
     VAL_T vector_uram_one_channel[NUM_BANK_PER_HBM_CHANNEL][VEC_BUF_LEN/NUM_BANK_PER_HBM_CHANNEL],  // in
     OP_T Op,                                                                                        // in
-    VAL_T out_uram[PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]                                      // out
+    VAL_T out_uram[PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]                                      // out
 ) {
     // FIFOs
     hls::stream<unsigned> ML_to_SF_1_num_payloads_stream;
@@ -301,21 +301,21 @@ void compute_spmv_one_channel(
         }
         #endif
 
-        // ufixed_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
-        //     SF_2_to_PE_stream,
-        //     out_uram,
-        //     Op,
-        //     Zero,
-        //     SF_2_to_PE_num_payloads_stream
-        // );
-
-        float_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        ufixed_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
             SF_2_to_PE_stream,
             out_uram,
             Op,
             Zero,
             SF_2_to_PE_num_payloads_stream
         );
+
+        // float_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        //     SF_2_to_PE_stream,
+        //     out_uram,
+        //     Op,
+        //     Zero,
+        //     SF_2_to_PE_num_payloads_stream
+        // );
 
         #ifndef __SYNTHESIS__
         if (line_tracing_spmv) {
@@ -333,7 +333,7 @@ void compute_spmv_one_channel(
 
 
 void write_to_out_ddr(
-    const VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],  // in
+    const VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],  // in
     unsigned row_partition_idx,                                                         // in
     unsigned num_row_partitions,                                                        // in
     unsigned num_rows,                                                                  // in
@@ -341,9 +341,9 @@ void write_to_out_ddr(
     MASK_T mask_type,                                                                   // in
     PACKED_VAL_T *out                                                                   // out
 ) {
-    unsigned size = OUT_BUF_LEN;
+    unsigned size = SPMV_OUT_BUF_LEN;
     if (row_partition_idx == (num_row_partitions - 1)) {
-        size = num_rows - (num_row_partitions - 1) * OUT_BUF_LEN;
+        size = num_rows - (num_row_partitions - 1) * SPMV_OUT_BUF_LEN;
     }
     assert(size % PACK_SIZE == 0);
     unsigned vsize = size / PACK_SIZE;
@@ -355,12 +355,12 @@ void write_to_out_ddr(
     for (int i = 0; i < vsize; i++) {
         #pragma HLS PIPELINE II=1
         if (mask_type != NOMASK) {
-            tmp_mask = mask[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE];
+            tmp_mask = mask[i + row_partition_idx * SPMV_OUT_BUF_LEN / PACK_SIZE];
         }
         for (int k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
-            VAL_T val = out_uram[(i/NUM_CYCLES_FLOAT_ADD)%NUM_HBM_CHANNEL]
-                [k][i/NUM_CYCLES_FLOAT_ADD/NUM_HBM_CHANNEL*NUM_CYCLES_FLOAT_ADD + i%NUM_CYCLES_FLOAT_ADD];
+            VAL_T val = out_uram[(i/SPMV_ROW_INTERLEAVE_FACTOR)%NUM_HBM_CHANNEL]
+                [k][i/SPMV_ROW_INTERLEAVE_FACTOR/NUM_HBM_CHANNEL*SPMV_ROW_INTERLEAVE_FACTOR + i%SPMV_ROW_INTERLEAVE_FACTOR];
             if (mask_type == NOMASK) {
                 tmp_out.data[k] = val;
             } else if (mask_type == WRITETOZERO) {
@@ -380,7 +380,7 @@ void write_to_out_ddr(
                 exit(EXIT_FAILURE);
             }
         }
-        out[i + row_partition_idx * OUT_BUF_LEN / PACK_SIZE] = tmp_out;
+        out[i + row_partition_idx * SPMV_OUT_BUF_LEN / PACK_SIZE] = tmp_out;
     }
 }
 
@@ -437,7 +437,7 @@ void kernel_spmv(
     unsigned num_cols,
     OP_T Op,
     MASK_T mask_type,
-    VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
+    VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
 ) {
     #pragma HLS inline off
 
@@ -463,7 +463,7 @@ void kernel_spmv(
     #pragma HLS ARRAY_PARTITION variable=vector_uram complete dim=1
     #pragma HLS ARRAY_PARTITION variable=vector_uram complete dim=2
 
-    unsigned num_row_partitions = (num_rows + OUT_BUF_LEN - 1) / OUT_BUF_LEN;
+    unsigned num_row_partitions = (num_rows + SPMV_OUT_BUF_LEN - 1) / SPMV_OUT_BUF_LEN;
     unsigned num_col_partitions = (num_cols + VEC_BUF_LEN - 1) / VEC_BUF_LEN;
     unsigned num_partitions = num_row_partitions * num_col_partitions;
 
@@ -471,9 +471,9 @@ void kernel_spmv(
     for (int row_partition_idx = 0; row_partition_idx < num_row_partitions; row_partition_idx++) {
 
         // TODO: is there a faster way to reset bram/uram?
-        unsigned out_buf_len = OUT_BUF_LEN;
+        unsigned out_buf_len = SPMV_OUT_BUF_LEN;
         if (row_partition_idx == (num_row_partitions - 1)) {
-            out_buf_len = num_rows - (num_row_partitions - 1) * OUT_BUF_LEN;
+            out_buf_len = num_rows - (num_row_partitions - 1) * SPMV_OUT_BUF_LEN;
         }
         loop_initialize_out_uram:
         for (int i = 0; i < out_buf_len / SPMV_NUM_PE_TOTAL; i++) {

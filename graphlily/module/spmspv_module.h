@@ -93,12 +93,12 @@ public:
         for (uint32_t i = 0; i < graphlily::num_hbm_channels + 3; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        this->kernel_.setArg(graphlily::num_hbm_channels + 9, (unsigned)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 14, (unsigned)NULL);
         // To avoid runtime error of invalid scalar argument size
-        if (!std::is_same<vector_data_t, float>::value) {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 10, (long long)NULL);
+        if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
+            this->kernel_.setArg(graphlily::num_hbm_channels + 15, (long long)NULL);
         } else {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 10, (unsigned)NULL);
+            this->kernel_.setArg(graphlily::num_hbm_channels + 15, (unsigned)NULL);
         }
         if (this->mask_type_ == graphlily::kNoMask) {
             this->kernel_.setArg(graphlily::num_hbm_channels + 7, cl::Buffer(this->context_, 0, 4));
@@ -106,7 +106,7 @@ public:
     }
 
     void set_mode() override {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 15, 2);  // 2 is SpMSpV
+        this->kernel_.setArg(graphlily::num_hbm_channels + 13, 2);  // 2 is SpMSpV
     }
 
     /*!
@@ -303,10 +303,10 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 3, this->channel_packets_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 4, this->channel_indptr_buf));
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 5, this->channel_partptr_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 11, this->csc_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 12, this->csc_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 14, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 9, this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 10, this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 11, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 12, (char)this->mask_type_));
 
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
         this->channel_packets_buf,

@@ -77,7 +77,8 @@ private:
     uint32_t matrix_num_cols_;
     // SpMV kernel configuration
     uint32_t num_channels_;
-    uint32_t out_buf_len_;
+    uint32_t spmv_out_buf_len_;
+    uint32_t spmspv_out_buf_len_;
     uint32_t vec_buf_len_;
     // Semiring
     graphlily::SemiringType semiring_ = graphlily::TropicalSemiring;
@@ -87,21 +88,23 @@ private:
     using aligned_dense_float_vec_t = graphlily::aligned_dense_float_vec_t;
 
 public:
-    SSSP(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_len) {
+    SSSP(uint32_t num_channels, uint32_t spmv_out_buf_len,
+            uint32_t spmspv_out_buf_len, uint32_t vec_buf_len) {
         this->num_channels_ = num_channels;
-        this->out_buf_len_ = out_buf_len;
+        this->spmv_out_buf_len_ = spmv_out_buf_len;
+        this->spmspv_out_buf_len_ = spmspv_out_buf_len;
         this->vec_buf_len_ = vec_buf_len;
 
         this->SpMV_ = new module::SpMVModule<graphlily::val_t, graphlily::val_t>(
             this->num_channels_,
-            this->out_buf_len_,
+            this->spmv_out_buf_len_,
             this->vec_buf_len_);
         this->SpMV_->set_semiring(semiring_);
         this->SpMV_->set_mask_type(graphlily::kNoMask);
         this->add_module(this->SpMV_);
 
         this->SpMSpV_ = new module::SpMSpVModule<graphlily::val_t, graphlily::val_t, graphlily::idx_val_t>(
-            out_buf_len);
+            spmspv_out_buf_len);
         this->SpMSpV_->set_semiring(semiring_);
         this->SpMSpV_->set_mask_type(graphlily::kNoMask);
         this->add_module(this->SpMSpV_);
@@ -123,8 +126,8 @@ public:
         _preprocess(csr_matrix);
         graphlily::io::util_round_csr_matrix_dim(
             csr_matrix,
-            this->num_channels_ * graphlily::pack_size * graphlily::num_cycles_float_add,
-            this->num_channels_ * graphlily::pack_size * graphlily::num_cycles_float_add);
+            this->num_channels_ * graphlily::pack_size * graphlily::spmv_row_interleave_factor,
+            this->num_channels_ * graphlily::pack_size * graphlily::spmv_row_interleave_factor);
         CSCMatrix<float> csc_matrix = graphlily::io::csr2csc(csr_matrix);
         this->SpMV_->load_and_format_matrix(csr_matrix, skip_empty_rows);
         this->SpMSpV_->load_and_format_matrix(csc_matrix);

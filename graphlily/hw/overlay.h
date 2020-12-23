@@ -12,13 +12,15 @@ const unsigned NUM_BANK_PER_HBM_CHANNEL = PACK_SIZE / NUM_PORT_PER_BANK;
 const unsigned BANK_ID_NBITS = 3;
 const unsigned BANK_ID_MASK = 7;
 
-const unsigned NUM_CYCLES_FLOAT_ADD = 12;
+const unsigned SPMV_ROW_INTERLEAVE_FACTOR = 5;
 
 // data types
 typedef unsigned IDX_T;
 typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
-// typedef ap_ufixed<32, 8, AP_RND, AP_SAT> VAL_T;
-typedef float VAL_T;
+
+// typedef unsigned VAL_T;
+typedef ap_ufixed<32, 8, AP_RND, AP_SAT> VAL_T;
+// typedef float VAL_T;
 typedef struct {VAL_T data[PACK_SIZE];} PACKED_VAL_T;
 
 typedef struct {
@@ -38,8 +40,9 @@ typedef char OP_T;
 
 const VAL_T MulAddZero = 0;
 const VAL_T AndOrZero  = 0;
-// const VAL_T AddMinZero = UFIXED_INF;
-const VAL_T AddMinZero = FLOAT_INF;
+// const VAL_T AddMinZero = UINT_INF;
+const VAL_T AddMinZero = UFIXED_INF;
+// const VAL_T AddMinZero = FLOAT_INF;
 
 const VAL_T MulAddOne = 1;
 const VAL_T AndOrOne  = 1;
@@ -56,9 +59,9 @@ const unsigned FIFO_DEPTH = 8;
 const unsigned BATCH_SIZE = 128;
 
 // Below kernel configurations will be overwritten by the compiler
-// const unsigned OUT_BUF_LEN =;
+// const unsigned SPMV_OUT_BUF_LEN =;
+// const unsigned SPMSPV_OUT_BUF_LEN =;
 // const unsigned VEC_BUF_LEN =;
-// const unsigned NUM_HBM_CHANNEL =;
 // #define NUM_HBM_CHANNEL
 // #define SPMV_NUM_PE_TOTAL
 

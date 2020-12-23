@@ -15,8 +15,9 @@
 
 
 std::string target = "sw_emu";
-uint32_t out_buf_len = 512 * graphlily::num_cycles_float_add;
-uint32_t vec_buf_len = 512 * graphlily::num_cycles_float_add;
+uint32_t spmv_out_buf_len = 1024 * graphlily::spmv_row_interleave_factor;
+uint32_t spmspv_out_buf_len = 512 * graphlily::spmv_row_interleave_factor;
+uint32_t vec_buf_len = 256 * graphlily::spmv_row_interleave_factor;
 
 
 void clean_proj_folder() {
@@ -37,9 +38,10 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 }
 
 
-TEST(SynthesizeOverlay, NULL) {
+TEST(Synthesize, NULL) {
     graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
-                                                           out_buf_len,
+                                                           spmv_out_buf_len,
+                                                           spmspv_out_buf_len,
                                                            vec_buf_len);
     synthesizer.set_target(target);
     synthesizer.synthesize();
@@ -47,7 +49,8 @@ TEST(SynthesizeOverlay, NULL) {
 
 
 TEST(BFS, PullPush) {
-    graphlily::app::BFS bfs(graphlily::num_hbm_channels, out_buf_len, vec_buf_len);
+    graphlily::app::BFS bfs(graphlily::num_hbm_channels, spmv_out_buf_len,
+        spmspv_out_buf_len, vec_buf_len);
     bfs.set_target(target);
     bfs.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
@@ -81,7 +84,7 @@ TEST(BFS, PullPush) {
 
 
 TEST(PageRank, Pull) {
-    graphlily::app::PageRank pagerank(graphlily::num_hbm_channels, out_buf_len, vec_buf_len);
+    graphlily::app::PageRank pagerank(graphlily::num_hbm_channels, spmv_out_buf_len, vec_buf_len);
     pagerank.set_target(target);
     pagerank.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
@@ -100,7 +103,8 @@ TEST(PageRank, Pull) {
 
 
 TEST(SSSP, PullPush) {
-    graphlily::app::SSSP sssp(graphlily::num_hbm_channels, out_buf_len, vec_buf_len);
+    graphlily::app::SSSP sssp(graphlily::num_hbm_channels, spmv_out_buf_len,
+        spmspv_out_buf_len, vec_buf_len);
     sssp.set_target(target);
     sssp.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 

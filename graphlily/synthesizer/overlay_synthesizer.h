@@ -11,15 +11,18 @@ class OverlaySynthesizer : public BaseSynthesizer {
 private:
     // Kernel configuration
     uint32_t num_channels_;
-    uint32_t out_buf_len_;
+    uint32_t spmv_out_buf_len_;
+    uint32_t spmspv_out_buf_len_;
     uint32_t vec_buf_len_;
 
 public:
     OverlaySynthesizer(uint32_t num_channels,
-                       uint32_t out_buf_len,
+                       uint32_t spmv_out_buf_len,
+                       uint32_t spmspv_out_buf_len,
                        uint32_t vec_buf_len) : BaseSynthesizer("overlay") {
         this->num_channels_ = num_channels;
-        this->out_buf_len_ = out_buf_len;
+        this->spmv_out_buf_len_ = spmv_out_buf_len;
+        this->spmspv_out_buf_len_ = spmspv_out_buf_len;
         this->vec_buf_len_ = vec_buf_len;
     }
 
@@ -34,7 +37,8 @@ void OverlaySynthesizer::generate_kernel_header() {
     std::cout << command << std::endl;
     system(command.c_str());
     std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
-    header << "const unsigned OUT_BUF_LEN = " << this->out_buf_len_ << ";" << std::endl;
+    header << "const unsigned SPMV_OUT_BUF_LEN = " << this->spmv_out_buf_len_ << ";" << std::endl;
+    header << "const unsigned SPMSPV_OUT_BUF_LEN = " << this->spmspv_out_buf_len_ << ";" << std::endl;
     header << "const unsigned VEC_BUF_LEN = " << this->vec_buf_len_ << ";" << std::endl;
     header << "#define NUM_HBM_CHANNEL " << this->num_channels_ << std::endl;
     header << "#define SPMV_NUM_PE_TOTAL " << this->num_channels_ * graphlily::pack_size << std::endl;

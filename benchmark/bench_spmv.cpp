@@ -46,8 +46,8 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
 
     graphlily::io::util_round_csr_matrix_dim(
         csr_matrix,
-        num_channels * graphlily::pack_size * graphlily::num_cycles_float_add,
-        graphlily::pack_size * graphlily::num_cycles_float_add);
+        num_channels * graphlily::pack_size * graphlily::spmv_row_interleave_factor,
+        graphlily::pack_size * graphlily::spmv_row_interleave_factor);
 
     std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
     std::generate(vector_float.begin(), vector_float.end(), [&]{return float(rand() % 2);});

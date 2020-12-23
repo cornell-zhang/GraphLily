@@ -67,15 +67,16 @@ void overlay(
     IDX_VAL_T *spmspv_vector,               // NUM_HBM_CHANNEL + 6
     VAL_T *spmspv_mask,                     // NUM_HBM_CHANNEL + 7
     IDX_VAL_T *spmspv_out,                  // NUM_HBM_CHANNEL + 8
-    /*-------- arguments for apply kernels -------------*/
-    unsigned length,                        // NUM_HBM_CHANNEL + 9
-    VAL_T val,                              // NUM_HBM_CHANNEL + 10
     /*-------- arguments shared by all kernels -------------*/
-    unsigned num_rows,                      // NUM_HBM_CHANNEL + 11
-    unsigned num_cols,                      // NUM_HBM_CHANNEL + 12
-    OP_T Op,                                // NUM_HBM_CHANNEL + 13
-    MASK_T mask_type,                       // NUM_HBM_CHANNEL + 14
-    unsigned mode                           // NUM_HBM_CHANNEL + 15
+    unsigned num_rows,                      // NUM_HBM_CHANNEL + 9
+    unsigned num_cols,                      // NUM_HBM_CHANNEL + 10
+    OP_T Op,                                // NUM_HBM_CHANNEL + 11
+    MASK_T mask_type,                       // NUM_HBM_CHANNEL + 12
+    unsigned mode,                          // NUM_HBM_CHANNEL + 13
+    /*-------- arguments for apply kernels -------------*/
+    // val must be the last argument, otherwise fixed point causes a run-time error
+    unsigned length,                        // NUM_HBM_CHANNEL + 14
+    VAL_T val                               // NUM_HBM_CHANNEL + 15
 ) {
 /*----------------- arguments for SpMV -------------------*/
 #if (NUM_HBM_CHANNEL >= 1)
@@ -123,9 +124,9 @@ void overlay(
 #pragma HLS INTERFACE m_axi port=spmv_channel_31_matrix offset=slave bundle=spmv_gmem31
 #endif
 
-#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_spmspv_gmem0
-#pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_spmspv_gmem1
-#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_spmspv_gmem2
+#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem32
+#pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_gmem33
+#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_gmem34
 
 #if (NUM_HBM_CHANNEL >= 1)
 #pragma HLS INTERFACE s_axilite port=spmv_channel_0_matrix bundle=control
@@ -229,9 +230,9 @@ void overlay(
 #pragma HLS interface m_axi port=spmspv_matrix         offset=slave bundle=spmspv_gmem0
 #pragma HLS interface m_axi port=spmspv_matrix_indptr  offset=slave bundle=spmspv_gmem1
 #pragma HLS interface m_axi port=spmspv_matrix_partptr offset=slave bundle=spmspv_gmem2
-#pragma HLS interface m_axi port=spmspv_vector         offset=slave bundle=spmv_spmspv_gmem0
-#pragma HLS interface m_axi port=spmspv_mask           offset=slave bundle=spmv_spmspv_gmem1
-#pragma HLS interface m_axi port=spmspv_out            offset=slave bundle=spmv_spmspv_gmem2
+#pragma HLS interface m_axi port=spmspv_vector         offset=slave bundle=spmspv_gmem3
+#pragma HLS interface m_axi port=spmspv_mask           offset=slave bundle=spmspv_gmem4
+#pragma HLS interface m_axi port=spmspv_out            offset=slave bundle=spmspv_gmem5
 
 #pragma HLS interface s_axilite port=spmspv_matrix         bundle=control
 #pragma HLS interface s_axilite port=spmspv_matrix_indptr  bundle=control
@@ -244,10 +245,6 @@ void overlay(
 #pragma HLS data_pack variable=spmspv_vector
 #pragma HLS data_pack variable=spmspv_out
 
-/*-------- arguments for apply kernels -------------*/
-#pragma HLS INTERFACE s_axilite port=length bundle=control
-#pragma HLS INTERFACE s_axilite port=val bundle=control
-
 /*-------- arguments shared by all kernels ---------*/
 #pragma HLS INTERFACE s_axilite port=num_rows bundle=control
 #pragma HLS INTERFACE s_axilite port=num_cols bundle=control
@@ -256,15 +253,26 @@ void overlay(
 #pragma HLS INTERFACE s_axilite port=mode bundle=control
 #pragma HLS INTERFACE s_axilite port=return bundle=control
 
-    VAL_T out_uram_spmv[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
+/*-------- arguments for apply kernels -------------*/
+#pragma HLS INTERFACE s_axilite port=length bundle=control
+#pragma HLS INTERFACE s_axilite port=val bundle=control
+
+    VAL_T out_uram_spmv[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=1
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=2
+    // #pragma HLS resource variable=out_uram_spmv core=RAM_2P
     #pragma HLS resource variable=out_uram_spmv core=XPM_MEMORY uram latency=2
 
-    VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
+    VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=1
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=2
+    // #pragma HLS resource variable=out_uram_spmspv core=RAM_2P
     #pragma HLS resource variable=out_uram_spmspv core=XPM_MEMORY uram latency=2
+
+    // VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
+    // #pragma HLS ARRAY_PARTITION variable=out_uram complete dim=1
+    // #pragma HLS ARRAY_PARTITION variable=out_uram complete dim=2
+    // #pragma HLS resource variable=out_uram core=RAM_2P
 
     /*
         If we do not specify the latency here, the tool will automatically decide the latency of the URAM,

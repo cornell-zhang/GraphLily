@@ -105,12 +105,12 @@ public:
         for (uint32_t i = this->num_channels_ + 3; i < this->num_channels_ + 9; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        this->kernel_.setArg(this->num_channels_ + 9, (unsigned)NULL);
+        this->kernel_.setArg(this->num_channels_ + 14, (unsigned)NULL);
         // To avoid runtime error of invalid scalar argument size
-        if (!std::is_same<vector_data_t, float>::value) {
-            this->kernel_.setArg(this->num_channels_ + 10, (long long)NULL);
+        if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
+            this->kernel_.setArg(this->num_channels_ + 15, (long long)NULL);
         } else {
-            this->kernel_.setArg(this->num_channels_ + 10, (unsigned)NULL);
+            this->kernel_.setArg(this->num_channels_ + 15, (unsigned)NULL);
         }
         if (this->mask_type_ == graphlily::kNoMask) {
             this->kernel_.setArg(this->num_channels_ + 1, cl::Buffer(this->context_, 0, 4));
@@ -118,7 +118,7 @@ public:
     }
 
     void set_mode() override {
-        this->kernel_.setArg(this->num_channels_ + 15, 1);  // 1 is SpMV
+        this->kernel_.setArg(this->num_channels_ + 13, 1);  // 1 is SpMV
     }
 
     /*!
@@ -259,7 +259,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
     this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buf_len_ - 1) / this->out_buf_len_;
     this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vec_buf_len_ - 1) / this->vec_buf_len_;
     size_t num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
-    const uint32_t virtual_pack_size = graphlily::pack_size * graphlily::num_cycles_float_add;
+    const uint32_t virtual_pack_size = graphlily::pack_size * graphlily::spmv_row_interleave_factor;
     CPSRMatrix<val_t, virtual_pack_size> cpsr_matrix = csr2cpsr<val_t, virtual_pack_size>(
         this->csr_matrix_,
         graphlily::idx_marker,
@@ -308,25 +308,25 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
             }
         }
         assert(channel_indices[c].size() == channel_vals[c].size());
-        this->channel_packets_[c].resize(num_partitions*(1+graphlily::num_cycles_float_add)
-                                         + channel_indices[c].size()*graphlily::num_cycles_float_add);
+        this->channel_packets_[c].resize(num_partitions*(1+graphlily::spmv_row_interleave_factor)
+                                         + channel_indices[c].size()*graphlily::spmv_row_interleave_factor);
         // partition indptr
         for (size_t i = 0; i < num_partitions; i++) {
-            this->channel_packets_[c][i*(1+graphlily::num_cycles_float_add)].indices.data[0] =
-                channel_partition_indptr[c][i].start * graphlily::num_cycles_float_add;
-            this->channel_packets_[c][i*(1+graphlily::num_cycles_float_add)].indices.data[1] =
-                channel_partition_indptr[c][i].max_nnz * graphlily::num_cycles_float_add;
-            for (size_t k = 0; k < graphlily::num_cycles_float_add; k++) {
-                this->channel_packets_[c][i*(1+graphlily::num_cycles_float_add) + 1 + k].indices =
+            this->channel_packets_[c][i*(1+graphlily::spmv_row_interleave_factor)].indices.data[0] =
+                channel_partition_indptr[c][i].start * graphlily::spmv_row_interleave_factor;
+            this->channel_packets_[c][i*(1+graphlily::spmv_row_interleave_factor)].indices.data[1] =
+                channel_partition_indptr[c][i].max_nnz * graphlily::spmv_row_interleave_factor;
+            for (size_t k = 0; k < graphlily::spmv_row_interleave_factor; k++) {
+                this->channel_packets_[c][i*(1+graphlily::spmv_row_interleave_factor) + 1 + k].indices =
                     _slice<virtual_packed_idx_t, virtual_pack_size, packed_idx_t, graphlily::pack_size>(
                         channel_partition_indptr[c][i].nnz, k*graphlily::pack_size);
             }
         }
         // matrix indices and vals
-        uint32_t offset = num_partitions*(1+graphlily::num_cycles_float_add);
+        uint32_t offset = num_partitions*(1+graphlily::spmv_row_interleave_factor);
         for (size_t i = 0; i < channel_indices[c].size(); i++) {
-            for (size_t k = 0; k < graphlily::num_cycles_float_add; k++) {
-                uint32_t ii = i * graphlily::num_cycles_float_add + k;
+            for (size_t k = 0; k < graphlily::spmv_row_interleave_factor; k++) {
+                uint32_t ii = i * graphlily::spmv_row_interleave_factor + k;
                 this->channel_packets_[c][offset + ii].indices =
                     _slice<virtual_packed_idx_t, virtual_pack_size, packed_idx_t, graphlily::pack_size>(
                         channel_indices[c][i], k*graphlily::pack_size);
@@ -379,10 +379,10 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
         OCL_CHECK(err, err = this->kernel_.setArg(c, this->channel_packets_buf[c]));
     }
     OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 2, this->results_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 11, this->csr_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 12, this->csr_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 13, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 14, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 9, this->csr_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 10, this->csr_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 11, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 12, (char)this->mask_type_));
     // Send data to device
     for (size_t c = 0; c < this->num_channels_; c++) {
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(

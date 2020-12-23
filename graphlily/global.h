@@ -55,12 +55,13 @@ const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 
 // Kernel configurations
 const uint32_t pack_size = 8;
-const uint32_t num_cycles_float_add = 12;
+const uint32_t spmv_row_interleave_factor = 5;
 const uint32_t num_hbm_channels = 8;
 
 // Data types (please change this according to the kernel!)
-// using val_t = ap_ufixed<32, 8, AP_RND, AP_SAT>;
-using val_t = float;
+// using val_t = unsigned;
+using val_t = ap_ufixed<32, 8, AP_RND, AP_SAT>;
+// using val_t = float;
 typedef uint32_t idx_t;
 const uint32_t idx_marker = 0xffffffff;
 typedef struct {idx_t data[pack_size];} packed_idx_t;
@@ -74,7 +75,7 @@ using aligned_sparse_vec_t = std::vector<idx_val_t, aligned_allocator<idx_val_t>
 using aligned_dense_float_vec_t = std::vector<float, aligned_allocator<float>>;
 using aligned_sparse_float_vec_t = std::vector<idx_float_t, aligned_allocator<idx_float_t>>;
 
-const uint32_t UINT_INF = 0xffffffff;
+const val_t UINT_INF = 0xffffffff;
 const val_t UFIXED_INF = 255;
 const val_t FLOAT_INF = 999999999;
 
@@ -94,8 +95,9 @@ struct SemiringType {
 
 const SemiringType ArithmeticSemiring = {kMulAdd, 1, 0};
 const SemiringType LogicalSemiring = {kLogicalAndOr, 1, 0};
-// const SemiringType TropicalSemiring = {kAddMin, 0, UFIXED_INF};
-const SemiringType TropicalSemiring = {kAddMin, 0, FLOAT_INF};
+// const SemiringType TropicalSemiring = {kAddMin, 0, UINT_INF};
+const SemiringType TropicalSemiring = {kAddMin, 0, UFIXED_INF};
+// const SemiringType TropicalSemiring = {kAddMin, 0, FLOAT_INF};
 
 // Mask type
 enum MaskType {
