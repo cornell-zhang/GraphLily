@@ -1,3 +1,8 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wint-in-bool-context"
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
 #include <iostream>
 #include <chrono>
 
@@ -29,20 +34,20 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 }
 
 
-void bench_spmv(uint32_t num_channels, std::string bitstream, std::string dataset) {
-    uint32_t out_buf_len = 1000 * 1024;
-    uint32_t vec_buf_len = 30 * 1024;
+void bench_spmv(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_len,
+                std::string bitstream, std::string dataset) {
     graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> spmv(num_channels,
                                                                            out_buf_len,
                                                                            vec_buf_len);
     spmv.set_target("hw");
-    spmv.set_up_runtime(bitstream);
+    graphlily::MaskType mask_type = graphlily::kNoMask;
+    spmv.set_mask_type(mask_type);
     spmv.set_semiring(graphlily::ArithmeticSemiring);
-    spmv.set_mask_type(graphlily::kNoMask);
+    spmv.set_up_runtime(bitstream);
 
     std::string csr_float_npz_path = dataset;
     CSRMatrix<float> csr_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
-    for (auto &x : csr_matrix.adj_data) x = 1;
+    for (auto &x : csr_matrix.adj_data) x = 1.0 / csr_matrix.num_rows;
 
     graphlily::io::util_round_csr_matrix_dim(
         csr_matrix,
@@ -66,11 +71,27 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
 
     spmv.send_matrix_host_to_device();
     spmv.send_vector_host_to_device(vector);
+    // send the mask to device even if the kernel does not use it
     spmv.send_mask_host_to_device(mask);
 
     std::cout << "start run" << std::endl;
 
     spmv.run();
+
+    auto kernel_results = spmv.send_results_device_to_host();
+    std::vector<float, aligned_allocator<float>> reference_results;
+    if (mask_type == graphlily::kNoMask) {
+        reference_results = spmv.compute_reference_results(vector_float);
+    } else {
+        reference_results = spmv.compute_reference_results(vector_float, mask_float);
+    }
+
+    // for (int i = 0; i < 10; i++) {
+    //     std::cout << reference_results[i] << " " << kernel_results[i] <<std::endl;
+    // }
+
+    verify<graphlily::val_t>(reference_results, kernel_results);
+    std::cout << "SpMV passed" << std::endl;
 
     uint32_t num_runs = 100;
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -83,24 +104,21 @@ void bench_spmv(uint32_t num_channels, std::string bitstream, std::string datase
     std::cout << "average_time: " << average_time_in_sec * 1000 << " ms" << std::endl;
 
     uint32_t nnz = spmv.get_nnz();
-    double throughput = nnz * (sizeof(unsigned) + sizeof(unsigned)); // indices + values
-    throughput /= 1000;                // to KB
-    throughput /= 1000;                // to MB
-    throughput /= 1000;                // to GB
-    throughput /= average_time_in_sec; // to GB/s
-    // std::cout << "Memory THROUGHPUT = " << throughput << " GB/s" << std::endl;
-    std::cout << "Compute THROUGHPUT = " << throughput / (sizeof(unsigned) + sizeof(unsigned))
-              << " GOPS" << std::endl;
-
-    std::vector<graphlily::val_t, aligned_allocator<graphlily::val_t>> kernel_results =
-        spmv.send_results_device_to_host();
-    std::vector<float, aligned_allocator<float>> reference_results =
-        spmv.compute_reference_results(vector_float);
-    verify<graphlily::val_t>(reference_results, kernel_results);
-    std::cout << "SpMV passed" << std::endl;
+    double throughput = nnz;
+    throughput /= 1000;
+    throughput /= 1000;
+    throughput /= 1000;
+    throughput /= average_time_in_sec;
+    std::cout << "Compute THROUGHPUT = " << throughput << " GOPS" << std::endl;
 }
 
 
 int main(int argc, char *argv[]) {
-    bench_spmv(strtol(argv[1], NULL, 10), argv[2], argv[3]);
+    bench_spmv(strtol(argv[1], NULL, 10),
+               strtol(argv[2], NULL, 10),
+               strtol(argv[3], NULL, 10),
+               argv[4],
+               argv[5]);
 }
+
+#pragma GCC diagnostic pop

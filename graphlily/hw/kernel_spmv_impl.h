@@ -244,6 +244,10 @@ void compute_spmv_one_channel(
     #pragma HLS stream variable=SF_1_to_VL_stream depth=FIFO_DEPTH
     #pragma HLS stream variable=VL_to_SF_2_stream depth=FIFO_DEPTH
     #pragma HLS stream variable=SF_2_to_PE_stream depth=FIFO_DEPTH
+    #pragma HLS RESOURCE variable=ML_to_SF_1_stream core=FIFO_SRL
+    #pragma HLS RESOURCE variable=SF_1_to_VL_stream core=FIFO_SRL
+    #pragma HLS RESOURCE variable=VL_to_SF_2_stream core=FIFO_SRL
+    #pragma HLS RESOURCE variable=SF_2_to_PE_stream core=FIFO_SRL
 
     // Dataflow pipeline
     {

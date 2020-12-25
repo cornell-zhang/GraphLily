@@ -1,23 +1,28 @@
 make bench_bfs
 
-num_channels=4
-bitstream=${GRAPHLILY_ROOT_PATH}/benchmark/bitstreams/bfs_4_channel_16_pack_64K_VecBuf_150MHz.xclbin
+num_channels=16
+spmv_out_buf_len=512000
+spmspv_out_buf_len=256000
+vec_buf_len=30720
+
+bitstream=/work/shared/common/research/graphblas/bitstreams/
+bitstream+=overlay_16c_500K_250K_30K_stream64_149MHz/overlay.xclbin
 
 PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
+
 DATSETS=(gplus_108K_13M_csr_float32.npz
-         reddit_233K_115M_csr_float32.npz
-         pokec_1633K_31M_csr_float32.npz
-         ogbn_proteins_132K_79M_csr_float32.npz
          ogbl_ppa_576K_42M_csr_float32.npz
-         rMat_64K_64_csr_float32.npz
-         rMat_64K_256_csr_float32.npz
-         rMat_256K_64_csr_float32.npz
-         rMat_256K_256_csr_float32.npz)
+         hollywood_1M_113M_csr_float32.npz
+         pokec_1633K_31M_csr_float32.npz
+         ogbn_products_2M_124M_csr_float32.npz
+         orkut_3M_213M_csr_float32.npz
+         uniform_conflict_free_1M_64_csr_float32.npz
+         uniform_conflict_free_1M_256_csr_float32.npz)
 
 BUILD_DIR=./build
 
 for dataset in ${DATSETS[@]}
 do
     echo ${BUILD_DIR}/bench_bfs $dataset
-    ${BUILD_DIR}/bench_bfs $num_channels $bitstream $PATH/$dataset
+    ${BUILD_DIR}/bench_bfs $num_channels $spmv_out_buf_len $spmspv_out_buf_len $vec_buf_len $bitstream $PATH/$dataset
 done

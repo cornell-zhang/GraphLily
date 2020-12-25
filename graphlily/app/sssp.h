@@ -213,6 +213,8 @@ public:
             iter++;
         } while (iter < num_iterations && (float(vector_nnz) / this->matrix_num_rows_ < threshold));
 
+        std::cout << "SpMSpV runs for " << (iter - 1) << " iterations" << std::endl;
+
         // Switch from push to pull
         aligned_dense_vec_t spmv_input = this->SpMSpV_->send_mask_device_to_host();
         this->SpMV_->send_vector_host_to_device(spmv_input);

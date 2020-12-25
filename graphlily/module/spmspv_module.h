@@ -207,7 +207,7 @@ public:
         this->command_queue_.finish();
         // truncate useless data
         this->results_.resize(this->results_[0].index + 1);
-        std::cout << "INFO: [Module SpMSpV - collect result] result collected." << std::endl << std::flush;
+        // std::cout << "INFO: [Module SpMSpV - collect result] result collected." << std::endl << std::flush;
         return this->results_;
     }
 
@@ -315,8 +315,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
         }, 0 /* 0 means from host*/));
 
     this->command_queue_.finish();
-    std::cout << "INFO: [Module SpMSpV - send matrix] matrix successfully send to device."
-              << std::endl << std::flush;
+    // std::cout << "INFO: [Module SpMSpV - send matrix] matrix successfully send to device."
+    //           << std::endl << std::flush;
 
     // Handle results
     cl_mem_ext_ptr_t results_ext;
@@ -343,8 +343,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
                 &err));
 
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 8, this->results_buf));
-    std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
-              << std::endl << std::flush;
+    // std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
+    //           << std::endl << std::flush;
 }
 
 
@@ -374,8 +374,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
     // Send vector to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
     this->command_queue_.finish();
-    std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device."
-              << std::endl << std::flush;
+    // std::cout << "INFO: [Module SpMSpV - send vector] vector successfully send to device."
+    //           << std::endl << std::flush;
 }
 
 
@@ -406,8 +406,8 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
     // Send mask to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
     this->command_queue_.finish();
-    std::cout << "INFO: [Module SpMSpV - send mask] mask successfully send to device."
-              << std::endl << std::flush;
+    // std::cout << "INFO: [Module SpMSpV - send mask] mask successfully send to device."
+    //           << std::endl << std::flush;
 }
 
 
@@ -492,8 +492,8 @@ SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::compute_reference_results
         }
         if (mask_off) reference_results[i] = this->semiring_.zero;
     }
-    std::cout << "INFO: [Module SpMSpV - compute reference] reference computation successfully complete."
-              << std::endl << std::flush;
+    // std::cout << "INFO: [Module SpMSpV - compute reference] reference computation successfully complete."
+    //           << std::endl << std::flush;
     return reference_results;
 }
 

@@ -332,14 +332,18 @@ void compute_spmspv(
     // fifos
     hls::stream<IDX_T> DL_to_SF_npld_stream;
     hls::stream<IDX_T> SF_to_PE_npld_stream;
+    #pragma HLS stream variable=DL_to_SF_npld_stream depth=2
+    #pragma HLS stream variable=SF_to_PE_npld_stream depth=2
+
     hls::stream<VL_O_T> VL_to_ML_stream;
     hls::stream<SF_IO_T> DL_to_SF_stream[PACK_SIZE];
     hls::stream<SF_IO_T> SF_to_PE_stream[PACK_SIZE];
-    #pragma HLS stream variable=DL_to_SF_npld_stream depth=2
-    #pragma HLS stream variable=SF_to_PE_npld_stream depth=2
     #pragma HLS stream variable=VL_to_ML_stream depth=FIFO_DEPTH
     #pragma HLS stream variable=DL_to_SF_stream depth=FIFO_DEPTH
     #pragma HLS stream variable=SF_to_PE_stream depth=FIFO_DEPTH
+    #pragma HLS RESOURCE variable=VL_to_ML_stream core=FIFO_SRL
+    #pragma HLS RESOURCE variable=DL_to_SF_stream core=FIFO_SRL
+    #pragma HLS RESOURCE variable=SF_to_PE_stream core=FIFO_SRL
 
     // dataflow pipeline
     #pragma HLS dataflow
@@ -424,10 +428,12 @@ void write_back_results(
     VAL_T zero,
     MASK_T mask_type
 ) {
-    hls::stream<IDX_VAL_T> CR_to_WB_stream[PACK_SIZE * 2];
     hls::stream<IDX_T> CR_to_WB_npld_stream;
     #pragma HLS stream variable=CR_to_WB_npld_stream depth=2
+
+    hls::stream<IDX_VAL_T> CR_to_WB_stream[PACK_SIZE * 2];
     #pragma HLS stream variable=CR_to_WB_stream depth=FIFO_DEPTH
+    #pragma HLS RESOURCE variable=CR_to_WB_stream core=FIFO_SRL
 
     // dataflow pipeline
     #pragma HLS dataflow

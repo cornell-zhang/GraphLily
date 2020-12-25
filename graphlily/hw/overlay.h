@@ -55,7 +55,7 @@ typedef char MASK_T;
 #define WRITETOONE  2
 
 // Kernel configurations
-const unsigned FIFO_DEPTH = 8;
+const unsigned FIFO_DEPTH = 64;
 const unsigned BATCH_SIZE = 128;
 
 // Below kernel configurations will be overwritten by the compiler

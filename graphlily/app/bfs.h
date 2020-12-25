@@ -178,6 +178,8 @@ public:
             iter++;
         } while (iter < num_iterations && (float(vector_nnz) / this->matrix_num_rows_ < threshold));
 
+        std::cout << "SpMSpV runs for " << (iter - 1) << " iterations" << std::endl;
+
         // Switch from push to pull
         this->SpMV_->bind_mask_buf(this->SpMSpV_->mask_buf);
         aligned_sparse_vec_t spmspv_result = this->SpMSpV_->send_results_device_to_host();

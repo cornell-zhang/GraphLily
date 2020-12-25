@@ -96,7 +96,6 @@ void ufixed_pe_cluster_part1(
     OpT Op,
     ValT Zero
 ) {
-
     // loop control
     bool prev_finish = false;
     unsigned num_payload = 0;
@@ -115,7 +114,7 @@ void ufixed_pe_cluster_part1(
     #pragma HLS array_partition variable=b_F complete
     unsigned addr_F[num_PE];
     #pragma HLS array_partition variable=addr_F complete
-    bool  valid_F[num_PE];
+    bool valid_F[num_PE];
     #pragma HLS array_partition variable=valid_F complete
     for (unsigned i = 0; i < num_PE; i++) {
         #pragma HLS unroll

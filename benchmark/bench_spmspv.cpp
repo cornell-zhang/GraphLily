@@ -296,9 +296,9 @@ int main(int argc, char *argv[]) {
         std::cout << command << std::endl;
         system(command.c_str());
         graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
-                                                            spmv_out_buf_len,
-                                                            spmspv_out_buf_len,
-                                                            vec_buf_len);
+                                                               spmv_out_buf_len,
+                                                               spmspv_out_buf_len,
+                                                               vec_buf_len);
         synthesizer.set_target(target);
         synthesizer.synthesize();
         std::cout << "Kernel Build Complete" << std::endl;
