@@ -10,7 +10,8 @@
 
 #include "./util.h"
 #include "./shuffle.h"
-#include "./ufixed_pe.h"
+#include "./ufixed_pe_fwd.h"
+// #include "./ufixed_pe.h"
 // #include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
