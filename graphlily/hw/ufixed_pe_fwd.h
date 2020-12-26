@@ -263,6 +263,23 @@ void ufixed_pe_cluster_spmv_uram_part2(
         valid_R[i] = false;
     }
 
+    // D stage (depth 1)
+    ValT q_D[num_PE];
+    #pragma HLS array_partition variable=q_D complete
+    ValT incr_D[num_PE];
+    #pragma HLS array_partition variable=incr_D complete
+    unsigned addr_D[num_PE];
+    #pragma HLS array_partition variable=addr_D complete
+    bool valid_D[num_PE];
+    #pragma HLS array_partition variable=valid_D complete
+    for (unsigned i = 0; i < num_PE; i++) {
+        #pragma HLS unroll
+        q_D[i] = 0;
+        incr_D[i] = 0;
+        addr_D[i] = 0;
+        valid_D[i] = false;
+    }
+
     // A stage (depth 1)
     ValT q_A[num_PE];
     #pragma HLS array_partition variable=q_A complete
@@ -274,13 +291,13 @@ void ufixed_pe_cluster_spmv_uram_part2(
     #pragma HLS array_partition variable=addr_A complete
     bool valid_A[num_PE];
     #pragma HLS array_partition variable=valid_A complete
+    // A stage in-flight regs
     unsigned in_flight_A1_addr[num_PE];
-    #pragma HLS array_partition variable=in_flight_A1_addr complete
+    #pragma HLS array_partition variable=in_flight_W1_addr complete
     ValT in_flight_A1_data[num_PE];
-    #pragma HLS array_partition variable=in_flight_A1_data complete
+    #pragma HLS array_partition variable=in_flight_W1_data complete
     bool in_flight_A1_valid[num_PE];
-    #pragma HLS array_partition variable=in_flight_A1_valid complete
-
+    #pragma HLS array_partition variable=in_flight_W1_valid complete
     for (unsigned i = 0; i < num_PE; i++) {
         #pragma HLS unroll
         q_A[i] = 0;
@@ -300,6 +317,7 @@ void ufixed_pe_cluster_spmv_uram_part2(
     #pragma HLS array_partition variable=addr_W complete
     bool valid_W[num_PE];
     #pragma HLS array_partition variable=valid_W complete
+    // W stage in-flight regs
     unsigned in_flight_W1_addr[num_PE];
     #pragma HLS array_partition variable=in_flight_W1_addr complete
     unsigned in_flight_W2_addr[num_PE];
@@ -325,26 +343,21 @@ void ufixed_pe_cluster_spmv_uram_part2(
         in_flight_W2_valid[i] = false;
     }
 
-    // pipeline control signals
-    bool match_AW1[num_PE];
-    #pragma HLS array_partition variable=match_AW1 complete
-    bool match_AW2[num_PE];
-    #pragma HLS array_partition variable=match_AW2 complete
-    bool match_AA1[num_PE];
-    #pragma HLS array_partition variable=match_AA1 complete
-    for (unsigned i = 0; i < num_PE; i++) {
-        #pragma HLS unroll
-        match_AW1[i] = false;
-        match_AW2[i] = false;
-        match_AA1[i] = false;
-    }
-
     loop_pe_part2:
     while (!loop_exit) {
         #pragma HLS pipeline II=1
         #pragma HLS latency min=6 max=6
         #pragma HLS dependence variable=output_buffer inter RAW false
         #pragma HLS dependence variable=loop_exit inter RAW true distance=7
+        #pragma HLS dependence variable=in_flight_A1_addr inter RAW true distance=1
+        #pragma HLS dependence variable=in_flight_W1_addr inter RAW true distance=2
+        #pragma HLS dependence variable=in_flight_W2_addr inter RAW true distance=3
+        #pragma HLS dependence variable=in_flight_A1_data inter RAW true distance=1
+        #pragma HLS dependence variable=in_flight_W1_data inter RAW true distance=2
+        #pragma HLS dependence variable=in_flight_W2_data inter RAW true distance=3
+        #pragma HLS dependence variable=in_flight_A1_valid inter RAW true distance=1
+        #pragma HLS dependence variable=in_flight_W1_valid inter RAW true distance=2
+        #pragma HLS dependence variable=in_flight_W2_valid inter RAW true distance=3
 
         // Fetch stage (F)
         loop_F:
@@ -377,25 +390,36 @@ void ufixed_pe_cluster_spmv_uram_part2(
         }
         // ----- end of R stage
 
+        // Decode stage (D) - additional stage for data forwarding
+        loop_ex:
+        for (unsigned PEid = 0; PEid < num_PE; PEid++) {
+            #pragma HLS unroll
+            valid_D[PEid] = valid_R[PEid];
+            addr_D[PEid] = addr_R[PEid];
+            incr_D[PEid] = incr_R[PEid];
+            bool match_A1 = ((addr_D[PEid] == in_flight_A1_addr[PEid]) && valid_R[PEid] && in_flight_A1_valid[PEid]);
+            bool match_W1 = ((addr_D[PEid] == in_flight_W1_addr[PEid]) && valid_R[PEid] && in_flight_W1_valid[PEid]);
+            bool match_W2 = ((addr_D[PEid] == in_flight_W2_addr[PEid]) && valid_R[PEid] && in_flight_W2_valid[PEid]);
+            if (match_A1) {
+                q_D[PEid] = in_flight_A1_data[PEid];
+            } else if (match_W1) {
+                q_D[PEid] = in_flight_W1_data[PEid];
+            } else if (match_W2) {
+                q_D[PEid] = in_flight_W2_data[PEid];
+            } else {
+                q_D[PEid] = q_R[PEid];
+            }
+        }
+        // ----- end of D stage
+
         // Add stage (A)
         loop_A:
         for (unsigned PEid = 0; PEid < num_PE; PEid++) {
             #pragma HLS unroll
             addr_A[PEid] = addr_R[PEid];
             valid_A[PEid] = valid_R[PEid];
-            match_AW1[PEid] = ((addr_A[PEid] == in_flight_W1_addr[PEid]) && valid_A[PEid] && in_flight_W1_valid[PEid]);
-            match_AW2[PEid] = ((addr_A[PEid] == in_flight_W2_addr[PEid]) && valid_A[PEid] && in_flight_W2_valid[PEid]);
-            match_AA1[PEid] = ((addr_A[PEid] == in_flight_A1_addr[PEid]) && valid_A[PEid] && in_flight_A1_valid[PEid]);
-            if (match_AA1[PEid]) {
-                q_A[PEid] = in_flight_A1_data[PEid];
-            } else if (match_AW1[PEid]) {
-                q_A[PEid] = in_flight_W1_data[PEid];
-            } else if (match_AW2[PEid]) {
-                q_A[PEid] = in_flight_W2_data[PEid];
-            } else {
-                q_A[PEid] = q_R[PEid];
-            }
             incr_A[PEid] = incr_R[PEid];
+            q_A[PEid] = q_D[PEid];
             new_q_A[PEid] = pe_ufixed_add_alu<ValT, OpT>(q_A[PEid], incr_A[PEid], Zero, Op, valid_A[PEid]);
         }
         // ----- end of A stage
@@ -530,6 +554,23 @@ void ufixed_pe_cluster_spmspv_uram_part2(
         valid_R[i] = false;
     }
 
+    // D stage (depth 1)
+    ValT q_D[num_PE];
+    #pragma HLS array_partition variable=q_D complete
+    ValT incr_D[num_PE];
+    #pragma HLS array_partition variable=incr_D complete
+    unsigned addr_D[num_PE];
+    #pragma HLS array_partition variable=addr_D complete
+    bool valid_D[num_PE];
+    #pragma HLS array_partition variable=valid_D complete
+    for (unsigned i = 0; i < num_PE; i++) {
+        #pragma HLS unroll
+        q_D[i] = 0;
+        incr_D[i] = 0;
+        addr_D[i] = 0;
+        valid_D[i] = false;
+    }
+
     // A stage (depth 1)
     ValT q_A[num_PE];
     #pragma HLS array_partition variable=q_A complete
@@ -612,6 +653,15 @@ void ufixed_pe_cluster_spmspv_uram_part2(
         #pragma HLS latency min=6 max=6
         #pragma HLS dependence variable=output_buffer inter RAW false
         #pragma HLS dependence variable=loop_exit inter RAW true distance=7
+        #pragma HLS dependence variable=in_flight_A1_addr inter RAW true distance=1
+        #pragma HLS dependence variable=in_flight_W1_addr inter RAW true distance=2
+        #pragma HLS dependence variable=in_flight_W2_addr inter RAW true distance=3
+        #pragma HLS dependence variable=in_flight_A1_data inter RAW true distance=1
+        #pragma HLS dependence variable=in_flight_W1_data inter RAW true distance=2
+        #pragma HLS dependence variable=in_flight_W2_data inter RAW true distance=3
+        #pragma HLS dependence variable=in_flight_A1_valid inter RAW true distance=1
+        #pragma HLS dependence variable=in_flight_W1_valid inter RAW true distance=2
+        #pragma HLS dependence variable=in_flight_W2_valid inter RAW true distance=3
 
         // Fetch stage (F)
         loop_F:
@@ -645,25 +695,36 @@ void ufixed_pe_cluster_spmspv_uram_part2(
         }
         // ----- end of R stage
 
+        // Decode stage (D) - additional stage for data forwarding
+        loop_ex:
+        for (unsigned PEid = 0; PEid < num_PE; PEid++) {
+            #pragma HLS unroll
+            valid_D[PEid] = valid_R[PEid];
+            addr_D[PEid] = addr_R[PEid];
+            incr_D[PEid] = incr_R[PEid];
+            bool match_A1 = ((addr_D[PEid] == in_flight_A1_addr[PEid]) && valid_R[PEid] && in_flight_A1_valid[PEid]);
+            bool match_W1 = ((addr_D[PEid] == in_flight_W1_addr[PEid]) && valid_R[PEid] && in_flight_W1_valid[PEid]);
+            bool match_W2 = ((addr_D[PEid] == in_flight_W2_addr[PEid]) && valid_R[PEid] && in_flight_W2_valid[PEid]);
+            if (match_A1) {
+                q_D[PEid] = in_flight_A1_data[PEid];
+            } else if (match_W1) {
+                q_D[PEid] = in_flight_W1_data[PEid];
+            } else if (match_W2) {
+                q_D[PEid] = in_flight_W2_data[PEid];
+            } else {
+                q_D[PEid] = q_R[PEid];
+            }
+        }
+        // ----- end of D stage
+
         // Add stage (A)
         loop_A:
         for (unsigned PEid = 0; PEid < num_PE; PEid++) {
             #pragma HLS unroll
             addr_A[PEid] = addr_R[PEid];
             valid_A[PEid] = valid_R[PEid];
-            match_AW1[PEid] = ((addr_A[PEid] == in_flight_W1_addr[PEid]) && valid_A[PEid] && in_flight_W1_valid[PEid]);
-            match_AW2[PEid] = ((addr_A[PEid] == in_flight_W2_addr[PEid]) && valid_A[PEid] && in_flight_W2_valid[PEid]);
-            match_AA1[PEid] = ((addr_A[PEid] == in_flight_A1_addr[PEid]) && valid_A[PEid] && in_flight_A1_valid[PEid]);
-            if (match_AA1[PEid]) {
-                q_A[PEid] = in_flight_A1_data[PEid];
-            } else if (match_AW1[PEid]) {
-                q_A[PEid] = in_flight_W1_data[PEid];
-            } else if (match_AW2[PEid]) {
-                q_A[PEid] = in_flight_W2_data[PEid];
-            } else {
-                q_A[PEid] = q_R[PEid];
-            }
             incr_A[PEid] = incr_R[PEid];
+            q_A[PEid] = q_D[PEid];
             new_q_A[PEid] = pe_ufixed_add_alu<ValT, OpT>(q_A[PEid], incr_A[PEid], Zero, Op, valid_A[PEid]);
         }
         // ----- end of A stage
