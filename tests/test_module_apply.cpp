@@ -240,7 +240,7 @@ TEST(CopyBufferBindBuffer, Basic) {
     cl_mem_ext_ptr_t x_ext;
     x_ext.obj = x.data();
     x_ext.param = 0;
-    x_ext.flags = graphlily::DDR[0];
+    x_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 1];
     cl::Device device = graphlily::find_device();
     cl::Context context = cl::Context(device, NULL, NULL, NULL);
     cl::Buffer x_buf = cl::Buffer(context,

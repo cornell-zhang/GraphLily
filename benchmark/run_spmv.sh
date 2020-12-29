@@ -20,8 +20,7 @@ DATSETS=(gplus_108K_13M_csr_float32.npz
 
 BUILD_DIR=./build
 
-for dataset in ${DATSETS[@]}
-do
+for dataset in ${DATSETS[@]} do
     echo ${BUILD_DIR}/bench_spmv $dataset
     ${BUILD_DIR}/bench_spmv $num_channels $out_buf_len $vec_buf_len $bitstream $PATH/$dataset
 done

@@ -339,12 +339,12 @@ void compute_spmv_one_channel(
 
 void write_to_out_ddr(
     const VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],  // in
-    unsigned row_partition_idx,                                                         // in
-    unsigned num_row_partitions,                                                        // in
-    unsigned num_rows,                                                                  // in
-    const PACKED_VAL_T *mask,                                                           // in
-    MASK_T mask_type,                                                                   // in
-    PACKED_VAL_T *out                                                                   // out
+    unsigned row_partition_idx,                                                              // in
+    unsigned num_row_partitions,                                                             // in
+    unsigned num_rows,                                                                       // in
+    const PACKED_VAL_T *mask,                                                                // in
+    MASK_T mask_type,                                                                        // in
+    PACKED_VAL_T *out                                                                        // out
 ) {
     unsigned size = SPMV_OUT_BUF_LEN;
     if (row_partition_idx == (num_row_partitions - 1)) {

@@ -5,6 +5,7 @@
 #include "graphlily/module/spmv_module.h"
 #include "graphlily/module/spmspv_module.h"
 #include "graphlily/module/assign_vector_sparse_module.h"
+#include "graphlily/module/add_scalar_vector_dense_module.h"
 #include "graphlily/io/data_loader.h"
 #include "graphlily/io/data_formatter.h"
 
@@ -72,6 +73,7 @@ private:
     module::AssignVectorDenseModule<graphlily::val_t> *DenseAssign_;
     module::SpMSpVModule<graphlily::val_t, graphlily::val_t, graphlily::idx_val_t> *SpMSpV_;
     module::AssignVectorSparseModule<graphlily::val_t, graphlily::idx_val_t> *SparseAssign_;
+    module::eWiseAddModule<graphlily::val_t> *eWiseAdd_;  // for on-device data transfer
     // Sparse matrix size
     uint32_t matrix_num_rows_;
     uint32_t matrix_num_cols_;
@@ -113,6 +115,9 @@ public:
         this->SparseAssign_ = new module::AssignVectorSparseModule<graphlily::val_t, graphlily::idx_val_t>(
             generate_new_frontier);
         this->add_module(this->SparseAssign_);
+
+        this->eWiseAdd_ = new module::eWiseAddModule<graphlily::val_t>();
+        this->add_module(this->eWiseAdd_);
     }
 
 
@@ -147,11 +152,14 @@ public:
         aligned_dense_vec_t input(this->matrix_num_rows_, semiring_.zero);
         input[source] = 0;
         this->SpMV_->send_vector_host_to_device(input);
+        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
+        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);
         for (size_t iter = 1; iter <= num_iterations; iter++) {
             this->SpMV_->run();
-            this->SpMV_->copy_buffer_device_to_device(this->SpMV_->results_buf,
-                                                      this->SpMV_->vector_buf,
-                                                      sizeof(graphlily::val_t) * this->matrix_num_rows_);
+            // this->SpMV_->copy_buffer_device_to_device(this->SpMV_->results_buf,
+            //                                           this->SpMV_->vector_buf,
+            //                                           sizeof(graphlily::val_t) * this->matrix_num_rows_);
+            this->eWiseAdd_->run(this->matrix_num_rows_, 0);
         }
         return this->SpMV_->send_vector_device_to_host();
     }
@@ -218,13 +226,16 @@ public:
         // Switch from push to pull
         aligned_dense_vec_t spmv_input = this->SpMSpV_->send_mask_device_to_host();
         this->SpMV_->send_vector_host_to_device(spmv_input);
+        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
+        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);
 
         // Pull
         for ( ; iter <= num_iterations; iter++) {
             this->SpMV_->run();
-            this->SpMV_->copy_buffer_device_to_device(this->SpMV_->results_buf,
-                                                      this->SpMV_->vector_buf,
-                                                      sizeof(graphlily::val_t) * this->matrix_num_rows_);
+            // this->SpMV_->copy_buffer_device_to_device(this->SpMV_->results_buf,
+            //                                           this->SpMV_->vector_buf,
+            //                                           sizeof(graphlily::val_t) * this->matrix_num_rows_);
+            this->eWiseAdd_->run(this->matrix_num_rows_, 0);
         }
 
         return this->SpMV_->send_vector_device_to_host();

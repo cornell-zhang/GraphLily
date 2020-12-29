@@ -1,8 +1,7 @@
-make bench_bfs
+make bench_pagerank
 
 num_channels=16
 spmv_out_buf_len=1024000
-spmspv_out_buf_len=256000
 vec_buf_len=30720
 
 bitstream=/work/shared/common/research/graphblas/bitstreams/
@@ -17,12 +16,9 @@ DATSETS=(gplus_108K_13M_csr_float32.npz
          ogbn_products_2M_124M_csr_float32.npz
          orkut_3M_213M_csr_float32.npz)
 
-NUM_ITER=(7 11 10 11 23 6)
-
 BUILD_DIR=./build
 
 for ((i = 0; i < ${#DATSETS[@]}; i++)) do
-    echo ${BUILD_DIR}/bench_bfs ${DATSETS[i]}
-    ${BUILD_DIR}/bench_bfs $num_channels $spmv_out_buf_len $spmspv_out_buf_len $vec_buf_len \
-        $bitstream $PATH/${DATSETS[i]} ${NUM_ITER[i]}
+    echo ${BUILD_DIR}/bench_pagerank ${DATSETS[i]}
+    ${BUILD_DIR}/bench_pagerank $num_channels $spmv_out_buf_len $vec_buf_len $bitstream $PATH/${DATSETS[i]}
 done
