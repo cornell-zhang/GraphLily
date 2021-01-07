@@ -101,24 +101,52 @@ public:
         this->vec_buf_len_ = vec_buf_len;
     }
 
+    /*Overlay argument list:
+    * (H = num_hbm_channels)
+    * Index       Argument                     used in this module?
+    * 0 ~ H-1     matrix for spmv              y
+    * H+0         vector for spmv              y
+    * H+1         mask for spmv (read port)    y
+    * H+2         mask for spmv (write port)   y
+    * H+3         output for spmv              y
+    *
+    * H+4 ~ +6    matrix for spmspv            n
+    * H+7         vector for spmspv            n
+    * H+8         mask for spmspv              n
+    * H+9         output for spmspv            n
+    *
+    * H+10        # of rows                    y
+    * H+11        # of columns                 y
+    *
+    * H+12        operation type               y
+    * H+13        mask type                    y
+    *
+    * H+14        overlay mode select          y
+    *
+    * H+15        apply vector length          n
+    * H+16        input value for assign       n
+    */
     void set_unused_args() override {
-        for (uint32_t i = this->num_channels_ + 3; i < this->num_channels_ + 9; i++) {
+        // Set unused arguments for SpMSpV
+        for (uint32_t i = this->num_channels_ + 4; i < this->num_channels_ + 10; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        this->kernel_.setArg(this->num_channels_ + 14, (unsigned)NULL);
+        // Set unused scalar arguments
+        this->kernel_.setArg(this->num_channels_ + 15, (unsigned)NULL);
         // To avoid runtime error of invalid scalar argument size
         if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
-            this->kernel_.setArg(this->num_channels_ + 15, (long long)NULL);
+            this->kernel_.setArg(this->num_channels_ + 16, (long long)NULL);
         } else {
-            this->kernel_.setArg(this->num_channels_ + 15, (unsigned)NULL);
+            this->kernel_.setArg(this->num_channels_ + 16, (unsigned)NULL);
         }
         if (this->mask_type_ == graphlily::kNoMask) {
             this->kernel_.setArg(this->num_channels_ + 1, cl::Buffer(this->context_, 0, 4));
+            this->kernel_.setArg(this->num_channels_ + 2, cl::Buffer(this->context_, 0, 4));
         }
     }
 
     void set_mode() override {
-        this->kernel_.setArg(this->num_channels_ + 13, 1);  // 1 is SpMV
+        this->kernel_.setArg(this->num_channels_ + 14, 1);  // 1 is SpMV
     }
 
     /*!
@@ -378,11 +406,11 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     for (size_t c = 0; c < this->num_channels_; c++) {
         OCL_CHECK(err, err = this->kernel_.setArg(c, this->channel_packets_buf[c]));
     }
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 2, this->results_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 9, this->csr_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 10, this->csr_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 11, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 12, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 3, this->results_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 10, this->csr_matrix_.num_rows));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 11, this->csr_matrix_.num_cols));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 12, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 13, (char)this->mask_type_));
     // Send data to device
     for (size_t c = 0; c < this->num_channels_; c++) {
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(
@@ -425,6 +453,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
                 &mask_ext,
                 &err));
     OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
     this->command_queue_.finish();
 }
@@ -434,6 +463,7 @@ template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::bind_mask_buf(cl::Buffer src_buf) {
     this->mask_buf = src_buf;
     this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf);
+    this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf);
 }
 
 

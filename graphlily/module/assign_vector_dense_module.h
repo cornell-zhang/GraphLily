@@ -36,20 +36,49 @@ public:
 public:
     AssignVectorDenseModule() : BaseModule("overlay") {}
 
+    /*Overlay argument list:
+    * (H = num_hbm_channels)
+    * Index       Argument                     used in this module?
+    * 0 ~ H-1     matrix for spmv              n
+    * H+0         vector for spmv              y
+    * H+1         mask for spmv (read port)    y
+    * H+2         mask for spmv (write port)   y
+    * H+3         output for spmv              n
+    *
+    * H+4 ~ +6    matrix for spmspv            n
+    * H+7         vector for spmspv            n
+    * H+8         mask for spmspv              n
+    * H+9         output for spmspv            n
+    *
+    * H+10        # of rows                    n
+    * H+11        # of columns                 n
+    *
+    * H+12        operation type               n
+    * H+13        mask type                    y
+    *
+    * H+14        overlay mode select          y
+    *
+    * H+15        apply vector length          y
+    * H+16        input value for assign       y
+    */
     void set_unused_args() override {
+        // Set unused arguments for SpMV
         for (uint32_t i = 0; i < graphlily::num_hbm_channels; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        for (uint32_t i = graphlily::num_hbm_channels + 2; i < graphlily::num_hbm_channels + 9; i++) {
+        this->kernel_.setArg(graphlily::num_hbm_channels + 3, cl::Buffer(this->context_, 0, 4));
+        // Set unused arguments for SpMSpV
+        for (uint32_t i = graphlily::num_hbm_channels + 4; i <= graphlily::num_hbm_channels + 9; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        this->kernel_.setArg(graphlily::num_hbm_channels + 9, (unsigned)NULL);
+        // Set unused scalar arguments
         this->kernel_.setArg(graphlily::num_hbm_channels + 10, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 11, (char)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 11, (unsigned)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 12, (char)NULL);
     }
 
     void set_mode() override {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 13, 4);;  // 4 is kernel_assign_vector_dense
+        this->kernel_.setArg(graphlily::num_hbm_channels + 14, 4);;  // 4 is kernel_assign_vector_dense
     }
 
     /*!
@@ -79,7 +108,7 @@ public:
      * \brief Bind the mask buffer to an existing buffer.
      */
     void bind_mask_buf(cl::Buffer src_buf) {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 12, (char)this->mask_type_);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)this->mask_type_);
         this->mask_buf = src_buf;
         this->kernel_.setArg(graphlily::num_hbm_channels + 0, this->mask_buf);
     }
@@ -89,7 +118,9 @@ public:
      */
     void bind_inout_buf(cl::Buffer src_buf) {
         this->inout_buf = src_buf;
+        // set both read and write ports
         this->kernel_.setArg(graphlily::num_hbm_channels + 1, this->inout_buf);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 2, this->inout_buf);
     }
 
     /*!
@@ -135,7 +166,7 @@ public:
 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
-    this->kernel_.setArg(graphlily::num_hbm_channels + 12, (char)this->mask_type_);
+    this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)this->mask_type_);
     this->mask_.assign(mask.begin(), mask.end());
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
@@ -166,7 +197,9 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
                 sizeof(vector_data_t) * this->inout_.size(),
                 &inout_ext,
                 &err));
+    // set both read and write ports
     OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 1, this->inout_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 2, this->inout_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, 0));
     this->command_queue_.finish();
 }
@@ -175,12 +208,12 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 14, len));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 15, len));
     // To avoid runtime error of invalid scalar argument size
     if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
-        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 15, 8, (void*)&val));
+        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 16, 8, (void*)&val));
     } else {
-        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 15, val));
+        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 16, val));
     }
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
     this->command_queue_.finish();

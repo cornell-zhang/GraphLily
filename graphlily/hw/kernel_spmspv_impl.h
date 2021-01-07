@@ -39,8 +39,12 @@ void load_vector_from_gmem(
     // number of non-zeros
     IDX_T vec_num_nnz,
     // fifo
-    hls::stream<VL_O_T> &VL_to_ML_stream
+    hls::stream<VL_O_T> &VL_to_ML_stream,
+    // enable
+    bool enable
 ) {
+    if (!enable) return;
+
     loop_over_vector_values:
     for (unsigned int vec_nnz_cnt = 0; vec_nnz_cnt < vec_num_nnz; vec_nnz_cnt++) {
         #pragma HLS pipeline II=1
@@ -72,8 +76,12 @@ void load_matrix_from_gmem(
     hls::stream<VL_O_T> &VL_to_ML_stream,
     hls::stream<SF_IO_T> DL_to_SF_stream[PACK_SIZE],
     // load complete
-    hls::stream<unsigned> &num_payloads
+    hls::stream<unsigned> &num_payloads,
+    // enable
+    bool enable
 ) {
+    if (!enable) return;
+
     IDX_T pld_cnt = 0;
     IDX_T mat_addr_base = mat_partptr[part_id];
     // loop over all active columns
@@ -133,16 +141,37 @@ void bram_access_read_2ports(
     IDX_T rd_addr1[PACK_SIZE],
     VAL_T rd_data1[PACK_SIZE],
     // bram
-    const VAL_T bram[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
+    const VAL_T bram[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
+    // enable
+    bool enable
 ) {
     #pragma HLS pipeline II=1
-    // #pragma HLS inline
 
     loop_rd_get_data_unroll:
     for (unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
         #pragma HLS unroll
-        rd_data0[BKid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr0[BKid] / NUM_HBM_CHANNEL];
-        rd_data1[BKid] = bram[rd_addr1[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr1[BKid] / NUM_HBM_CHANNEL];
+        VAL_T rd_data_tmp0[NUM_HBM_CHANNEL];
+        VAL_T rd_data_tmp1[NUM_HBM_CHANNEL];
+        #pragma HLS array_partition variable=rd_data_tmp0 complete dim=0
+        #pragma HLS array_partition variable=rd_data_tmp1 complete dim=0
+
+        for (unsigned CHid = 0; CHid < NUM_HBM_CHANNEL; CHid++) {
+            #pragma HLS unroll
+            bool enable_dup = HLS_REG<bool>(enable);
+            if (enable_dup) {
+                rd_data_tmp0[CHid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr0[BKid] / NUM_HBM_CHANNEL];
+            } else {
+                rd_data_tmp0[CHid] = 0;
+            }
+            if (enable_dup) {
+                rd_data_tmp1[CHid] = bram[rd_addr1[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr1[BKid] / NUM_HBM_CHANNEL];
+            } else {
+                rd_data_tmp1[CHid] = 0;
+            }
+        }
+
+        rd_data0[BKid] = rd_data_tmp0[rd_addr0[BKid] % NUM_HBM_CHANNEL];
+        rd_data1[BKid] = rd_data_tmp1[rd_addr1[BKid] % NUM_HBM_CHANNEL];
     }
 }
 
@@ -157,7 +186,9 @@ void checkout_results(
     hls::stream<IDX_T> &npld_to_wb,
     IDX_T mat_row_id_base,
     IDX_T num_rows,
-    VAL_T zero
+    VAL_T zero,
+    // enable
+    bool enable
 ) {
     IDX_T npld_before_mask = 0;
     IDX_T index_arr0[PACK_SIZE];
@@ -169,7 +200,13 @@ void checkout_results(
     #pragma HLS array_partition variable=data_arr0 complete
     #pragma HLS array_partition variable=data_arr1 complete
 
-    unsigned int num_rounds = ((num_rows + 2 * PACK_SIZE) - 1) / (PACK_SIZE * 2);
+    unsigned int num_rounds;
+    if (enable) {
+        num_rounds = ((num_rows + 2 * PACK_SIZE) - 1) / (PACK_SIZE * 2);
+    } else {
+        num_rounds = 0;
+    }
+
     loop_over_dense_data_pipeline:
     for (unsigned int round_cnt = 0; round_cnt < num_rounds; round_cnt++) {
         #pragma HLS pipeline II=1
@@ -178,8 +215,13 @@ void checkout_results(
         loop_before_read_banks_unroll:
         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
-            index_arr0[Bank_id] = round_cnt * 2;
-            index_arr1[Bank_id] = round_cnt * 2 + 1;
+            if (enable) {
+                index_arr0[Bank_id] = round_cnt * 2;
+                index_arr1[Bank_id] = round_cnt * 2 + 1;
+            } else {
+                index_arr0[Bank_id] = 0;
+                index_arr1[Bank_id] = 0;
+            }
         }
 
         #ifndef __SYNTHESIS__
@@ -193,12 +235,12 @@ void checkout_results(
         }
         #endif
 
-        bram_access_read_2ports(index_arr0, data_arr0, index_arr1, data_arr1, dense_data);
+        bram_access_read_2ports(index_arr0, data_arr0, index_arr1, data_arr1, dense_data, enable);
 
         loop_after_read_banks_unroll:
         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
             #pragma HLS unroll
-            if (data_arr0[Bank_id] != zero) {
+            if (data_arr0[Bank_id] != zero && enable) {
                 IDX_VAL_T pld;
                 pld.index = round_cnt * 2 * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr0[Bank_id];
@@ -213,7 +255,7 @@ void checkout_results(
                 }
                 #endif
             }
-            if (data_arr1[Bank_id] != zero) {
+            if (data_arr1[Bank_id] != zero && enable) {
                 IDX_VAL_T pld;
                 pld.index = (round_cnt * 2 + 1) * PACK_SIZE + Bank_id + mat_row_id_base;
                 pld.val = data_arr1[Bank_id];
@@ -231,7 +273,7 @@ void checkout_results(
         }
         npld_before_mask += local_npld_incr;
     }
-    npld_to_wb << npld_before_mask;
+    if (enable) npld_to_wb.write(npld_before_mask);
 }
 
 
@@ -244,8 +286,11 @@ void write_back_gmem(
     IDX_T Nnz,
     IDX_T &Nnz_incr,
     VAL_T zero,
-    MASK_T mask_type
+    MASK_T mask_type,
+    bool enable
 ) {
+    if (!enable) return;
+
     IDX_T wb_cnt = 0;
     IDX_T incr = 0;
     IDX_T npld = 0;
@@ -256,20 +301,27 @@ void write_back_gmem(
     loop_until_all_written_back:
     while (!loop_exit) {
         #pragma HLS pipeline II=1
-        #pragma HLS dependence variable=loop_exit inter distance=15 RAW True
+        #pragma HLS latency min=20 max=20
+        #pragma HLS dependence variable=loop_exit inter distance=21 RAW True
         IDX_VAL_T wb_temp;
         if (wb_input_streams[Lane_id].read_nb(wb_temp)) {
             wb_cnt++;
             bool do_write;
+            VAL_T mask_tmp = zero;
+            // unsigned mask_gmem_idx = HLS_REG<unsigned>(wb_temp.index);
             switch (mask_type) {
                 case NOMASK:
                     do_write = true;
                     break;
                 case WRITETOONE:
-                    do_write = (mask[wb_temp.index] != zero);
+                    // mask_tmp = HLS_REG<VAL_T>(mask[mask_gmem_idx]);
+                    mask_tmp = mask[wb_temp.index];
+                    do_write = (mask_tmp != zero);
                     break;
                 case WRITETOZERO:
-                    do_write = (mask[wb_temp.index] == zero);
+                    // mask_tmp = HLS_REG<VAL_T>(mask[mask_gmem_idx]);
+                    mask_tmp = mask[wb_temp.index];
+                    do_write = (mask_tmp == zero);
                     break;
                 default:
                     do_write = false;
@@ -327,7 +379,8 @@ void compute_spmspv(
     IDX_T mat_row_id_base,
     IDX_T part_id,
     OP_T Op,
-    VAL_T Zero
+    VAL_T Zero,
+    bool enable
 ) {
     // fifos
     hls::stream<IDX_T> DL_to_SF_npld_stream;
@@ -350,7 +403,8 @@ void compute_spmspv(
     load_vector_from_gmem(
         vector,
         vec_num_nnz,
-        VL_to_ML_stream
+        VL_to_ML_stream,
+        enable
     );
 
     load_matrix_from_gmem(
@@ -364,7 +418,8 @@ void compute_spmspv(
         Zero,
         VL_to_ML_stream,
         DL_to_SF_stream,
-        DL_to_SF_npld_stream
+        DL_to_SF_npld_stream,
+        enable
     );
 
     #ifndef __SYNTHESIS__
@@ -377,7 +432,8 @@ void compute_spmspv(
         DL_to_SF_stream,
         SF_to_PE_stream,
         DL_to_SF_npld_stream,
-        SF_to_PE_npld_stream
+        SF_to_PE_npld_stream,
+        enable
     );
 
     #ifndef __SYNTHESIS__
@@ -391,7 +447,8 @@ void compute_spmspv(
         output_buffer,
         Op,
         Zero,
-        SF_to_PE_npld_stream
+        SF_to_PE_npld_stream,
+        enable
     );
 
     // float_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
@@ -426,7 +483,8 @@ void write_back_results(
     IDX_T &result_Nnz_incr,
     IDX_T mat_row_id_base,
     VAL_T zero,
-    MASK_T mask_type
+    MASK_T mask_type,
+    bool enable
 ) {
     hls::stream<IDX_T> CR_to_WB_npld_stream;
     #pragma HLS stream variable=CR_to_WB_npld_stream depth=2
@@ -444,7 +502,8 @@ void write_back_results(
         CR_to_WB_npld_stream,
         mat_row_id_base,
         num_rows,
-        zero
+        zero,
+        enable
     );
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
@@ -460,7 +519,8 @@ void write_back_results(
         result_Nnz,
         result_Nnz_incr,
         zero,
-        mask_type
+        mask_type,
+        enable
     );
 
     #ifndef __SYNTHESIS__
@@ -482,13 +542,13 @@ void kernel_spmspv(
     IDX_T num_cols,
     OP_T Op,
     MASK_T mask_type,
-    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
+    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
+    bool enable
 ) {
     #pragma HLS inline off
 
-    IDX_T vec_num_nnz = vector[0].index;
+    IDX_T vec_num_nnz = enable ? vector[0].index : 0;
     VAL_T Zero;
-
     switch (Op) {
     case MULADD:
         Zero = MulAddZero;
@@ -508,7 +568,7 @@ void kernel_spmspv(
     IDX_T result_Nnz = 0;
 
     // total number of parts
-    IDX_T num_parts = (num_rows + SPMSPV_OUT_BUF_LEN - 1) / SPMSPV_OUT_BUF_LEN;
+    IDX_T num_parts = enable ? ((num_rows + SPMSPV_OUT_BUF_LEN - 1) / SPMSPV_OUT_BUF_LEN) : 0;
 
     // number of rows in the last part
     IDX_T num_rows_last_part = (num_rows % SPMSPV_OUT_BUF_LEN) ? (num_rows % SPMSPV_OUT_BUF_LEN) : SPMSPV_OUT_BUF_LEN;
@@ -556,7 +616,8 @@ void kernel_spmspv(
             mat_row_id_base,
             part_id,
             Op,
-            Zero
+            Zero,
+            enable
         );
         write_back_results(
             output_buffer,
@@ -567,7 +628,8 @@ void kernel_spmspv(
             result_Nnz_incr,
             mat_row_id_base,
             Zero,
-            mask_type
+            mask_type,
+            enable
         );
         result_Nnz += result_Nnz_incr;
         #ifndef __SYNTHESIS__
@@ -580,10 +642,12 @@ void kernel_spmspv(
     }
 
     // attach head
-    IDX_VAL_T result_head;
-    result_head.index = result_Nnz;
-    result_head.val = Zero;
-    result[0] = result_head;
+    if (enable) {
+        IDX_VAL_T result_head;
+        result_head.index = result_Nnz;
+        result_head.val = Zero;
+        result[0] = result_head;
+    }
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
         std::cout << "INFO: [Kernel SpMSpV] Kernel Finish" << std::endl << std::flush;

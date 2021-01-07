@@ -25,6 +25,7 @@ ValT pe_ufixed_mul_alu(ValT a, ValT b, ValT z, OpT op, bool en) {
     #pragma HLS pipeline II=1
     #pragma HLS latency min=2 max=2
     ValT out;
+    #pragma HLS resource variable=out core=DSP48 latency=2
     switch (op) {
         case MULADD:
             out = a * b;
@@ -94,8 +95,11 @@ void ufixed_pe_cluster_part1(
     hls::stream<unsigned> &num_payloads_in,
     hls::stream<unsigned> &num_payloads_out,
     OpT Op,
-    ValT Zero
+    ValT Zero,
+    bool enable
 ) {
+    if (!enable) return;
+
     // loop control
     bool prev_finish = false;
     unsigned num_payload = 0;
@@ -220,7 +224,8 @@ void ufixed_pe_cluster_spmv_uram_part2(
     hls::stream<unsigned> &num_payloads_in,
     ValT output_buffer[num_PE][bank_size],
     OpT Op,
-    ValT Zero
+    ValT Zero,
+    bool enable
 ) {
     // loop control
     bool prev_finish = false;
@@ -343,6 +348,13 @@ void ufixed_pe_cluster_spmv_uram_part2(
         in_flight_W2_valid[i] = false;
     }
 
+    bool enable_dup[num_PE];
+    #pragma HLS array_partition variable=enable_dup complete
+    for (int i = 0; i < num_PE; i++) {
+        #pragma HLS unroll
+        enable_dup[i] = HLS_REG<unsigned>(enable);
+    }
+
     loop_pe_part2:
     while (!loop_exit) {
         #pragma HLS pipeline II=1
@@ -364,11 +376,17 @@ void ufixed_pe_cluster_spmv_uram_part2(
         for (unsigned PEid = 0; PEid < num_PE; PEid++) {
             #pragma HLS unroll
             PP_STREAM_T<ValT> payload_in_tmp;
-            valid_S[PEid] = input_payloads[PEid].read_nb(payload_in_tmp);
-            if (valid_S[PEid]) {
-                addr_S[PEid] = payload_in_tmp.addr;
-                incr_S[PEid] = payload_in_tmp.incr;
+            if (enable_dup[PEid]) {
+                valid_S[PEid] = input_payloads[PEid].read_nb(payload_in_tmp);
+                if (valid_S[PEid]) {
+                    addr_S[PEid] = payload_in_tmp.addr;
+                    incr_S[PEid] = payload_in_tmp.incr;
+                } else {
+                    addr_S[PEid] = 0;
+                    incr_S[PEid] = 0;
+                }
             } else {
+                valid_S[PEid] = false;
                 addr_S[PEid] = 0;
                 incr_S[PEid] = 0;
             }
@@ -382,7 +400,7 @@ void ufixed_pe_cluster_spmv_uram_part2(
             valid_R[PEid] = valid_S[PEid];
             addr_R[PEid] = addr_S[PEid];
             incr_R[PEid] = incr_S[PEid];
-            if (valid_R[PEid]) {
+            if (valid_R[PEid] && enable_dup[PEid]) {
                 q_R[PEid] = output_buffer[PEid][addr_R[PEid] >> addr_shamt];
             } else {
                 q_R[PEid] = 0;
@@ -449,17 +467,17 @@ void ufixed_pe_cluster_spmv_uram_part2(
             addr_W[PEid] = addr_A[PEid];
             valid_W[PEid] = valid_A[PEid];
             new_q_W[PEid] = new_q_A[PEid];
-            if (valid_W[PEid]) {
+            if (valid_W[PEid] && enable_dup[PEid]) {
                 output_buffer[PEid][addr_W[PEid] >> addr_shamt] = new_q_W[PEid];
                 process_cnt_incr++;
             }
         }
-        if (!prev_finish) {
+        if ((!prev_finish) && enable) {
             prev_finish = num_payloads_in.read_nb(num_payload);
         }
         process_cnt += process_cnt_incr;
         bool process_complete = (process_cnt == num_payload);
-        loop_exit = process_complete && prev_finish;
+        loop_exit = (process_complete && prev_finish) || (!enable);
 
         // sw_emu line tracing
         // #ifndef __SYNTHESIS__
@@ -487,7 +505,8 @@ void ufixed_pe_cluster_spmv_uram(
     ValT output_buffer[num_PE][bank_size],
     OpT Op,
     ValT Zero,
-    hls::stream<unsigned> &num_payloads_in
+    hls::stream<unsigned> &num_payloads_in,
+    bool enable
 ) {
     #pragma HLS dataflow
 
@@ -497,9 +516,9 @@ void ufixed_pe_cluster_spmv_uram(
     #pragma HLS stream variable=PP_npld_stream depth=2
 
     ufixed_pe_cluster_part1<ValT, OpT, PayloadT, num_PE>(input_payloads, PP_stream,
-        num_payloads_in, PP_npld_stream, Op, Zero);
+        num_payloads_in, PP_npld_stream, Op, Zero, enable);
     ufixed_pe_cluster_spmv_uram_part2<ValT, OpT, num_PE, bank_size, addr_shamt>(PP_stream, PP_npld_stream,
-        output_buffer, Op, Zero);
+        output_buffer, Op, Zero, enable);
 }
 
 
@@ -511,7 +530,8 @@ void ufixed_pe_cluster_spmspv_uram_part2(
     hls::stream<unsigned> &num_payloads_in,
     ValT output_buffer[num_hbm_channels][num_PE][bank_size],
     OpT Op,
-    ValT Zero
+    ValT Zero,
+    bool enable
 ) {
     // loop control
     bool prev_finish = false;
@@ -647,6 +667,13 @@ void ufixed_pe_cluster_spmspv_uram_part2(
         match_AA1[i] = false;
     }
 
+    bool enable_dup[num_PE];
+    #pragma HLS array_partition variable=enable_dup complete
+    for (int i = 0; i < num_PE; i++) {
+        #pragma HLS unroll
+        enable_dup[i] = HLS_REG<unsigned>(enable);
+    }
+
     loop_pe_part2:
     while (!loop_exit) {
         #pragma HLS pipeline II=1
@@ -668,11 +695,17 @@ void ufixed_pe_cluster_spmspv_uram_part2(
         for (unsigned PEid = 0; PEid < num_PE; PEid++) {
             #pragma HLS unroll
             PP_STREAM_T<ValT> payload_in_tmp;
-            valid_S[PEid] = input_payloads[PEid].read_nb(payload_in_tmp);
-            if (valid_S[PEid]) {
-                addr_S[PEid] = payload_in_tmp.addr;
-                incr_S[PEid] = payload_in_tmp.incr;
+            if (enable_dup[PEid]) {
+                valid_S[PEid] = input_payloads[PEid].read_nb(payload_in_tmp);
+                if (valid_S[PEid]) {
+                    addr_S[PEid] = payload_in_tmp.addr;
+                    incr_S[PEid] = payload_in_tmp.incr;
+                } else {
+                    addr_S[PEid] = 0;
+                    incr_S[PEid] = 0;
+                }
             } else {
+                valid_S[PEid] = false;
                 addr_S[PEid] = 0;
                 incr_S[PEid] = 0;
             }
@@ -686,7 +719,7 @@ void ufixed_pe_cluster_spmspv_uram_part2(
             valid_R[PEid] = valid_S[PEid];
             addr_R[PEid] = addr_S[PEid];
             incr_R[PEid] = incr_S[PEid];
-            if (valid_R[PEid]) {
+            if (valid_R[PEid] && enable_dup[PEid]) {
                 q_R[PEid] = output_buffer[(addr_R[PEid] >> addr_shamt) % num_hbm_channels][PEid]
                                          [(addr_R[PEid] >> addr_shamt) / num_hbm_channels];
             } else {
@@ -754,18 +787,18 @@ void ufixed_pe_cluster_spmspv_uram_part2(
             addr_W[PEid] = addr_A[PEid];
             valid_W[PEid] = valid_A[PEid];
             new_q_W[PEid] = new_q_A[PEid];
-            if (valid_W[PEid]) {
+            if (valid_W[PEid] && enable_dup[PEid]) {
                 output_buffer[(addr_W[PEid] >> addr_shamt) % num_hbm_channels][PEid]
                              [(addr_W[PEid] >> addr_shamt) / num_hbm_channels] = new_q_W[PEid];
                 process_cnt_incr++;
             }
         }
-        if (!prev_finish) {
+        if ((!prev_finish) && enable) {
             prev_finish = num_payloads_in.read_nb(num_payload);
         }
         process_cnt += process_cnt_incr;
         bool process_complete = (process_cnt == num_payload);
-        loop_exit = process_complete && prev_finish;
+        loop_exit = (process_complete && prev_finish) || (!enable);
 
         // sw_emu line tracing
         // #ifndef __SYNTHESIS__
@@ -793,7 +826,8 @@ void ufixed_pe_cluster_spmspv_uram(
     ValT output_buffer[num_hbm_channels][num_PE][bank_size],
     OpT Op,
     ValT Zero,
-    hls::stream<unsigned> &num_payloads_in
+    hls::stream<unsigned> &num_payloads_in,
+    bool enable
 ) {
     #pragma HLS dataflow
 
@@ -803,9 +837,9 @@ void ufixed_pe_cluster_spmspv_uram(
     #pragma HLS stream variable=PP_npld_stream depth=2
 
     ufixed_pe_cluster_part1<ValT, OpT, PayloadT, num_PE>(input_payloads,
-        PP_stream, num_payloads_in, PP_npld_stream, Op, Zero);
+        PP_stream, num_payloads_in, PP_npld_stream, Op, Zero, enable);
     ufixed_pe_cluster_spmspv_uram_part2<ValT, OpT, num_hbm_channels, num_PE, bank_size, addr_shamt>(PP_stream,
-        PP_npld_stream, output_buffer, Op, Zero);
+        PP_npld_stream, output_buffer, Op, Zero, enable);
 }
 
 #endif  // GRAPHLILY_HW_UFIXED_PE_H_

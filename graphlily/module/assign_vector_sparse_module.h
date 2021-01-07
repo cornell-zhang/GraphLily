@@ -41,32 +41,63 @@ public:
         this->generate_new_frontier_ = generate_new_frontier;
     }
 
+    /*Overlay argument list:
+    * (H = num_hbm_channels)
+    * Index       Argument                     used in this module?
+    * 0 ~ H-1     matrix for spmv              n
+    * H+0         vector for spmv              n
+    * H+1         mask for spmv (read port)    n
+    * H+2         mask for spmv (write port)   n
+    * H+3         output for spmv              n
+    *
+    * H+4 ~ +6    matrix for spmspv            n
+    * H+7         vector for spmspv            y
+    * H+8         mask for spmspv              y
+    * H+9         output for spmspv            n
+    *
+    * H+10        # of rows                    n
+    * H+11        # of columns                 n
+    *
+    * H+12        operation type               n
+    * H+13        mask type                    n
+    *
+    * H+14        overlay mode select          y
+    *
+    * H+15        apply vector length          n
+    * H+16        input value for assign       y
+    */
     void set_unused_args() override {
-        for (uint32_t i = 0; i < graphlily::num_hbm_channels + 6; i++) {
+        // Set unused arguments for SpMV
+        for (uint32_t i = 0; i < graphlily::num_hbm_channels + 4; i++) {
             this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        this->kernel_.setArg(graphlily::num_hbm_channels + 14, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 9, (unsigned)NULL);
+        // Set unused arguments for SpMSpV
+        for (uint32_t i = graphlily::num_hbm_channels + 4; i < graphlily::num_hbm_channels + 7; i++) {
+            this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        }
+        // Set unused scalar arguments
+        this->kernel_.setArg(graphlily::num_hbm_channels + 15, (unsigned)NULL);
         this->kernel_.setArg(graphlily::num_hbm_channels + 10, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 11, (char)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 11, (unsigned)NULL);
         this->kernel_.setArg(graphlily::num_hbm_channels + 12, (char)NULL);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)NULL);
         if (!this->generate_new_frontier_) {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 8, cl::Buffer(this->context_, 0, 4));
+            this->kernel_.setArg(graphlily::num_hbm_channels + 9, cl::Buffer(this->context_, 0, 4));
         }
         if (this->generate_new_frontier_) {
             if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
-                this->kernel_.setArg(graphlily::num_hbm_channels + 15, (long long)NULL);
+                this->kernel_.setArg(graphlily::num_hbm_channels + 16, (long long)NULL);
             } else {
-                this->kernel_.setArg(graphlily::num_hbm_channels + 15, (unsigned)NULL);
+                this->kernel_.setArg(graphlily::num_hbm_channels + 16, (unsigned)NULL);
             }
         }
     }
 
     void set_mode() override {
         if (this->generate_new_frontier_) {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 13, 6);
+            this->kernel_.setArg(graphlily::num_hbm_channels + 14, 6);
         } else {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 13, 5);
+            this->kernel_.setArg(graphlily::num_hbm_channels + 14, 5);
         }
     }
 
@@ -86,9 +117,9 @@ public:
     void bind_mask_buf(cl::Buffer src_buf) {
         this->mask_buf = src_buf;
         if (this->generate_new_frontier_) {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 8, this->mask_buf);
+            this->kernel_.setArg(graphlily::num_hbm_channels + 9, this->mask_buf);
         } else {
-            this->kernel_.setArg(graphlily::num_hbm_channels + 6, this->mask_buf);
+            this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->mask_buf);
         }
     }
 
@@ -97,7 +128,7 @@ public:
      */
     void bind_inout_buf(cl::Buffer src_buf) {
         this->inout_buf = src_buf;
-        this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->inout_buf);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 8, this->inout_buf);
     }
 
     /*!
@@ -109,7 +140,7 @@ public:
             exit(EXIT_FAILURE);
         }
         this->new_frontier_buf = src_buf;
-        this->kernel_.setArg(graphlily::num_hbm_channels + 6, this->new_frontier_buf);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->new_frontier_buf);
     }
 
     /*!
@@ -200,9 +231,9 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
                 &mask_ext,
                 &err));
     if (this->generate_new_frontier_) {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 8, this->mask_buf);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 9, this->mask_buf);
     } else {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 6, this->mask_buf);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->mask_buf);
     }
     if (this->generate_new_frontier_) {
         // allocate memory for new_frontier
@@ -216,7 +247,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
                     sizeof(sparse_vector_data_t) * this->new_frontier_.size(),
                     &new_frontier_ext,
                     &err));
-        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 6, this->new_frontier_buf));
+        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->new_frontier_buf));
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->new_frontier_buf}, 0));
         this->command_queue_.finish();
     }
@@ -238,7 +269,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_inout_h
                 sizeof(vector_data_t) * this->inout_.size(),
                 &inout_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 7, this->inout_buf));
+    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 8, this->inout_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, 0));
     this->command_queue_.finish();
 }
@@ -252,9 +283,9 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::run(vector_d
     }
     // To avoid runtime error of invalid scalar argument size
     if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
-       this->kernel_.setArg(graphlily::num_hbm_channels + 15, 8, (void*)&val);
+       this->kernel_.setArg(graphlily::num_hbm_channels + 16, 8, (void*)&val);
     } else {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 15, val);
+        this->kernel_.setArg(graphlily::num_hbm_channels + 16, val);
     }
     this->command_queue_.enqueueTask(this->kernel_);
     this->command_queue_.finish();

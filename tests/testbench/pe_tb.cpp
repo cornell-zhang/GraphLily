@@ -4,7 +4,6 @@
 #include <iostream>
 #include <iomanip>
 
-
 template<unsigned num_lanes>
 static void data_feeder(
     PE_I_T input_buffer[num_lanes][IN_BUF_SIZE],
