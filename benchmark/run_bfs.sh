@@ -6,7 +6,7 @@ spmspv_out_buf_len=256000
 vec_buf_len=30720
 
 bitstream=/work/shared/common/research/graphblas/bitstreams/
-bitstream+=overlay_16c_800K_250K_30K_stream64_171MHz/fused.xclbin
+bitstream+=overlay_16c_800K_250K_30K_stream64_171MHz/overlay.xclbin
 
 DATASET_PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
 

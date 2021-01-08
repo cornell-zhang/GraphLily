@@ -4,6 +4,7 @@
 #include "graphlily/app/module_collection.h"
 #include "graphlily/module/spmv_module.h"
 #include "graphlily/module/spmspv_module.h"
+#include "graphlily/module/assign_vector_dense_module.h"
 #include "graphlily/module/assign_vector_sparse_module.h"
 #include "graphlily/module/add_scalar_vector_dense_module.h"
 #include "graphlily/io/data_loader.h"

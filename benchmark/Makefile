@@ -33,6 +33,11 @@ bench_bfs: bench_bfs.cpp $(xcl2_SRCS)
 	mkdir -p $(BUILD_DIR)
 	mv bench_bfs $(BUILD_DIR)/
 
+bench_sssp: bench_sssp.cpp $(xcl2_SRCS)
+	g++ $(CXXFLAGS) bench_sssp.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
+	mkdir -p $(BUILD_DIR)
+	mv bench_sssp $(BUILD_DIR)/
+
 bench_pagerank: bench_pagerank.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) bench_pagerank.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)

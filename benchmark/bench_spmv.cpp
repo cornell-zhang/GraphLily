@@ -90,8 +90,8 @@ void bench_spmv(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_le
     //     std::cout << reference_results[i] << " " << kernel_results[i] <<std::endl;
     // }
 
-    verify<graphlily::val_t>(reference_results, kernel_results);
-    std::cout << "SpMV passed" << std::endl;
+    // verify<graphlily::val_t>(reference_results, kernel_results);
+    // std::cout << "SpMV passed" << std::endl;
 
     uint32_t num_runs = 100;
     auto t1 = std::chrono::high_resolution_clock::now();
