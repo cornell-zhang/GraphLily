@@ -61,6 +61,7 @@ void OverlaySynthesizer::generate_kernel_ini() {
     }
     ini << "sp=overlay_1.spmv_vector:HBM[" << this->num_channels_ + 0 << "]" << std::endl;
     ini << "sp=overlay_1.spmv_mask:HBM[" << this->num_channels_ + 1 << "]" << std::endl;
+    ini << "sp=overlay_1.spmv_mask_w:HBM[" << this->num_channels_ + 1 << "]" << std::endl;
     ini << "sp=overlay_1.spmv_out:HBM[" << this->num_channels_ + 2 << "]" << std::endl;
     // SpMSpV
     ini << "sp=overlay_1.spmspv_matrix:DDR[0]" << std::endl;
