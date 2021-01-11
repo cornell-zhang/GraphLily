@@ -221,9 +221,9 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
     if (this->generate_new_frontier_) {
-        mask_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 2];
+        mask_ext.flags = graphlily::HBM[22];
     } else {
-        mask_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
+        mask_ext.flags = graphlily::HBM[20];
     }
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -241,7 +241,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
         cl_mem_ext_ptr_t new_frontier_ext;
         new_frontier_ext.obj = this->new_frontier_.data();
         new_frontier_ext.param = 0;
-        new_frontier_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
+        new_frontier_ext.flags = graphlily::HBM[20];
         OCL_CHECK(err, this->new_frontier_buf = cl::Buffer(this->context_,
                     CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
                     sizeof(sparse_vector_data_t) * this->new_frontier_.size(),
@@ -262,7 +262,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_inout_h
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();
     inout_ext.param = 0;
-    inout_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 1];
+    inout_ext.flags = graphlily::HBM[21];
     cl_int err;
     OCL_CHECK(err, this->inout_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,

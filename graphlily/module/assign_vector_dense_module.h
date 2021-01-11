@@ -171,7 +171,7 @@ void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_de
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
+    mask_ext.flags = graphlily::HBM[20];
     cl_int err;
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -190,7 +190,7 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
     cl_mem_ext_ptr_t inout_ext;
     inout_ext.obj = this->inout_.data();
     inout_ext.param = 0;
-    inout_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 1];
+    inout_ext.flags = graphlily::HBM[21];
     cl_int err;
     OCL_CHECK(err, this->inout_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,

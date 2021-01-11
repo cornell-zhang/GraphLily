@@ -1,11 +1,11 @@
 make bench_pagerank
 
 num_channels=16
-spmv_out_buf_len=819200
+spmv_out_buf_len=1024000
 vec_buf_len=30720
 
 bitstream=/work/shared/common/research/graphblas/bitstreams/
-bitstream+=overlay_16c_800K_250K_30K_stream64_171MHz/overlay.xclbin
+bitstream+=overlay_16c_1000K_250K_30K_stream64_165MHz/overlay.xclbin
 
 DATASET_PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
 

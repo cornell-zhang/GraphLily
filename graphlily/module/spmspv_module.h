@@ -350,7 +350,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
 
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
-    results_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 2];
+    results_ext.flags = graphlily::HBM[22];
 
     OCL_CHECK(err, this->results_buf = cl::Buffer(this->context_,
         CL_MEM_READ_WRITE | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -361,7 +361,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     cl_mem_ext_ptr_t results_nnz_ext;
     results_nnz_ext.obj = this->results_nnz_;
     results_nnz_ext.param = 0;
-    results_nnz_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 2];
+    results_nnz_ext.flags = graphlily::HBM[22];
 
     OCL_CHECK(err, this->results_nnz_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -387,7 +387,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
     cl_mem_ext_ptr_t vector_ext;
     vector_ext.obj = this->vector_.data();
     vector_ext.param = 0;
-    vector_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
+    vector_ext.flags = graphlily::HBM[20];
 
     OCL_CHECK(err, this->vector_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -419,7 +419,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
     mask_ext.param = 0;
-    mask_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 1];
+    mask_ext.flags = graphlily::HBM[21];
 
     OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,

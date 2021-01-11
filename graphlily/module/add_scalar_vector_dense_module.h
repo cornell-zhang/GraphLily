@@ -144,7 +144,7 @@ void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_dense_vec_t &
     cl_mem_ext_ptr_t in_ext;
     in_ext.obj = this->in_.data();
     in_ext.param = 0;
-    in_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 2];
+    in_ext.flags = graphlily::HBM[22];
     cl_int err;
     OCL_CHECK(err, this->in_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
@@ -163,7 +163,7 @@ void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
     cl_mem_ext_ptr_t out_ext;
     out_ext.obj = this->out_.data();
     out_ext.param = 0;
-    out_ext.flags = graphlily::HBM[graphlily::num_hbm_channels + 0];
+    out_ext.flags = graphlily::HBM[20];
     cl_int err;
     OCL_CHECK(err, this->out_buf = cl::Buffer(this->context_,
                 CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
