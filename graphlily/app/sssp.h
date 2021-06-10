@@ -132,8 +132,8 @@ public:
         _preprocess(csr_matrix);
         graphlily::io::util_round_csr_matrix_dim(
             csr_matrix,
-            this->num_channels_ * graphlily::pack_size * graphlily::spmv_row_interleave_factor,
-            this->num_channels_ * graphlily::pack_size * graphlily::spmv_row_interleave_factor);
+            this->num_channels_ * graphlily::pack_size,
+            this->num_channels_ * graphlily::pack_size);
         CSCMatrix<float> csc_matrix = graphlily::io::csr2csc(csr_matrix);
         this->SpMV_->load_and_format_matrix(csr_matrix, skip_empty_rows);
         this->SpMSpV_->load_and_format_matrix(csc_matrix);

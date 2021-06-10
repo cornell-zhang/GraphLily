@@ -261,149 +261,156 @@ void overlay(
 #pragma HLS INTERFACE s_axilite port=length bundle=control
 #pragma HLS INTERFACE s_axilite port=val bundle=control
 
+#ifndef __SYNTHESIS__
+    switch (mode) {
+        case 1:
+            std::cout << "Running SpMV" << std::endl;
+            break;
+        case 2:
+            std::cout << "Running SpMSpV" << std::endl;
+            break;
+        case 3:
+            std::cout << "Running kernel_add_scalar_vector_dense" << std::endl;
+            break;
+        case 4:
+            std::cout << "Running kernel_assign_vector_dense" << std::endl;
+            break;
+        case 5:
+            std::cout << "Running kernel_assign_vector_sparse_no_new_frontier" << std::endl;
+            break;
+        case 6:
+            std::cout << "Running kernel_assign_vector_sparse_new_frontier" << std::endl;
+            break;
+        default:
+            std::cout << "ERROR! Unsupported mode: " << mode << std::endl;
+            break;
+    }
+#endif
+
     VAL_T out_uram_spmv[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=1
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=2
-    // #pragma HLS resource variable=out_uram_spmv core=RAM_2P_BRAM latency=2
-    #pragma HLS resource variable=out_uram_spmv core=RAM_2P_URAM latency=2
+    // #pragma HLS resource variable=out_uram_spmv core=RAM_2P
+    #pragma HLS resource variable=out_uram_spmv core=XPM_MEMORY uram latency=2
 
-    VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
+    VAL_T out_uram_spmspv[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE];
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=1
-    #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=2
-    #pragma HLS resource variable=out_uram_spmspv core=RAM_2P_BRAM latency=2
-    // #pragma HLS resource variable=out_uram_spmspv core=RAM_2P_URAM latency=2
-
-    // VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
-    // #pragma HLS ARRAY_PARTITION variable=out_uram complete dim=1
-    // #pragma HLS ARRAY_PARTITION variable=out_uram complete dim=2
-    // #pragma HLS resource variable=out_uram core=RAM_2P
+    #pragma HLS resource variable=out_uram_spmspv core=RAM_2P latency=2
+    // #pragma HLS resource variable=out_uram_spmspv core=XPM_MEMORY uram latency=2
 
     /*
         If we do not specify the latency here, the tool will automatically decide the latency of the URAM,
         which could cause problems for the PE due to RAW hazards.
         The URAM latency could be 1, 2, 3, or 4. If specified, it will be applied to both read and write.
     */
-    bool run_spmv = (mode == 1);
-    bool run_spmspv = (mode == 2);
-    bool run_asv = (mode == 3);
-    bool run_avd = (mode == 4);
-    bool run_avs = (mode == 5);
-    bool run_avsf = (mode == 6);
 
-#ifndef __SYNTHESIS__
-    if (run_spmv) std::cout << "Running SpMV" << std::endl;
-    if (run_spmspv) std::cout << "Running SpMSpV" << std::endl;
-    if (run_asv) std::cout << "Running kernel_add_scalar_vector_dense" << std::endl;
-    if (run_avd) std::cout << "Running kernel_assign_vector_dense" << std::endl;
-    if (run_avs) std::cout << "Running kernel_assign_vector_sparse_no_new_frontier" << std::endl;
-    if (run_avsf) std::cout << "Running kernel_assign_vector_sparse_new_frontier" << std::endl;
-    if (mode > 6 || mode == 0) std::cout << "ERROR! Unsupported mode: " << mode << std::endl;
-#endif
-
-    kernel_spmv(
+    switch (mode) {
+        case 1:
+            kernel_spmv(
 #if (NUM_HBM_CHANNEL >= 1)
-        spmv_channel_0_matrix,
+                spmv_channel_0_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 2)
-        spmv_channel_1_matrix,
+                spmv_channel_1_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 4)
-        spmv_channel_2_matrix,
-        spmv_channel_3_matrix,
+                spmv_channel_2_matrix,
+                spmv_channel_3_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 8)
-        spmv_channel_4_matrix,
-        spmv_channel_5_matrix,
-        spmv_channel_6_matrix,
-        spmv_channel_7_matrix,
+                spmv_channel_4_matrix,
+                spmv_channel_5_matrix,
+                spmv_channel_6_matrix,
+                spmv_channel_7_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 16)
-        spmv_channel_8_matrix,
-        spmv_channel_9_matrix,
-        spmv_channel_10_matrix,
-        spmv_channel_11_matrix,
-        spmv_channel_12_matrix,
-        spmv_channel_13_matrix,
-        spmv_channel_14_matrix,
-        spmv_channel_15_matrix,
+                spmv_channel_8_matrix,
+                spmv_channel_9_matrix,
+                spmv_channel_10_matrix,
+                spmv_channel_11_matrix,
+                spmv_channel_12_matrix,
+                spmv_channel_13_matrix,
+                spmv_channel_14_matrix,
+                spmv_channel_15_matrix,
 #endif
 #if (NUM_HBM_CHANNEL >= 32)
-        spmv_channel_16_matrix,
-        spmv_channel_17_matrix,
-        spmv_channel_18_matrix,
-        spmv_channel_19_matrix,
-        spmv_channel_20_matrix,
-        spmv_channel_21_matrix,
-        spmv_channel_22_matrix,
-        spmv_channel_23_matrix,
-        spmv_channel_24_matrix,
-        spmv_channel_25_matrix,
-        spmv_channel_26_matrix,
-        spmv_channel_27_matrix,
-        spmv_channel_28_matrix,
-        spmv_channel_29_matrix,
-        spmv_channel_30_matrix,
-        spmv_channel_31_matrix,
+                spmv_channel_16_matrix,
+                spmv_channel_17_matrix,
+                spmv_channel_18_matrix,
+                spmv_channel_19_matrix,
+                spmv_channel_20_matrix,
+                spmv_channel_21_matrix,
+                spmv_channel_22_matrix,
+                spmv_channel_23_matrix,
+                spmv_channel_24_matrix,
+                spmv_channel_25_matrix,
+                spmv_channel_26_matrix,
+                spmv_channel_27_matrix,
+                spmv_channel_28_matrix,
+                spmv_channel_29_matrix,
+                spmv_channel_30_matrix,
+                spmv_channel_31_matrix,
 #endif
-        spmv_vector,
-        spmv_mask,
-        spmv_out,
-        num_rows,
-        num_cols,
-        Op,
-        mask_type,
-        out_uram_spmv,
-        run_spmv
-    );
-
-    kernel_spmspv(
-        spmspv_matrix,
-        spmspv_matrix_indptr,
-        spmspv_matrix_partptr,
-        spmspv_vector,
-        spmspv_mask,
-        spmspv_out,
-        num_rows,
-        num_cols,
-        Op,
-        mask_type,
-        out_uram_spmspv,
-        run_spmspv
-    );
-
-    kernel_add_scalar_vector_dense(
-        spmv_out,
-        spmv_vector,
-        length,
-        val,
-        run_asv
-    );
-
-    kernel_assign_vector_dense(
-        spmv_vector,
-        spmv_mask,
-        spmv_mask_w,
-        length,
-        val,
-        mask_type,
-        run_avd
-    );
-
-    kernel_assign_vector_sparse_no_new_frontier(
-        spmspv_vector,
-        spmspv_mask,
-        val,
-        run_avs
-    );
-
-    kernel_assign_vector_sparse_new_frontier(
-        spmspv_out,
-        spmspv_mask,
-        spmspv_vector,
-        run_avsf
-    );
-
-
+                spmv_vector,
+                spmv_mask,
+                spmv_out,
+                num_rows,
+                num_cols,
+                Op,
+                mask_type,
+                out_uram_spmv
+            );
+            break;
+        case 2:
+            kernel_spmspv(
+                spmspv_matrix,
+                spmspv_matrix_indptr,
+                spmspv_matrix_partptr,
+                spmspv_vector,
+                spmspv_mask,
+                spmspv_out,
+                num_rows,
+                num_cols,
+                Op,
+                mask_type,
+                out_uram_spmspv
+            );
+            break;
+        case 3:
+            kernel_add_scalar_vector_dense(
+                spmv_out,
+                spmv_vector,
+                length,
+                val
+            );
+            break;
+        case 4:
+            kernel_assign_vector_dense(
+                spmv_vector,
+                spmv_mask,
+                spmv_mask_w,
+                length,
+                val,
+                mask_type
+            );
+            break;
+        case 5:
+            kernel_assign_vector_sparse_no_new_frontier(
+                spmspv_vector,
+                spmspv_mask,
+                val
+            );
+            break;
+        case 6:
+            kernel_assign_vector_sparse_new_frontier(
+                spmspv_out,
+                spmspv_mask,
+                spmspv_vector
+            );
+            break;
+        default:
+            break;
+    }
 }
 
 }  // extern "C"

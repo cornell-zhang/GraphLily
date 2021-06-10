@@ -13,8 +13,8 @@ include $(GRAPHLILY_ROOT_PATH)/xrt/includes/opencl/opencl.mk
 CXXFLAGS += $(opencl_CXXFLAGS)
 LDFLAGS += $(opencl_LDFLAGS)
 
-CXXFLAGS += -I/work/shared/common/research/graphblas/software/cnpy
-LDFLAGS += -L/work/shared/common/research/graphblas/software/cnpy/build -lcnpy
+CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/cnpy
+LDFLAGS += -L/work/shared/common/project_build/graphblas/software/cnpy/build -lcnpy
 
 BUILD_DIR = ./build
 

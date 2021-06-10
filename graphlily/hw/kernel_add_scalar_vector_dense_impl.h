@@ -7,11 +7,8 @@ void kernel_add_scalar_vector_dense(
     const PACKED_VAL_T *in,  // The input vector
     PACKED_VAL_T *out,       // The output vector
     unsigned length,         // The length of the in/out vector
-    VAL_T val,               // The value to be added
-    bool enable              // Kernel enable
+    VAL_T val                // The value to be added
 ) {
-    if (!enable) return;
-
     assert(length % PACK_SIZE == 0);
     unsigned size = length / PACK_SIZE;
     PACKED_VAL_T tmp_in;

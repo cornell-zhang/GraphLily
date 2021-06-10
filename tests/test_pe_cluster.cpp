@@ -182,14 +182,14 @@ void _test_pe_cluster(std::vector<PayloadT> &test_input_host) {
     bool found_device = false;
     auto devices = xcl::get_xil_devices();
     for (size_t i = 0; i < devices.size(); i++) {
-        if (devices[i].getInfo<CL_DEVICE_NAME>() == "xilinx_u280_xdma_201920_1") {
+        if (devices[i].getInfo<CL_DEVICE_NAME>() == graphlily::device_name) {
             device = devices[i];
             found_device = true;
             break;
         }
     }
     if (!found_device) {
-        std::cout << "Failed to find xilinx_u280_xdma_201920_1, exit!\n";
+        std::cout << "Failed to find " << graphlily::device_name << ", exit!\n";
         exit(EXIT_FAILURE);
     }
     cl::Context context = cl::Context(device, NULL, NULL, NULL);

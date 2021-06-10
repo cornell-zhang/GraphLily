@@ -17,9 +17,9 @@
 
 
 std::string target = "sw_emu";
-uint32_t spmv_out_buf_len = 1024 * graphlily::spmv_row_interleave_factor;
-uint32_t spmspv_out_buf_len = 512 * graphlily::spmv_row_interleave_factor;
-uint32_t vec_buf_len = 256 * graphlily::spmv_row_interleave_factor;
+uint32_t spmv_out_buf_len = 1024;
+uint32_t spmspv_out_buf_len = 512;
+uint32_t vec_buf_len = 256;
 
 
 void clean_proj_folder() {
@@ -141,13 +141,13 @@ TEST(SpMV, MultipleCases) {
     module.set_target(target);
     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+    std::string csr_float_npz_path = "/work/shared/common/project_build/graphblas/"
                                      "data/sparse_matrix_graph/dense_32_csr_float32.npz";
     CSRMatrix<float> dense_32_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         dense_32_matrix,
-        graphlily::num_hbm_channels * graphlily::pack_size * graphlily::spmv_row_interleave_factor,
-        graphlily::pack_size * graphlily::spmv_row_interleave_factor);
+        graphlily::num_hbm_channels * graphlily::pack_size,
+        graphlily::pack_size);
     for (auto &x : dense_32_matrix.adj_data) x = 1.0 / dense_32_matrix.num_rows;
 
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, dense_32_matrix, false);
@@ -164,13 +164,13 @@ TEST(SpMV, MultipleCases) {
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
     _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
 
-    csr_float_npz_path = "/work/shared/common/research/graphblas/"
+    csr_float_npz_path = "/work/shared/common/project_build/graphblas/"
                          "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
     CSRMatrix<float> uniform_10K_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         uniform_10K_matrix,
-        graphlily::num_hbm_channels * graphlily::pack_size * graphlily::spmv_row_interleave_factor,
-        graphlily::pack_size * graphlily::spmv_row_interleave_factor);
+        graphlily::num_hbm_channels * graphlily::pack_size,
+        graphlily::pack_size);
     for (auto &x : uniform_10K_matrix.adj_data) x = 1.0 / uniform_10K_matrix.num_rows;
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, uniform_10K_matrix, true);
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, uniform_10K_matrix, true);
@@ -248,7 +248,7 @@ TEST(SpMSpV, MultipleCases) {
     module.set_target(target);
     module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-    std::string dataset_folder= "/work/shared/common/research/graphblas/data/sparse_matrix_graph/";
+    std::string dataset_folder= "/work/shared/common/project_build/graphblas/data/sparse_matrix_graph/";
 
     // dense 1K x 1K
     CSCMatrix<float> csc_matrix_dense1K = graphlily::io::csr2csc(

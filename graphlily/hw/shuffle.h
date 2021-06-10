@@ -130,12 +130,8 @@ void shuffler_1p(
     // total number of payloads (avaliable after all payloads are put into the input lanes)
     hls::stream<unsigned> &num_payloads_in,
     // all outputs are in the output lanes
-    hls::stream<unsigned> &num_payloads_out,
-    // enable
-    bool enable
+    hls::stream<unsigned> &num_payloads_out
 ) {
-    if (!enable) return;
-
     // pipeline control variables
     bool prev_finish = false;
     unsigned payload_cnt = 0;

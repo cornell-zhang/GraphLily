@@ -18,9 +18,9 @@
 
 
 std::string target = "sw_emu";
-uint32_t spmv_out_buf_len = 1024 * graphlily::spmv_row_interleave_factor;
-uint32_t spmspv_out_buf_len = 512 * graphlily::spmv_row_interleave_factor;
-uint32_t vec_buf_len = 256 * graphlily::spmv_row_interleave_factor;
+uint32_t spmv_out_buf_len = 1024;
+uint32_t spmspv_out_buf_len = 512;
+uint32_t vec_buf_len = 256;
 
 
 void clean_proj_folder() {

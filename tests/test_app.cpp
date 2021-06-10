@@ -15,9 +15,9 @@
 
 
 std::string target = "sw_emu";
-uint32_t spmv_out_buf_len = 1024 * graphlily::spmv_row_interleave_factor;
-uint32_t spmspv_out_buf_len = 512 * graphlily::spmv_row_interleave_factor;
-uint32_t vec_buf_len = 256 * graphlily::spmv_row_interleave_factor;
+uint32_t spmv_out_buf_len = 1024;
+uint32_t spmspv_out_buf_len = 512;
+uint32_t vec_buf_len = 256;
 
 
 void clean_proj_folder() {
@@ -54,7 +54,7 @@ TEST(BFS, PullPush) {
     bfs.set_target(target);
     bfs.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+    std::string csr_float_npz_path = "/work/shared/common/project_build/graphblas/"
                                      "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
     bool skip_empty_rows = true;
     bfs.load_and_format_matrix(csr_float_npz_path, skip_empty_rows);
@@ -88,7 +88,7 @@ TEST(PageRank, Pull) {
     pagerank.set_target(target);
     pagerank.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+    std::string csr_float_npz_path = "/work/shared/common/project_build/graphblas/"
                                      "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
     float damping = 0.9;
     bool skip_empty_rows = true;
@@ -108,7 +108,7 @@ TEST(SSSP, PullPush) {
     sssp.set_target(target);
     sssp.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-    std::string csr_float_npz_path = "/work/shared/common/research/graphblas/"
+    std::string csr_float_npz_path = "/work/shared/common/project_build/graphblas/"
                                      "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
 
     bool skip_empty_rows = true;

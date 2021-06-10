@@ -4,17 +4,15 @@
 #include <iostream>
 #include <cstdlib>
 
+
 void kernel_assign_vector_dense(
     const PACKED_VAL_T *mask,  // The mask vector
     PACKED_VAL_T *in,          // The input vector
     PACKED_VAL_T *out,         // The output vector
     unsigned length,           // The length of the mask/inout vector
     VAL_T val,                 // The value to be assigned to the inout vector
-    MASK_T mask_type,          // The mask type
-    bool enable                // Kernel enable
+    MASK_T mask_type           // The mask type
 ) {
-    if (!enable) return;
-
     assert(length % PACK_SIZE == 0);
     unsigned size = length / PACK_SIZE;
     PACKED_VAL_T tmp_mask;

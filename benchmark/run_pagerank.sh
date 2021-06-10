@@ -4,10 +4,10 @@ num_channels=16
 spmv_out_buf_len=1024000
 vec_buf_len=30720
 
-bitstream=/work/shared/common/research/graphblas/bitstreams/
+bitstream=/work/shared/common/project_build/graphblas/bitstreams/
 bitstream+=overlay_16c_1000K_250K_30K_stream64_165MHz/overlay.xclbin
 
-DATASET_PATH=/work/shared/common/research/graphblas/data/sparse_matrix_graph
+DATASET_PATH=/work/shared/common/project_build/graphblas/data/sparse_matrix_graph
 
 DATSETS=(gplus_108K_13M_csr_float32.npz
          ogbl_ppa_576K_42M_csr_float32.npz

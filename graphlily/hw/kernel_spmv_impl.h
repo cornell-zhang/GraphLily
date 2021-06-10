@@ -11,7 +11,6 @@
 #include "./util.h"
 #include "./shuffle.h"
 #include "./ufixed_pe_fwd.h"
-// #include "./ufixed_pe.h"
 // #include "./float_pe.h"
 
 #ifndef __SYNTHESIS__
@@ -45,26 +44,12 @@ void matrix_loader_hbm_to_stream_one_channel(
     unsigned partition_idx,                               // in
     unsigned num_partitions,                              // in
     hls::stream<SF_1_IO_T> ML_to_SF_1_stream[PACK_SIZE],  // out
-    hls::stream<unsigned> &num_payloads,                  // out
-    bool enable
+    hls::stream<unsigned> &num_payloads                   // out
 ) {
-    if (!enable) return;
+    IDX_T partition_start = matrix_one_channel[2*partition_idx].indices.data[0];
+    PACKED_IDX_T partition_size = matrix_one_channel[2*partition_idx + 1].indices;
 
-    IDX_T partition_start;
-    unsigned total_size;
-    PACKED_IDX_T partition_size[SPMV_ROW_INTERLEAVE_FACTOR];
-    #pragma HLS ARRAY_PARTITION variable=partition_size complete
-
-    for (int ii = 0; ii < SPMV_ROW_INTERLEAVE_FACTOR + 1; ii++) {
-        #pragma HLS PIPELINE
-        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[(SPMV_ROW_INTERLEAVE_FACTOR+1)*partition_idx + ii];
-        if (ii == 0) {
-            partition_start = mat_pkt.indices.data[0];
-            total_size = mat_pkt.indices.data[1];
-        } else {
-            partition_size[ii - 1] = mat_pkt.indices;
-        }
-    }
+    unsigned max_size = array_max<unsigned, PACK_SIZE>(partition_size.data);
 
     unsigned payload_count[PACK_SIZE];
     #pragma HLS ARRAY_PARTITION variable=payload_count complete
@@ -73,36 +58,29 @@ void matrix_loader_hbm_to_stream_one_channel(
         payload_count[k] = 0;
     }
 
-    IDX_T row_idx[SPMV_ROW_INTERLEAVE_FACTOR][PACK_SIZE];
-    #pragma HLS ARRAY_PARTITION variable=row_idx complete dim=0
-    for (int ii = 0; ii < SPMV_ROW_INTERLEAVE_FACTOR; ii++) {
+    IDX_T row_idx[PACK_SIZE];
+    #pragma HLS ARRAY_PARTITION variable=row_idx complete
+    for (int k = 0; k < PACK_SIZE; k++) {
         #pragma HLS UNROLL
-        for (int k = 0; k < PACK_SIZE; k++) {
-            #pragma HLS UNROLL
-            row_idx[ii][k] = ii * PACK_SIZE + k;
-        }
+        row_idx[k] = k;
     }
 
     // Burst read
     loop_matrix_loader_hbm_to_stream_one_channel:
-    for (int i = 0; i < total_size; i++) {
+    for (int i = 0; i < max_size; i++) {
         #pragma HLS PIPELINE II=1
-        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[i + partition_start +
-                                                    (SPMV_ROW_INTERLEAVE_FACTOR + 1)*num_partitions];
+        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[i + partition_start + 2*num_partitions];
         for (unsigned k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
-            unsigned stream_idx = i % SPMV_ROW_INTERLEAVE_FACTOR;
-            if (i / SPMV_ROW_INTERLEAVE_FACTOR < partition_size[stream_idx].data[k]) {
+            if (i < partition_size.data[k]) {
                 if (mat_pkt.indices.data[k] == IDX_MARKER) {
                      // Be careful: mat_pkt.vals.data[k] can not be larger than power(2, 16)
-                    row_idx[stream_idx][k] += (PACK_SIZE
-                                               * SPMV_ROW_INTERLEAVE_FACTOR
-                                               * (unsigned)mat_pkt.vals.data[k]);
+                    row_idx[k] += (PACK_SIZE * (unsigned)mat_pkt.vals.data[k]);
                     // row_idx[k] += PACK_SIZE;  // Row index within each packed stream of rows
                 } else {
                     SF_1_IO_T input_to_SF_1;
                     input_to_SF_1.index = mat_pkt.indices.data[k];
-                    input_to_SF_1.data = (SF_1_IO_VAL_T){row_idx[stream_idx][k], mat_pkt.vals.data[k]};
+                    input_to_SF_1.data = (SF_1_IO_VAL_T){row_idx[k], mat_pkt.vals.data[k]};
                     ML_to_SF_1_stream[k].write(input_to_SF_1);
                     payload_count[k]++;
 
@@ -131,15 +109,14 @@ void vector_loader_ddr_to_uram(
     unsigned col_partition_idx,                                           // in
     unsigned num_col_partitions,                                          // in
     VAL_T vector_uram[NUM_HBM_CHANNEL]
-        [NUM_BANK_PER_HBM_CHANNEL][VEC_BUF_LEN/NUM_BANK_PER_HBM_CHANNEL], // out
-    bool enable
+        [NUM_BANK_PER_HBM_CHANNEL][VEC_BUF_LEN/NUM_BANK_PER_HBM_CHANNEL]  // out
 ) {
     unsigned size = VEC_BUF_LEN;
     if (col_partition_idx == (num_col_partitions - 1)) {
         size = num_cols - (num_col_partitions - 1) * VEC_BUF_LEN;
     }
     assert(size % PACK_SIZE == 0);
-    unsigned vsize = enable ? (size / PACK_SIZE) : 0;
+    unsigned vsize = size / PACK_SIZE;
 
     PACKED_VAL_T tmp_duplicate[NUM_HBM_CHANNEL];
     #pragma HLS array_partition variable=tmp_duplicate complete
@@ -158,11 +135,8 @@ void vector_loader_ddr_to_uram(
             i_duplicate[j] = HLS_REG(i);
             for (int k = 0; k < PACK_SIZE; k++) {
                 #pragma HLS UNROLL
-                bool enable_dup = HLS_REG<bool>(enable);
-                if (enable_dup) {
-                    vector_uram[j][k % NUM_BANK_PER_HBM_CHANNEL][i_duplicate[j] * NUM_PORT_PER_BANK
-                        + k / NUM_BANK_PER_HBM_CHANNEL] = tmp_duplicate[j].data[k];
-                }
+                vector_uram[j][k % NUM_BANK_PER_HBM_CHANNEL][i_duplicate[j] * NUM_PORT_PER_BANK
+                    + k / NUM_BANK_PER_HBM_CHANNEL] = tmp_duplicate[j].data[k];
             }
         }
     }
@@ -175,27 +149,19 @@ void vector_loader_uram_to_stream_one_channel(
     hls::stream<SF_1_IO_T> SF_1_to_VL_stream[PACK_SIZE],                                            // in
     hls::stream<SF_2_IO_T> VL_to_SF_2_stream[PACK_SIZE],                                            // out
     hls::stream<unsigned> &num_payloads_in,                                                         // in
-    hls::stream<unsigned> &num_payloads_out,                                                        // out
-    bool enable
+    hls::stream<unsigned> &num_payloads_out                                                         // out
 ) {
     // TODO: now we assume PACK_SIZE == NUM_BANK_PER_HBM_CHANNEL; need to fix later
 
-    unsigned num_payloads = 0;
+    unsigned num_payloads;
     bool prev_finish = false;
     bool fifo_allempty = false;
 
     bool fifo_empty[PACK_SIZE];
     #pragma HLS array_partition variable=fifo_empty complete
 
-    bool enable_dup[PACK_SIZE];
-    #pragma HLS array_partition variable=enable_dup complete
-    for (unsigned i = 0; i < PACK_SIZE; i++) {
-        #pragma HLS unroll
-        enable_dup[i] = HLS_REG<bool>(enable);
-    }
-
     loop_vector_loader_uram_to_stream_one_channel:
-    while (!(prev_finish && fifo_allempty) && enable) {
+    while (!(prev_finish && fifo_allempty)) {
         #pragma HLS pipeline II=1
         if (!prev_finish) { prev_finish = num_payloads_in.read_nb(num_payloads); }
 
@@ -228,7 +194,7 @@ void vector_loader_uram_to_stream_one_channel(
         fifo_allempty = array_and_reduction<PACK_SIZE>(fifo_empty);
     }
 
-    if (enable) num_payloads_out.write(num_payloads);
+    num_payloads_out.write(num_payloads);
 }
 
 
@@ -239,8 +205,7 @@ void compute_spmv_one_channel(
     VAL_T Zero,                                                                                     // in
     VAL_T vector_uram_one_channel[NUM_BANK_PER_HBM_CHANNEL][VEC_BUF_LEN/NUM_BANK_PER_HBM_CHANNEL],  // in
     OP_T Op,                                                                                        // in
-    VAL_T out_uram[PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],                                // out
-    bool enable
+    VAL_T out_uram[PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]                                      // out
 ) {
     // FIFOs
     hls::stream<unsigned> ML_to_SF_1_num_payloads_stream;
@@ -273,8 +238,7 @@ void compute_spmv_one_channel(
             partition_idx,
             num_partitions,
             ML_to_SF_1_stream,
-            ML_to_SF_1_num_payloads_stream,
-            enable
+            ML_to_SF_1_num_payloads_stream
         );
 
         #ifndef __SYNTHESIS__
@@ -287,8 +251,7 @@ void compute_spmv_one_channel(
             ML_to_SF_1_stream,
             SF_1_to_VL_stream,
             ML_to_SF_1_num_payloads_stream,
-            SF_1_to_VL_num_payloads_stream,
-            enable
+            SF_1_to_VL_num_payloads_stream
         );
 
         #ifndef __SYNTHESIS__
@@ -302,8 +265,7 @@ void compute_spmv_one_channel(
             SF_1_to_VL_stream,
             VL_to_SF_2_stream,
             SF_1_to_VL_num_payloads_stream,
-            VL_to_SF_2_num_payloads_stream,
-            enable
+            VL_to_SF_2_num_payloads_stream
         );
 
         #ifndef __SYNTHESIS__
@@ -316,8 +278,7 @@ void compute_spmv_one_channel(
             VL_to_SF_2_stream,
             SF_2_to_PE_stream,
             VL_to_SF_2_num_payloads_stream,
-            SF_2_to_PE_num_payloads_stream,
-            enable
+            SF_2_to_PE_num_payloads_stream
         );
 
         #ifndef __SYNTHESIS__
@@ -326,16 +287,15 @@ void compute_spmv_one_channel(
         }
         #endif
 
-        ufixed_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        ufixed_pe_cluster_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
             SF_2_to_PE_stream,
             out_uram,
             Op,
             Zero,
-            SF_2_to_PE_num_payloads_stream,
-            enable
+            SF_2_to_PE_num_payloads_stream
         );
 
-        // float_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        // float_pe_cluster_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
         //     SF_2_to_PE_stream,
         //     out_uram,
         //     Op,
@@ -360,21 +320,19 @@ void compute_spmv_one_channel(
 
 void write_to_out_ddr(
     const VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],  // in
-    unsigned row_partition_idx,                                                         // in
-    unsigned num_row_partitions,                                                        // in
-    unsigned num_rows,                                                                  // in
-    const PACKED_VAL_T *mask,                                                           // in
-    MASK_T mask_type,                                                                   // in
-    VAL_T Zero,                                                                         // in
-    PACKED_VAL_T *out,                                                                  // out
-    bool enable
+    unsigned row_partition_idx,                                                              // in
+    unsigned num_row_partitions,                                                             // in
+    unsigned num_rows,                                                                       // in
+    const PACKED_VAL_T *mask,                                                                // in
+    MASK_T mask_type,                                                                        // in
+    PACKED_VAL_T *out                                                                        // out
 ) {
     unsigned size = SPMV_OUT_BUF_LEN;
     if (row_partition_idx == (num_row_partitions - 1)) {
         size = num_rows - (num_row_partitions - 1) * SPMV_OUT_BUF_LEN;
     }
     assert(size % PACK_SIZE == 0);
-    unsigned vsize = enable ? (size / PACK_SIZE) : 0;
+    unsigned vsize = size / PACK_SIZE;
 
     PACKED_VAL_T tmp_out;
     PACKED_VAL_T tmp_mask;
@@ -387,42 +345,27 @@ void write_to_out_ddr(
         }
         for (int k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
-            bool enable_dup = HLS_REG<bool>(enable);
-            // unsigned uram_idx_1 = HLS_REG<unsigned>((i/SPMV_ROW_INTERLEAVE_FACTOR)%NUM_HBM_CHANNEL);
-            // unsigned uram_idx_3 = HLS_REG<unsigned>(i/SPMV_ROW_INTERLEAVE_FACTOR/NUM_HBM_CHANNEL*SPMV_ROW_INTERLEAVE_FACTOR + i%SPMV_ROW_INTERLEAVE_FACTOR);
-            VAL_T val_tmp = 0;
-            if (enable_dup) {
-                // val_tmp = out_uram[uram_idx_1][k][uram_idx_3];
-                val_tmp = out_uram[(i/SPMV_ROW_INTERLEAVE_FACTOR)%NUM_HBM_CHANNEL]
-                    [k][i/SPMV_ROW_INTERLEAVE_FACTOR/NUM_HBM_CHANNEL*SPMV_ROW_INTERLEAVE_FACTOR + i%SPMV_ROW_INTERLEAVE_FACTOR];
-            } else {
-                val_tmp = 0;
-            }
-            // VAL_T val = HLS_REG<VAL_T>(val_tmp);
-            VAL_T val = val_tmp;
+            VAL_T val = out_uram[i%NUM_HBM_CHANNEL][k][i/NUM_HBM_CHANNEL];
             if (mask_type == NOMASK) {
                 tmp_out.data[k] = val;
             } else if (mask_type == WRITETOZERO) {
-                if (tmp_mask.data[k] == Zero) {
+                if (tmp_mask.data[k] == 0) {
                     tmp_out.data[k] = val;
                 } else {
-                    tmp_out.data[k] = Zero;
+                    tmp_out.data[k] = 0;
                 }
             } else if (mask_type == WRITETOONE) {
-                if (tmp_mask.data[k] == Zero) {
-                    tmp_out.data[k] = Zero;
+                if (tmp_mask.data[k] == 0) {
+                    tmp_out.data[k] = 0;
                 } else {
                     tmp_out.data[k] = val;
                 }
             } else {
-                tmp_out.data[k] = Zero;
-                #ifndef __SYNTHESIS__
                 std::cout << "Invalid mask type" << std::endl;
                 exit(EXIT_FAILURE);
-                #endif
             }
         }
-        if (enable) out[i + row_partition_idx * SPMV_OUT_BUF_LEN / PACK_SIZE] = tmp_out;
+        out[i + row_partition_idx * SPMV_OUT_BUF_LEN / PACK_SIZE] = tmp_out;
     }
 }
 
@@ -479,8 +422,7 @@ void kernel_spmv(
     unsigned num_cols,
     OP_T Op,
     MASK_T mask_type,
-    VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
-    bool enable
+    VAL_T out_uram[NUM_HBM_CHANNEL][PACK_SIZE][SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
 ) {
     #pragma HLS inline off
 
@@ -506,14 +448,14 @@ void kernel_spmv(
     #pragma HLS ARRAY_PARTITION variable=vector_uram complete dim=1
     #pragma HLS ARRAY_PARTITION variable=vector_uram complete dim=2
 
-    unsigned num_row_partitions = enable ? ((num_rows + SPMV_OUT_BUF_LEN - 1) / SPMV_OUT_BUF_LEN) : 0;
-    unsigned num_col_partitions = enable ? ((num_cols + VEC_BUF_LEN - 1) / VEC_BUF_LEN) : 0;
-    unsigned num_partitions = enable ? (num_row_partitions * num_col_partitions) : 0;
+    unsigned num_row_partitions = (num_rows + SPMV_OUT_BUF_LEN - 1) / SPMV_OUT_BUF_LEN;
+    unsigned num_col_partitions = (num_cols + VEC_BUF_LEN - 1) / VEC_BUF_LEN;
+    unsigned num_partitions = num_row_partitions * num_col_partitions;
 
     // Iterate row partitions
     for (int row_partition_idx = 0; row_partition_idx < num_row_partitions; row_partition_idx++) {
 
-        // TODO: is there a faster way to reset bram/uram? <- No, there isn't
+        // TODO: is there a faster way to reset bram/uram?
         unsigned out_buf_len = SPMV_OUT_BUF_LEN;
         if (row_partition_idx == (num_row_partitions - 1)) {
             out_buf_len = num_rows - (num_row_partitions - 1) * SPMV_OUT_BUF_LEN;
@@ -525,13 +467,7 @@ void kernel_spmv(
                 #pragma HLS UNROLL
                 for (int PE_idx = 0; PE_idx < PACK_SIZE; PE_idx++) {
                     #pragma HLS UNROLL
-                    bool enable_dup = HLS_REG<bool>(enable);
-                    // unsigned out_uram_idx_1 = HLS_REG<unsigned>(c);
-                    // unsigned out_uram_idx_3 = HLS_REG<unsigned>(i);
-                    if (enable) {
-                        // out_uram[out_uram_idx_1][PE_idx][out_uram_idx_3] = Zero;
-                        out_uram[c][PE_idx][i] = Zero;
-                    }
+                    out_uram[c][PE_idx][i] = Zero;
                 }
             }
         }
@@ -554,12 +490,10 @@ void kernel_spmv(
                 num_cols,
                 col_partition_idx,
                 num_col_partitions,
-                vector_uram,
-                enable
+                vector_uram
             );
 
 #if (NUM_HBM_CHANNEL >= 1)
-            bool enable_dup_cluster_0 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_0_matrix,
                 partition_idx,
@@ -567,12 +501,10 @@ void kernel_spmv(
                 Zero,
                 vector_uram[0],
                 Op,
-                out_uram[0],
-                enable_dup_cluster_0
+                out_uram[0]
             );
 #endif
 #if (NUM_HBM_CHANNEL >= 2)
-            bool enable_dup_cluster_1 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_1_matrix,
                 partition_idx,
@@ -580,12 +512,10 @@ void kernel_spmv(
                 Zero,
                 vector_uram[1],
                 Op,
-                out_uram[1],
-                enable_dup_cluster_1
+                out_uram[1]
             );
 #endif
 #if (NUM_HBM_CHANNEL >= 4)
-            bool enable_dup_cluster_2 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_2_matrix,
                 partition_idx,
@@ -593,10 +523,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[2],
                 Op,
-                out_uram[2],
-                enable_dup_cluster_2
+                out_uram[2]
             );
-            bool enable_dup_cluster_3 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_3_matrix,
                 partition_idx,
@@ -604,12 +532,10 @@ void kernel_spmv(
                 Zero,
                 vector_uram[3],
                 Op,
-                out_uram[3],
-                enable_dup_cluster_3
+                out_uram[3]
             );
 #endif
 #if (NUM_HBM_CHANNEL >= 8)
-            bool enable_dup_cluster_4 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_4_matrix,
                 partition_idx,
@@ -617,10 +543,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[4],
                 Op,
-                out_uram[4],
-                enable_dup_cluster_4
+                out_uram[4]
             );
-            bool enable_dup_cluster_5 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_5_matrix,
                 partition_idx,
@@ -628,10 +552,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[5],
                 Op,
-                out_uram[5],
-                enable_dup_cluster_5
+                out_uram[5]
             );
-            bool enable_dup_cluster_6 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_6_matrix,
                 partition_idx,
@@ -639,10 +561,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[6],
                 Op,
-                out_uram[6],
-                enable_dup_cluster_6
+                out_uram[6]
             );
-            bool enable_dup_cluster_7 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_7_matrix,
                 partition_idx,
@@ -650,12 +570,10 @@ void kernel_spmv(
                 Zero,
                 vector_uram[7],
                 Op,
-                out_uram[7],
-                enable_dup_cluster_7
+                out_uram[7]
             );
 #endif
 #if (NUM_HBM_CHANNEL >= 16)
-            bool enable_dup_cluster_8 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_8_matrix,
                 partition_idx,
@@ -663,10 +581,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[8],
                 Op,
-                out_uram[8],
-                enable_dup_cluster_8
+                out_uram[8]
             );
-            bool enable_dup_cluster_9 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_9_matrix,
                 partition_idx,
@@ -674,10 +590,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[9],
                 Op,
-                out_uram[9],
-                enable_dup_cluster_9
+                out_uram[9]
             );
-            bool enable_dup_cluster_10 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_10_matrix,
                 partition_idx,
@@ -685,10 +599,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[10],
                 Op,
-                out_uram[10],
-                enable_dup_cluster_10
+                out_uram[10]
             );
-            bool enable_dup_cluster_11 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_11_matrix,
                 partition_idx,
@@ -696,10 +608,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[11],
                 Op,
-                out_uram[11],
-                enable_dup_cluster_11
+                out_uram[11]
             );
-            bool enable_dup_cluster_12 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_12_matrix,
                 partition_idx,
@@ -707,10 +617,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[12],
                 Op,
-                out_uram[12],
-                enable_dup_cluster_12
+                out_uram[12]
             );
-            bool enable_dup_cluster_13 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_13_matrix,
                 partition_idx,
@@ -718,10 +626,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[13],
                 Op,
-                out_uram[13],
-                enable_dup_cluster_13
+                out_uram[13]
             );
-            bool enable_dup_cluster_14 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_14_matrix,
                 partition_idx,
@@ -729,10 +635,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[14],
                 Op,
-                out_uram[14],
-                enable_dup_cluster_14
+                out_uram[14]
             );
-            bool enable_dup_cluster_15 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_15_matrix,
                 partition_idx,
@@ -740,12 +644,10 @@ void kernel_spmv(
                 Zero,
                 vector_uram[15],
                 Op,
-                out_uram[15],
-                enable_dup_cluster_15
+                out_uram[15]
             );
 #endif
 #if (NUM_HBM_CHANNEL >= 32)
-            bool enable_dup_cluster_16 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_16_matrix,
                 partition_idx,
@@ -753,10 +655,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[16],
                 Op,
-                out_uram[16],
-                enable_dup_cluster_16
+                out_uram[16]
             );
-            bool enable_dup_cluster_17 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_17_matrix,
                 partition_idx,
@@ -764,10 +664,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[17],
                 Op,
-                out_uram[17],
-                enable_dup_cluster_17
+                out_uram[17]
             );
-            bool enable_dup_cluster_18 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_18_matrix,
                 partition_idx,
@@ -775,10 +673,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[18],
                 Op,
-                out_uram[18],
-                enable_dup_cluster_18
+                out_uram[18]
             );
-            bool enable_dup_cluster_19 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_19_matrix,
                 partition_idx,
@@ -786,10 +682,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[19],
                 Op,
-                out_uram[19],
-                enable_dup_cluster_19
+                out_uram[19]
             );
-            bool enable_dup_cluster_20 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_20_matrix,
                 partition_idx,
@@ -797,10 +691,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[20],
                 Op,
-                out_uram[20],
-                enable_dup_cluster_20
+                out_uram[20]
             );
-            bool enable_dup_cluster_21 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_21_matrix,
                 partition_idx,
@@ -808,10 +700,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[21],
                 Op,
-                out_uram[21],
-                enable_dup_cluster_21
+                out_uram[21]
             );
-            bool enable_dup_cluster_22 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_22_matrix,
                 partition_idx,
@@ -819,10 +709,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[22],
                 Op,
-                out_uram[22],
-                enable_dup_cluster_22
+                out_uram[22]
             );
-            bool enable_dup_cluster_23 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_23_matrix,
                 partition_idx,
@@ -830,10 +718,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[23],
                 Op,
-                out_uram[23],
-                enable_dup_cluster_23
+                out_uram[23]
             );
-            bool enable_dup_cluster_24 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_24_matrix,
                 partition_idx,
@@ -841,10 +727,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[24],
                 Op,
-                out_uram[24],
-                enable_dup_cluster_24
+                out_uram[24]
             );
-            bool enable_dup_cluster_25 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_25_matrix,
                 partition_idx,
@@ -852,10 +736,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[25],
                 Op,
-                out_uram[25],
-                enable_dup_cluster_25
+                out_uram[25]
             );
-            bool enable_dup_cluster_26 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_26_matrix,
                 partition_idx,
@@ -863,10 +745,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[26],
                 Op,
-                out_uram[26],
-                enable_dup_cluster_26
+                out_uram[26]
             );
-            bool enable_dup_cluster_27 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_27_matrix,
                 partition_idx,
@@ -874,10 +754,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[27],
                 Op,
-                out_uram[27],
-                enable_dup_cluster_27
+                out_uram[27]
             );
-            bool enable_dup_cluster_28 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_28_matrix,
                 partition_idx,
@@ -885,10 +763,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[28],
                 Op,
-                out_uram[28],
-                enable_dup_cluster_28
+                out_uram[28]
             );
-            bool enable_dup_cluster_29 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_29_matrix,
                 partition_idx,
@@ -896,10 +772,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[29],
                 Op,
-                out_uram[29],
-                enable_dup_cluster_29
+                out_uram[29]
             );
-            bool enable_dup_cluster_30 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_30_matrix,
                 partition_idx,
@@ -907,10 +781,8 @@ void kernel_spmv(
                 Zero,
                 vector_uram[30],
                 Op,
-                out_uram[30],
-                enable_dup_cluster_30
+                out_uram[30]
             );
-            bool enable_dup_cluster_31 = HLS_REG<bool>(enable);
             compute_spmv_one_channel(
                 channel_31_matrix,
                 partition_idx,
@@ -918,21 +790,11 @@ void kernel_spmv(
                 Zero,
                 vector_uram[31],
                 Op,
-                out_uram[31],
-                enable_dup_cluster_31
+                out_uram[31]
             );
 #endif
         }
 
-        write_to_out_ddr(
-            out_uram,
-            row_partition_idx,
-            num_row_partitions,
-            num_rows, mask,
-            mask_type,
-            Zero,
-            out,
-            enable
-        );
+        write_to_out_ddr(out_uram, row_partition_idx, num_row_partitions, num_rows, mask, mask_type, out);
     }
 }

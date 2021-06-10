@@ -24,7 +24,7 @@ namespace graphlily {
 const std::string root_path = get_root_path();
 
 // The device
-const std::string device_name = "xilinx_u280_xdma_201920_1";
+const std::string device_name = "xilinx_u280_xdma_201920_3";
 
 // Find the device
 cl::Device find_device() {
@@ -55,7 +55,6 @@ const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 
 // Kernel configurations
 const uint32_t pack_size = 8;
-const uint32_t spmv_row_interleave_factor = 1;
 const uint32_t num_hbm_channels = 16;
 
 // Data types (please change this according to the kernel!)

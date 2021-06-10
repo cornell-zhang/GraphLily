@@ -4,11 +4,8 @@
 void kernel_assign_vector_sparse_new_frontier(
     const IDX_VAL_T *mask,    // The sparse mask vector. The index field of the first element is the length.
     VAL_T *inout,             // The inout vector.
-    IDX_VAL_T *new_frontier,  // The new frontier. The index field of the first element is the length.
-    bool enable               // Kernel enable
+    IDX_VAL_T *new_frontier   // The new frontier. The index field of the first element is the length.
 ) {
-    if (!enable) return;
-
     // local buffer
     VAL_T local_inout_buf[BATCH_SIZE];
     IDX_VAL_T local_mask_buf[BATCH_SIZE];

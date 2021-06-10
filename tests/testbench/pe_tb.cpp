@@ -35,7 +35,7 @@ static void main_dataflow(
 
     data_feeder<NUM_PE>(input_buffer, DF_to_PE_stream, DF_to_PE_npld_stream);
 
-    ufixed_pe_cluster_spmv_uram<VAL_T, char, PE_I_T, NUM_PE, BANK_ID_NBITS, BANK_SIZE>(
+    ufixed_pe_cluster_uram<VAL_T, char, PE_I_T, NUM_PE, BANK_ID_NBITS, BANK_SIZE>(
         DF_to_PE_stream,
         output_buffer,
         MULADD,
