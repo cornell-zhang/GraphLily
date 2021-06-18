@@ -51,6 +51,12 @@ test_pe_cluster: test_pe_cluster.cpp $(xcl2_SRCS)
 	mv test_pe_cluster $(BUILD_DIR)/
 	cd $(BUILD_DIR); ./test_pe_cluster
 
+test_shuffle: test_shuffle.cpp $(xcl2_SRCS)
+	g++ $(CXXFLAGS) test_shuffle.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
+	mkdir -p $(BUILD_DIR)
+	mv test_shuffle $(BUILD_DIR)/
+	cd $(BUILD_DIR); ./test_shuffle
+
 all: test_io test_module_spmv_spmspv test_module_apply test_app test_pe_cluster
 
 clean:
