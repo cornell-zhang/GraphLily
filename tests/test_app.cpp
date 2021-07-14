@@ -8,6 +8,7 @@
 #include "graphlily/app/bfs.h"
 #include "graphlily/app/pagerank.h"
 #include "graphlily/app/sssp.h"
+#include "graphlily/app/CC.h"
 
 #include <iostream>
 #include <ap_fixed.h>
@@ -46,7 +47,28 @@ TEST(Synthesize, NULL) {
     synthesizer.set_target(target);
     synthesizer.synthesize();
 }
+TEST(CC, PullPush) {
+    graphlily::app::CC cc(graphlily::num_hbm_channels, spmv_out_buf_len,
+        spmspv_out_buf_len, vec_buf_len);
+    cc.set_target(target);
+    cc.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
+    std::string csr_float_npz_path = "/work/shared/users/ugrad/zz356/clean_repo/GraphLily/tests/test_data/SimpleTest.npz";
+    //NOTICE: Undirected Graph (Symmetric Directed Graph) Required
+    bool skip_empty_rows = true;
+    cc.load_and_format_matrix(csr_float_npz_path, skip_empty_rows);
+    cc.send_matrix_host_to_device();
+    uint32_t num_iterations = 10;
+    uint32_t num_components = 5;
+
+    auto reference_results = cc.compute_reference_results(num_iterations, num_components);
+    auto kernel_results_pull = cc.Fast_CC_pull(num_iterations, num_components);
+    auto kernel_results_push = cc.Fast_CC_push(num_iterations, num_components);
+
+    verify<graphlily::val_t>(reference_results, kernel_results_push);
+    verify<graphlily::val_t>(reference_results, kernel_results_pull); 
+
+}
 
 TEST(BFS, PullPush) {
     graphlily::app::BFS bfs(graphlily::num_hbm_channels, spmv_out_buf_len,
