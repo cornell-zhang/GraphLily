@@ -210,8 +210,6 @@ public:
     aligned_sparse_vec_t send_vector_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
-        // truncate useless data
-        this->vector_.resize(this->vector_[0].index + 1);
         return this->vector_;
     }
 
@@ -232,9 +230,6 @@ public:
     aligned_sparse_vec_t send_results_device_to_host() {
         this->command_queue_.enqueueMigrateMemObjects({this->results_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
         this->command_queue_.finish();
-        // truncate useless data
-        this->results_.resize(this->results_[0].index + 1);
-        // std::cout << "INFO: [Module SpMSpV - collect result] result collected." << std::endl << std::flush;
         return this->results_;
     }
 
