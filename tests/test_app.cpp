@@ -53,13 +53,13 @@ TEST(CC, PullPush) {
     cc.set_target(target);
     cc.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-    std::string csr_float_npz_path = "/work/shared/users/ugrad/zz356/clean_repo/GraphLily/tests/test_data/SimpleTest.npz";
+    std::string csr_float_npz_path = "/work/shared/users/ugrad/zz356/clean_repo/GraphLily/tests/test_data/SimpleTest1.npz";
     //NOTICE: Undirected Graph (Symmetric Directed Graph) Required
     bool skip_empty_rows = true;
     cc.load_and_format_matrix(csr_float_npz_path, skip_empty_rows);
     cc.send_matrix_host_to_device();
     uint32_t num_iterations = 10;
-    uint32_t num_components = 5;
+    uint32_t num_components = 10;
 
     auto reference_results = cc.compute_reference_results(num_iterations, num_components);
     auto kernel_results_pull = cc.Fast_CC_pull(num_iterations, num_components);
