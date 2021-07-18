@@ -129,6 +129,7 @@ public:
         int current_source = 0;
         for(size_t i = 1; i <= num_components; i++){
             aligned_dense_vec_t tag_iter(this->matrix_num_rows_, 0);
+            aligned_dense_vec_t tag_iter_buf(this->matrix_num_rows_, 0);
             aligned_dense_vec_t input(this->matrix_num_rows_, semiring_.zero);
             aligned_dense_vec_t tag(this->matrix_num_rows_, 0);
             if (current_source == -1)
@@ -144,12 +145,20 @@ public:
             this->DenseAssign_->bind_inout_buf(this->SpMV_->mask_buf);
             this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
             this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);
-            for (size_t iter = 1; iter <= num_iterations; iter++) {
+            bool judge = false;
+            while(!judge){
+                for (size_t iter = 1; iter <= num_iterations; iter++) {
+                    this->SpMV_->run();
+                    this->eWiseAdd_->run(this->matrix_num_rows_, 0);
+                    this->DenseAssign_->run(this->matrix_num_rows_, mark);
+                }
+                tag_iter = this->SpMV_->send_mask_device_to_host();
                 this->SpMV_->run();
                 this->eWiseAdd_->run(this->matrix_num_rows_, 0);
                 this->DenseAssign_->run(this->matrix_num_rows_, mark);
+                tag_iter_buf = this->SpMV_->send_mask_device_to_host();
+                judge = this->compare_vector_on_kernel(tag_iter, tag_iter_buf);
             }
-            tag_iter = this->SpMV_->send_mask_device_to_host();
             this->SpMV_->send_vector_host_to_device(tag_iter);  
             this->SpMV_->send_mask_host_to_device(tot_tag);
             this->DenseAssign_->bind_mask_buf(this->SpMV_->vector_buf);
@@ -165,6 +174,7 @@ public:
         int current_source = 0;
         for(size_t i = 1; i <= num_components; i++){
             aligned_dense_vec_t tag_iter(this->matrix_num_rows_, 0);
+            aligned_dense_vec_t tag_iter_buf(this->matrix_num_rows_, 0);
             aligned_dense_vec_t tag(this->matrix_num_rows_, 0);
             if (current_source == -1)
             {
@@ -182,15 +192,26 @@ public:
             this->SpMSpV_->send_mask_host_to_device(tag);
             this->SparseAssign_->bind_mask_buf(this->SpMSpV_->vector_buf);
             this->SparseAssign_->bind_inout_buf(this->SpMSpV_->mask_buf);
-            for (size_t iter = 1; iter <= num_iterations; iter++) {
+            bool judge = false;
+            while(!judge){
+                for (size_t iter = 1; iter <= num_iterations; iter++) {
+                    this->SpMSpV_->run();
+                    this->SpMSpV_->copy_buffer_device_to_device(
+                        this->SpMSpV_->results_buf,
+                        this->SpMSpV_->vector_buf,
+                        sizeof(graphlily::idx_val_t) * (1 + this->SpMSpV_->get_results_nnz()));
+                    this->SparseAssign_->run(mark);
+                }
+                tag_iter = this->SpMSpV_->send_mask_device_to_host();
                 this->SpMSpV_->run();
                 this->SpMSpV_->copy_buffer_device_to_device(
                     this->SpMSpV_->results_buf,
                     this->SpMSpV_->vector_buf,
                     sizeof(graphlily::idx_val_t) * (1 + this->SpMSpV_->get_results_nnz()));
                 this->SparseAssign_->run(mark);
+                tag_iter_buf = this->SpMSpV_->send_mask_device_to_host();
+                judge = this->compare_vector_on_kernel(tag_iter, tag_iter_buf);
             }
-            tag_iter = this->SpMSpV_->send_mask_device_to_host();
             this->SpMV_->send_vector_host_to_device(tag_iter);  
             this->SpMV_->send_mask_host_to_device(tot_tag);
             this->DenseAssign_->bind_mask_buf(this->SpMV_->vector_buf);
@@ -450,12 +471,22 @@ public:
         for(size_t i = 1; i <= num_components; i++){
             aligned_dense_float_vec_t input(this->matrix_num_rows_, semiring_.zero);
             aligned_dense_float_vec_t tag(this->matrix_num_rows_, 0);
+            aligned_dense_float_vec_t tag_buf(this->matrix_num_rows_, 0);
             input[current_source] = 1;
             tag[current_source] = 1;
             int mark = 1;
-            for (size_t iter = 1; iter <= num_iterations; iter++) {
+            bool judge = false;
+            while(!judge){
+                for (size_t iter = 1; iter <= num_iterations; iter++) {
+                    input = this->SpMV_->compute_reference_results(input, tag);
+                    this->DenseAssign_->compute_reference_results(input, tag, this->matrix_num_rows_, mark);
+                }
+                for(size_t it = 0; it < this->matrix_num_rows_; it++){
+                    tag_buf[it] = tag[it];
+                }
                 input = this->SpMV_->compute_reference_results(input, tag);
                 this->DenseAssign_->compute_reference_results(input, tag, this->matrix_num_rows_, mark);
+                judge = this->compare_vector_on_kernel(tag, tag_buf);
             }
             for (size_t iter = 0; iter < tot_tag.size(); iter++){
                 tot_tag[iter] = tot_tag[iter] + i * tag[iter];
@@ -492,6 +523,26 @@ public:
             }
         }
         return -1;
+    }
+    bool compare_vector_on_kernel(aligned_dense_vec_t& a, aligned_dense_vec_t& b){
+        bool ret = true;
+        for(size_t i = 0; i < a.size(); i++){
+            if(a[i] != b[i]){
+                ret = false;
+                break;
+            }
+        }
+        return ret;
+    }
+    bool compare_vector_on_kernel(aligned_dense_float_vec_t& a, aligned_dense_float_vec_t& b){
+        bool ret = true;
+        for(size_t i = 0; i < a.size(); i++){
+            if(a[i] != b[i]){
+                ret = false;
+                break;
+            }
+        }
+        return ret;
     }
 };
 }
