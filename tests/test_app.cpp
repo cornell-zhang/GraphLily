@@ -9,6 +9,7 @@
 #include "graphlily/app/pagerank.h"
 #include "graphlily/app/sssp.h"
 #include "graphlily/app/CC.h"
+#include "graphlily/app/advanced_cc.h"
 
 #include <iostream>
 #include <ap_fixed.h>
@@ -47,6 +48,27 @@ TEST(Synthesize, NULL) {
     synthesizer.set_target(target);
     synthesizer.synthesize();
 }
+TEST(AdvancedCC, PullPush){
+    graphlily::app::AdvancedCC cc(graphlily::num_hbm_channels, spmv_out_buf_len,
+        spmspv_out_buf_len, vec_buf_len);
+    cc.set_target(target);
+    cc.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    bool skip_empty_rows = true;
+    std::string csr_float_npz_path = "/work/shared/users/ugrad/zz356/clean_repo/GraphLily/tests/test_data/LabelP1.npz";    
+    cc.load_and_format_matrix(csr_float_npz_path, skip_empty_rows);
+    cc.send_matrix_host_to_device();
+    auto kernel_results_pull = cc.pull_mult();
+    for(int i = 0; i < 128; i++){
+      std::cout << kernel_results_pull[i] << " ";
+    }
+    std::cout<<std::endl;
+    kernel_results_pull = cc.pull();
+    for(int i = 0; i < 128; i++){
+      std::cout << kernel_results_pull[i] << " ";
+    }
+    std::cout<<std::endl;
+}
+
 TEST(CC, PullPush) {
     graphlily::app::CC cc(graphlily::num_hbm_channels, spmv_out_buf_len,
         spmspv_out_buf_len, vec_buf_len);

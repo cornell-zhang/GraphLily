@@ -83,6 +83,7 @@ enum OperationType {
     kMulAdd = 0,
     kLogicalAndOr = 1,
     kAddMin = 2,
+    kMinSelSec = 3,
 };
 
 // Semiring definition
@@ -97,6 +98,7 @@ const SemiringType LogicalSemiring = {kLogicalAndOr, 1, 0};
 // const SemiringType TropicalSemiring = {kAddMin, 0, UINT_INF};
 const SemiringType TropicalSemiring = {kAddMin, 0, UFIXED_INF};
 // const SemiringType TropicalSemiring = {kAddMin, 0, FLOAT_INF};
+const SemiringType MinSelSecSemiring = {kMinSelSec, 1, 0};
 
 // Mask type
 enum MaskType {

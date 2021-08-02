@@ -35,6 +35,17 @@ ValT pe_ufixed_mul_alu(ValT a, ValT b, ValT z, OpT op, bool en) {
         case ADDMIN:
             out = a + b;
             break;
+        case MINSELSEC:
+            if (a == MinSelSecZero)
+            {
+                out = MinSelSecZero;
+            }
+            else
+            {
+                out = b;
+            }
+            
+            break;
         default:
             out = z;  // z is the zero value in this semiring
             break;
@@ -56,6 +67,21 @@ ValT pe_ufixed_add_alu(ValT a, ValT b, ValT z, OpT op, bool en) {
             break;
         case ADDMIN:
             out = MIN(a, b);
+            break;
+        case MINSELSEC:
+            if (a == MinSelSecZero)
+            {
+                out = b;
+            }
+            else if (b == MinSelSecZero)
+            {
+                out = a;
+            }
+            else
+            {
+                out = MIN(a, b);
+            }
+            
             break;
         default:
             out = z;

@@ -35,16 +35,19 @@ typedef char OP_T;
 #define MULADD 0
 #define ANDOR  1
 #define ADDMIN 2
+#define MINSELSEC 3
 
 const VAL_T MulAddZero = 0;
 const VAL_T AndOrZero  = 0;
 // const VAL_T AddMinZero = UINT_INF;
 const VAL_T AddMinZero = UFIXED_INF;
 // const VAL_T AddMinZero = FLOAT_INF;
+const VAL_T MinSelSecZero = 0;
 
 const VAL_T MulAddOne = 1;
 const VAL_T AndOrOne  = 1;
 const VAL_T AddMinOne = 0;
+const VAL_T MinSelSecOne = 1;
 
 // mask type
 typedef char MASK_T;
