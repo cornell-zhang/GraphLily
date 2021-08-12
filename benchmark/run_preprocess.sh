@@ -1,3 +1,5 @@
+export OMP_NUM_THREADS=16
+
 make bench_preprocess
 
 num_channels=16
