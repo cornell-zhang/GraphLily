@@ -5,12 +5,17 @@
 #include <vector>
 #include <numeric>
 #include <algorithm>
+#include <iostream>
+#include <chrono>
 
 #include "xcl2.hpp"  // use aligned_allocator
 
 #include "graphlily/global.h"
 #include "graphlily/io/data_loader.h"
 
+#ifdef MEASURE_PREPROCESS
+#include <omp.h>
+#endif
 
 namespace graphlily {
 namespace io {
@@ -396,8 +401,8 @@ void util_pack_rows(std::vector<data_type> const &adj_data,
         for (size_t j = 0; j < num_PEs_per_hbm_channel; j++) {tmp_indptr[c].data[j] = 0;}
         packed_adj_indptr[c].push_back(tmp_indptr[c]);
     }
-    for (size_t i = 0; i < num_packs; i++) {
-        for (size_t c = 0; c < num_hbm_channels; c++) {
+    for (size_t c = 0; c < num_hbm_channels; c++) {
+        for (size_t i = 0; i < num_packs; i++) {
             for (size_t j = 0; j < num_PEs_per_hbm_channel; j++) {
                 size_t row_idx = i*num_hbm_channels*num_PEs_per_hbm_channel + c*num_PEs_per_hbm_channel + j;
                 if (row_idx < num_rows) {
@@ -409,6 +414,9 @@ void util_pack_rows(std::vector<data_type> const &adj_data,
     }
 
     // Handle data and indices
+#ifdef MEASURE_PREPROCESS
+    #pragma omp parallel for
+#endif
     for (size_t c = 0; c < num_hbm_channels; c++) {
         uint32_t max_nnz = 0;
         for (uint32_t i = 0; i < num_PEs_per_hbm_channel; i++) {
@@ -461,6 +469,17 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
                                                         uint32_t num_hbm_channels,
                                                         bool skip_empty_rows)
 {
+#ifdef MEASURE_PREPROCESS
+    float convert_csr_to_dds_time_ms = 0.0;
+    float pad_marker_time_ms = 0.0;
+    float pack_rows_time_ms = 0.0;
+    auto convert_csr_to_dds_start = std::chrono::high_resolution_clock::now();
+    auto pad_marker_start = std::chrono::high_resolution_clock::now();
+    auto pack_rows_start = std::chrono::high_resolution_clock::now();
+    auto convert_csr_to_dds_end = std::chrono::high_resolution_clock::now();
+    auto pad_marker_end = std::chrono::high_resolution_clock::now();
+    auto pack_rows_end = std::chrono::high_resolution_clock::now();
+#endif
     if (csr_matrix.num_rows % (num_PEs_per_hbm_channel * num_hbm_channels) != 0) {
         std::cout << "The number of rows of the sparse matrix should divide "
                   << num_PEs_per_hbm_channel * num_hbm_channels << ". "
@@ -498,6 +517,9 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
             csr_matrix.adj_indptr.begin() + j*out_buf_len + num_rows + 1);
         uint32_t offset = csr_matrix.adj_indptr[j * out_buf_len];
         for (auto &x : adj_indptr_slice) x -= offset;
+#ifdef MEASURE_PREPROCESS
+        convert_csr_to_dds_start = std::chrono::high_resolution_clock::now();
+#endif
         util_convert_csr_to_dds<data_type>(num_rows,
                                            csr_matrix.num_cols,
                                            csr_matrix.adj_data.data() + offset,
@@ -507,13 +529,29 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
                                            partitioned_adj_data,
                                            partitioned_adj_indices,
                                            partitioned_adj_indptr);
+#ifdef MEASURE_PREPROCESS
+        convert_csr_to_dds_end = std::chrono::high_resolution_clock::now();
+        convert_csr_to_dds_time_ms += float(std::chrono::duration_cast<std::chrono::microseconds>(
+            convert_csr_to_dds_end - convert_csr_to_dds_start).count()) / 1000;
+#endif
         for (size_t i = 0; i < cpsr_matrix.num_col_partitions; i++) {
+#ifdef MEASURE_PREPROCESS
+            pad_marker_start = std::chrono::high_resolution_clock::now();
+#endif
             util_pad_marker_end_of_row<data_type>(partitioned_adj_data[i],
                                                   partitioned_adj_indices[i],
                                                   partitioned_adj_indptr[i],
                                                   idx_marker,
                                                   num_hbm_channels*num_PEs_per_hbm_channel,
                                                   skip_empty_rows);
+#ifdef MEASURE_PREPROCESS
+            pad_marker_end = std::chrono::high_resolution_clock::now();
+            pad_marker_time_ms += float(std::chrono::duration_cast<std::chrono::microseconds>(
+                pad_marker_end - pad_marker_start).count()) / 1000;
+#endif
+#ifdef MEASURE_PREPROCESS
+            pack_rows_start = std::chrono::high_resolution_clock::now();
+#endif
             util_pack_rows<data_type,
                            typename CPSRMatrix<data_type, num_PEs_per_hbm_channel>::packed_val_t,
                            typename CPSRMatrix<data_type, num_PEs_per_hbm_channel>::packed_idx_t>(
@@ -528,8 +566,20 @@ CPSRMatrix<data_type, num_PEs_per_hbm_channel> csr2cpsr(CSRMatrix<data_type> con
                                                     + i*num_hbm_channels]),
                 &(cpsr_matrix.formatted_adj_indptr[j*cpsr_matrix.num_col_partitions*num_hbm_channels
                                                    + i*num_hbm_channels]));
+#ifdef MEASURE_PREPROCESS
+            pack_rows_end = std::chrono::high_resolution_clock::now();
+            pack_rows_time_ms += float(std::chrono::duration_cast<std::chrono::microseconds>(
+                pack_rows_end - pack_rows_start).count()) / 1000;
+#endif
         }
     }
+
+#ifdef MEASURE_PREPROCESS
+    std::cout << "convert_csr_to_dds_time_ms: " << convert_csr_to_dds_time_ms << std::endl;
+    std::cout << "pad_marker_time_ms: " << pad_marker_time_ms << std::endl;
+    std::cout << "pack_rows_time_ms: " << pack_rows_time_ms << std::endl;
+#endif
+
     return cpsr_matrix;
 }
 

@@ -43,5 +43,10 @@ bench_pagerank: bench_pagerank.cpp $(xcl2_SRCS)
 	mkdir -p $(BUILD_DIR)
 	mv bench_pagerank $(BUILD_DIR)/
 
+bench_preprocess: bench_preprocess.cpp $(xcl2_SRCS)
+	g++ $(CXXFLAGS) bench_preprocess.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS) -fopenmp -DMEASURE_PREPROCESS
+	mkdir -p $(BUILD_DIR)
+	mv bench_preprocess $(BUILD_DIR)/
+
 clean:
 	rm -rf $(BUILD_DIR)
