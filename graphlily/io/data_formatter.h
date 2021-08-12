@@ -62,27 +62,27 @@ void util_pad_marker_end_of_row_no_skip_empty_rows(std::vector<data_type> &adj_d
                                                    std::vector<uint32_t> &adj_indptr,
                                                    uint32_t idx_marker) {
     uint32_t num_rows = adj_indptr.size() - 1;
-    std::vector<data_type> adj_data_swap(adj_data.size() + num_rows);
-    std::vector<uint32_t> adj_indices_swap(adj_indices.size() + num_rows);
-    data_type val_marker = 1;
-    uint32_t count = 0;
-    for (uint32_t row_idx = 0; row_idx < num_rows; row_idx++) {
-        uint32_t start = adj_indptr[row_idx];
-        uint32_t end = adj_indptr[row_idx + 1];
-        for (uint32_t i = start; i < end; i++) {
-            adj_data_swap[count] = adj_data[i];
-            adj_indices_swap[count] = adj_indices[i];
-            count++;
-        }
-        adj_data_swap[count] = val_marker;
-        adj_indices_swap[count] = idx_marker;
-        count++;
-    }
-    adj_data = adj_data_swap;
-    adj_indices = adj_indices_swap;
     for (uint32_t row_idx = 0; row_idx < num_rows; row_idx++) {
         adj_indptr[row_idx + 1] += (row_idx + 1);
     }
+    std::vector<data_type> adj_data_swap(adj_data.size() + num_rows);
+    std::vector<uint32_t> adj_indices_swap(adj_indices.size() + num_rows);
+    data_type val_marker = 1;  // val_marker can be any value; it is discarded by the hardware anyway
+#ifdef MEASURE_PREPROCESS
+    #pragma omp parallel for
+#endif
+    for (uint32_t row_idx = 0; row_idx < num_rows; row_idx++) {
+        uint32_t start = adj_indptr[row_idx];
+        uint32_t end = adj_indptr[row_idx + 1];
+        for (uint32_t i = start; i < end - 1; i++) {
+            adj_data_swap[i] = adj_data[i - row_idx];
+            adj_indices_swap[i] = adj_indices[i - row_idx];
+        }
+        adj_data_swap[end - 1] = val_marker;
+        adj_indices_swap[end - 1] = idx_marker;
+    }
+    adj_data = adj_data_swap;
+    adj_indices = adj_indices_swap;
 }
 
 
@@ -97,6 +97,9 @@ void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data
     assert(num_rows % interleave_stride == 0);
 
     std::vector<bool> row_is_empty(num_rows);
+#ifdef MEASURE_PREPROCESS
+    #pragma omp parallel for
+#endif
     for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
         if (row_idx < interleave_stride) {
             // The first few rows should be inserted a marker whether empty or not
@@ -112,14 +115,24 @@ void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data
         }
     }
 
-    std::vector<uint32_t> cumulative_sum_nonempty_rows(num_rows);
-    cumulative_sum_nonempty_rows[0] = !row_is_empty[0];
-    for (size_t row_idx = 1; row_idx < num_rows; row_idx++) {
-        cumulative_sum_nonempty_rows[row_idx] = cumulative_sum_nonempty_rows[row_idx - 1]
-                                                + !row_is_empty[row_idx];
+    std::vector<uint32_t> cumulative_sum_nonempty_rows(num_rows + 1);
+    cumulative_sum_nonempty_rows[0] = 0;
+    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+        cumulative_sum_nonempty_rows[row_idx + 1] = cumulative_sum_nonempty_rows[row_idx]
+                                                    + !row_is_empty[row_idx];
+    }
+
+#ifdef MEASURE_PREPROCESS
+    #pragma omp parallel for
+#endif
+    for (size_t row_idx = 1; row_idx < num_rows + 1; row_idx++) {
+        adj_indptr[row_idx] += cumulative_sum_nonempty_rows[row_idx];
     }
 
     std::vector<data_type> val_marker(num_rows);
+#ifdef MEASURE_PREPROCESS
+    #pragma omp parallel for
+#endif
     for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
         if (!row_is_empty[row_idx]) {
             val_marker[row_idx] = 1;
@@ -127,6 +140,9 @@ void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data
             val_marker[row_idx] = 0;
         }
     }
+#ifdef MEASURE_PREPROCESS
+    #pragma omp parallel for
+#endif
     for (size_t k = 0; k < interleave_stride; k++) {
         for (size_t row_idx = k; row_idx < num_rows; ) {
             size_t next = row_idx + interleave_stride;
@@ -140,31 +156,26 @@ void util_pad_marker_end_of_row_skip_empty_rows(std::vector<data_type> &adj_data
         }
     }
 
-    uint32_t total_num_nonempty_rows = cumulative_sum_nonempty_rows[num_rows - 1];
+    uint32_t total_num_nonempty_rows = cumulative_sum_nonempty_rows[num_rows];
     std::vector<data_type> adj_data_swap(adj_data.size() + total_num_nonempty_rows);
     std::vector<uint32_t> adj_indices_swap(adj_indices.size() + total_num_nonempty_rows);
-    uint32_t count = 0;
-    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
+#ifdef MEASURE_PREPROCESS
+    #pragma omp parallel for
+#endif
+    for (uint32_t row_idx = 0; row_idx < num_rows; row_idx++) {
         if (!row_is_empty[row_idx]) {
             uint32_t start = adj_indptr[row_idx];
             uint32_t end = adj_indptr[row_idx + 1];
-            for (size_t i = start; i < end; i++) {
-                adj_data_swap[count] = adj_data[i];
-                adj_indices_swap[count] = adj_indices[i];
-                count++;
+            for (uint32_t i = start; i < end - 1; i++) {
+                adj_data_swap[i] = adj_data[i - cumulative_sum_nonempty_rows[row_idx]];
+                adj_indices_swap[i] = adj_indices[i - cumulative_sum_nonempty_rows[row_idx]];
             }
-            adj_data_swap[count] = val_marker[row_idx];
-            adj_indices_swap[count] = idx_marker;
-            count++;
+            adj_data_swap[end - 1] = val_marker[row_idx];
+            adj_indices_swap[end - 1] = idx_marker;
         }
     }
-    assert(count == adj_data_swap.size());
-
     adj_data = adj_data_swap;
     adj_indices = adj_indices_swap;
-    for (size_t row_idx = 0; row_idx < num_rows; row_idx++) {
-        adj_indptr[row_idx + 1] += cumulative_sum_nonempty_rows[row_idx];
-    }
 }
 
 
