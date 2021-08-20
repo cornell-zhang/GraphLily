@@ -6,14 +6,20 @@ num_channels=16
 spmv_out_buf_len=1024000
 vec_buf_len=30720
 
-DATASET_PATH=/work/shared/common/project_build/graphblas/data/sparse_matrix_graph
+DATASET_PATH=/work/shared/common/project_build/graphblas/data/
 
-DATSETS=(gplus_108K_13M_csr_float32.npz
-         ogbl_ppa_576K_42M_csr_float32.npz
-         hollywood_1M_113M_csr_float32.npz
-         pokec_1633K_31M_csr_float32.npz
-         ogbn_products_2M_124M_csr_float32.npz
-         orkut_3M_213M_csr_float32.npz)
+DATSETS=(sparse_matrix_graph/gplus_108K_13M_csr_float32.npz
+         sparse_matrix_graph/ogbl_ppa_576K_42M_csr_float32.npz
+         sparse_matrix_graph/hollywood_1M_113M_csr_float32.npz
+         sparse_matrix_graph/pokec_1633K_31M_csr_float32.npz
+         sparse_matrix_graph/ogbn_products_2M_124M_csr_float32.npz
+         sparse_matrix_graph/mouse_gene_45K_29M_csr_float32.npz
+         pruned_neural_network/transformer_50_33288_512_csr_float32.npz
+         pruned_neural_network/transformer_60_33288_512_csr_float32.npz
+         pruned_neural_network/transformer_70_33288_512_csr_float32.npz
+         pruned_neural_network/transformer_80_33288_512_csr_float32.npz
+         pruned_neural_network/transformer_90_33288_512_csr_float32.npz
+         pruned_neural_network/transformer_95_33288_512_csr_float32.npz)
 
 BUILD_DIR=./build
 
