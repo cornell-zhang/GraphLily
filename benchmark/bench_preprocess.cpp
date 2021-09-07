@@ -20,9 +20,8 @@ size_t count_bytes_cpsr_matrix(CPSRMatrix<float, graphlily::pack_size>& cpsr_mat
     for (auto x: cpsr_matrix.formatted_adj_indices) {
         n_bytes += x.size() * 4 * graphlily::pack_size;
     }
-    for (auto x: cpsr_matrix.formatted_adj_indptr) {
-        n_bytes += x.size() * 4 * graphlily::pack_size;
-    }
+    int num_partitions = cpsr_matrix.formatted_adj_indptr.size();
+    n_bytes += num_partitions * 8 * graphlily::pack_size;
     return n_bytes;
 }
 
@@ -75,7 +74,7 @@ void bench_preprocess(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_
         skip_empty_rows);
     size_t total_bytes = count_bytes_cpsr_matrix(cpsr_matrix);
     size_t nnz = csr_matrix.adj_indptr[csr_matrix.num_rows];
-    float ratio = total_bytes / float(8 * nnz);
+    float ratio = float(8 * nnz) / total_bytes;
     std::cout << "skip_empty_rows is true" << std::endl;
     std::cout << "total_bytes: " << total_bytes << std::endl;
     std::cout << "nnz: " << nnz << std::endl;
@@ -91,7 +90,7 @@ void bench_preprocess(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_
         skip_empty_rows);
     total_bytes = count_bytes_cpsr_matrix(cpsr_matrix);
     nnz = csr_matrix.adj_indptr[csr_matrix.num_rows];
-    ratio = total_bytes / float(8 * nnz);
+    ratio = float(8 * nnz) / total_bytes;
     std::cout << "skip_empty_rows is false" << std::endl;
     std::cout << "total_bytes: " << total_bytes << std::endl;
     std::cout << "nnz: " << nnz << std::endl;

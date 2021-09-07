@@ -3,8 +3,8 @@ export OMP_NUM_THREADS=16
 make bench_preprocess
 
 num_channels=16
-spmv_out_buf_len=1024000
-vec_buf_len=30720
+spmv_out_buf_len=1048576
+vec_buf_len=24576
 
 DATASET_PATH=/work/shared/common/project_build/graphblas/data/
 
