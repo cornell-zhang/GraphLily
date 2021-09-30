@@ -132,7 +132,7 @@ void bram_access_read_2ports(
     IDX_T rd_addr1[PACK_SIZE],
     VAL_T rd_data1[PACK_SIZE],
     // bram
-    const VAL_T bram[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE]
+    const VAL_T bram[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
 ) {
     #pragma HLS pipeline II=1
     // #pragma HLS inline
@@ -140,8 +140,8 @@ void bram_access_read_2ports(
     loop_rd_get_data_unroll:
     for (unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
         #pragma HLS unroll
-        rd_data0[BKid] = bram[BKid][rd_addr0[BKid]];
-        rd_data1[BKid] = bram[BKid][rd_addr1[BKid]];
+        rd_data0[BKid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr0[BKid] / NUM_HBM_CHANNEL];
+        rd_data1[BKid] = bram[rd_addr1[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr1[BKid] / NUM_HBM_CHANNEL];
     }
 }
 
@@ -149,7 +149,7 @@ void bram_access_read_2ports(
 // change results to sparse
 void checkout_results(
     // data to be checked
-    const VAL_T dense_data[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE],
+    const VAL_T dense_data[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     // FIFOs
     hls::stream<IDX_VAL_T> cr_output_streams[PACK_SIZE * 2],
     // control signals
@@ -295,7 +295,7 @@ void compute_spmspv(
     const IDX_T *mat_indptr,
     const IDX_T *mat_partptr,
     const IDX_VAL_T *vector,
-    VAL_T output_buffer[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE],
+    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     IDX_T vec_num_nnz,
     IDX_T mat_indptr_base,
     IDX_T mat_row_id_base,
@@ -360,7 +360,7 @@ void compute_spmspv(
     }
     #endif
 
-    ufixed_pe_cluster_uram<VAL_T, OP_T, SF_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMSPV_OUT_BUF_LEN / PACK_SIZE>(
+    ufixed_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
         SF_to_PE_stream,
         output_buffer,
         Op,
@@ -368,7 +368,7 @@ void compute_spmspv(
         SF_to_PE_npld_stream
     );
 
-    // float_pe_cluster_uram<VAL_T, OP_T, SF_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMSPV_OUT_BUF_LEN / PACK_SIZE>(
+    // float_pe_cluster_spmspv_uram<VAL_T, OP_T, SF_IO_T, NUM_HBM_CHANNEL, PACK_SIZE, BANK_ID_NBITS, SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
     //     SF_to_PE_stream,
     //     output_buffer,
     //     Op,
@@ -392,7 +392,7 @@ void compute_spmspv(
 
 // write back
 void write_back_results(
-    const VAL_T output_buffer[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE],
+    const VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL],
     IDX_VAL_T *result,
     const VAL_T *mask,
     IDX_T num_rows,
@@ -456,7 +456,7 @@ void kernel_spmspv(
     IDX_T num_cols,
     OP_T Op,
     MASK_T mask_type,
-    VAL_T output_buffer[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE]
+    VAL_T output_buffer[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL]
 ) {
     #pragma HLS inline off
 
@@ -504,11 +504,14 @@ void kernel_spmspv(
         }
         #endif
         loop_reset_output_buffer:
-        for (int i = 0; i < (num_rows_this_part + PACK_SIZE - 1) / PACK_SIZE; i++) {
+        for (int i = 0; i < (num_rows_this_part + SPMV_NUM_PE_TOTAL - 1) / SPMV_NUM_PE_TOTAL; i++) {
             #pragma HLS UNROLL factor=2
-            for (int PE_idx = 0; PE_idx < PACK_SIZE; PE_idx++) {
+            for (int c = 0; c < NUM_HBM_CHANNEL; c++) {
                 #pragma HLS UNROLL
-                output_buffer[PE_idx][i] = Zero;
+                for (int PE_idx = 0; PE_idx < PACK_SIZE; PE_idx++) {
+                    #pragma HLS UNROLL
+                    output_buffer[c][PE_idx][i] = Zero;
+                }
             }
         }
         compute_spmspv(

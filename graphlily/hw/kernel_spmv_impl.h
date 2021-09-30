@@ -287,7 +287,7 @@ void compute_spmv_one_channel(
         }
         #endif
 
-        ufixed_pe_cluster_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        ufixed_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
             SF_2_to_PE_stream,
             out_uram,
             Op,
@@ -295,7 +295,7 @@ void compute_spmv_one_channel(
             SF_2_to_PE_num_payloads_stream
         );
 
-        // float_pe_cluster_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        // float_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
         //     SF_2_to_PE_stream,
         //     out_uram,
         //     Op,
