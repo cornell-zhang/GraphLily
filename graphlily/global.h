@@ -114,7 +114,7 @@ const std::string makefile_prologue =
     "\n"
     "VPP := v++\n"
     "\n"
-    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --save-temps\n"
+    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --kernel_frequency 200 --save-temps\n"
     "\n"
     "FUSED_KERNEL = $(BUILD_DIR)/fused.xclbin\n"
     "\n"
