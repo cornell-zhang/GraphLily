@@ -46,10 +46,10 @@ void matrix_loader_hbm_to_stream_one_channel(
     hls::stream<SF_1_IO_T> ML_to_SF_1_stream[PACK_SIZE],  // out
     hls::stream<unsigned> &num_payloads                   // out
 ) {
-    IDX_T partition_start = matrix_one_channel[2*partition_idx].indices.data[0];
+    SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[2*partition_idx];
+    IDX_T partition_start = mat_pkt.indices.data[0];
+    unsigned max_size = mat_pkt.indices.data[1];
     PACKED_IDX_T partition_size = matrix_one_channel[2*partition_idx + 1].indices;
-
-    unsigned max_size = array_max<unsigned, PACK_SIZE>(partition_size.data);
 
     unsigned payload_count[PACK_SIZE];
     #pragma HLS ARRAY_PARTITION variable=payload_count complete
