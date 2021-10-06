@@ -291,11 +291,12 @@ void overlay(
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=1
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmv complete dim=2
     // #pragma HLS resource variable=out_uram_spmv core=RAM_2P
-    #pragma HLS resource variable=out_uram_spmv core=XPM_MEMORY uram latency=2
+    #pragma HLS resource variable=out_uram_spmv core=XPM_MEMORY uram latency=4
 
-    VAL_T out_uram_spmspv[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE];
+    VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
     #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=1
-    #pragma HLS resource variable=out_uram_spmspv core=RAM_2P latency=2
+    #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=2
+    #pragma HLS resource variable=out_uram_spmspv core=RAM_2P latency=4
     // #pragma HLS resource variable=out_uram_spmspv core=XPM_MEMORY uram latency=2
 
     /*

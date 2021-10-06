@@ -46,10 +46,21 @@ void matrix_loader_hbm_to_stream_one_channel(
     hls::stream<SF_1_IO_T> ML_to_SF_1_stream[PACK_SIZE],  // out
     hls::stream<unsigned> &num_payloads                   // out
 ) {
-    IDX_T partition_start = matrix_one_channel[2*partition_idx].indices.data[0];
-    PACKED_IDX_T partition_size = matrix_one_channel[2*partition_idx + 1].indices;
+    IDX_T partition_start;
+    unsigned total_size;
+    PACKED_IDX_T partition_size[SPMV_ROW_INTERLEAVE_FACTOR];
+    #pragma HLS ARRAY_PARTITION variable=partition_size complete
 
-    unsigned max_size = array_max<unsigned, PACK_SIZE>(partition_size.data);
+    for (int ii = 0; ii < SPMV_ROW_INTERLEAVE_FACTOR + 1; ii++) {
+        #pragma HLS PIPELINE
+        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[(SPMV_ROW_INTERLEAVE_FACTOR+1)*partition_idx + ii];
+        if (ii == 0) {
+            partition_start = mat_pkt.indices.data[0];
+            total_size = mat_pkt.indices.data[1];
+        } else {
+            partition_size[ii - 1] = mat_pkt.indices;
+        }
+    }
 
     unsigned payload_count[PACK_SIZE];
     #pragma HLS ARRAY_PARTITION variable=payload_count complete
@@ -58,29 +69,36 @@ void matrix_loader_hbm_to_stream_one_channel(
         payload_count[k] = 0;
     }
 
-    IDX_T row_idx[PACK_SIZE];
-    #pragma HLS ARRAY_PARTITION variable=row_idx complete
-    for (int k = 0; k < PACK_SIZE; k++) {
+    IDX_T row_idx[SPMV_ROW_INTERLEAVE_FACTOR][PACK_SIZE];
+    #pragma HLS ARRAY_PARTITION variable=row_idx complete dim=0
+    for (int ii = 0; ii < SPMV_ROW_INTERLEAVE_FACTOR; ii++) {
         #pragma HLS UNROLL
-        row_idx[k] = k;
+        for (int k = 0; k < PACK_SIZE; k++) {
+            #pragma HLS UNROLL
+            row_idx[ii][k] = ii * PACK_SIZE + k;
+        }
     }
 
     // Burst read
     loop_matrix_loader_hbm_to_stream_one_channel:
-    for (int i = 0; i < max_size; i++) {
+    for (int i = 0; i < total_size; i++) {
         #pragma HLS PIPELINE II=1
-        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[i + partition_start + 2*num_partitions];
+        SPMV_MAT_PKT_T mat_pkt = matrix_one_channel[i + partition_start +
+                                                    (SPMV_ROW_INTERLEAVE_FACTOR + 1)*num_partitions];
         for (unsigned k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
-            if (i < partition_size.data[k]) {
+            unsigned stream_idx = i % SPMV_ROW_INTERLEAVE_FACTOR;
+            if (i / SPMV_ROW_INTERLEAVE_FACTOR < partition_size[stream_idx].data[k]) {
                 if (mat_pkt.indices.data[k] == IDX_MARKER) {
                      // Be careful: mat_pkt.vals.data[k] can not be larger than power(2, 16)
-                    row_idx[k] += (PACK_SIZE * (unsigned)mat_pkt.vals.data[k]);
+                    row_idx[stream_idx][k] += (PACK_SIZE
+                                               * SPMV_ROW_INTERLEAVE_FACTOR
+                                               * (unsigned)mat_pkt.vals.data[k]);
                     // row_idx[k] += PACK_SIZE;  // Row index within each packed stream of rows
                 } else {
                     SF_1_IO_T input_to_SF_1;
                     input_to_SF_1.index = mat_pkt.indices.data[k];
-                    input_to_SF_1.data = (SF_1_IO_VAL_T){row_idx[k], mat_pkt.vals.data[k]};
+                    input_to_SF_1.data = (SF_1_IO_VAL_T){row_idx[stream_idx][k], mat_pkt.vals.data[k]};
                     ML_to_SF_1_stream[k].write(input_to_SF_1);
                     payload_count[k]++;
 
@@ -287,7 +305,7 @@ void compute_spmv_one_channel(
         }
         #endif
 
-        ufixed_pe_cluster_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        ufixed_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
             SF_2_to_PE_stream,
             out_uram,
             Op,
@@ -295,7 +313,7 @@ void compute_spmv_one_channel(
             SF_2_to_PE_num_payloads_stream
         );
 
-        // float_pe_cluster_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
+        // float_pe_cluster_spmv_uram<VAL_T, OP_T, SF_2_IO_T, PACK_SIZE, BANK_ID_NBITS, SPMV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL>(
         //     SF_2_to_PE_stream,
         //     out_uram,
         //     Op,
@@ -345,7 +363,8 @@ void write_to_out_ddr(
         }
         for (int k = 0; k < PACK_SIZE; k++) {
             #pragma HLS UNROLL
-            VAL_T val = out_uram[i%NUM_HBM_CHANNEL][k][i/NUM_HBM_CHANNEL];
+            VAL_T val = out_uram[(i/SPMV_ROW_INTERLEAVE_FACTOR)%NUM_HBM_CHANNEL]
+                [k][i/SPMV_ROW_INTERLEAVE_FACTOR/NUM_HBM_CHANNEL*SPMV_ROW_INTERLEAVE_FACTOR + i%SPMV_ROW_INTERLEAVE_FACTOR];
             if (mask_type == NOMASK) {
                 tmp_out.data[k] = val;
             } else if (mask_type == WRITETOZERO) {

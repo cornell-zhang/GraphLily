@@ -19,6 +19,18 @@ using graphlily::io::CPSRMatrix;
 using graphlily::io::csr2cpsr;
 
 
+namespace {
+template<typename virtual_packed_t, uint32_t virtual_pack_size, typename packed_t, uint32_t pack_size>
+inline packed_t _slice(const virtual_packed_t &in, uint32_t start_idx) {
+    packed_t out;
+    for (size_t i = 0; i < pack_size; i++) {
+        out.data[i] = in.data[i + start_idx];
+    }
+    return out;
+}
+}  // namespace
+
+
 namespace graphlily {
 namespace module {
 
@@ -44,7 +56,7 @@ private:
     using packed_val_t = typename CPSRMatrix<val_t, graphlily::pack_size>::packed_val_t;
     using packed_idx_t = typename CPSRMatrix<val_t, graphlily::pack_size>::packed_idx_t;
     using mat_pkt_t = struct {packed_idx_t indices; packed_val_t vals;};
-    using partition_indptr_t = struct {graphlily::idx_t start; packed_idx_t nnz;};
+    using partition_indptr_t = struct {graphlily::idx_t start; unsigned max_nnz; packed_idx_t nnz;};
 
     using aligned_idx_t = std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>>;
     using aligned_dense_vec_t = std::vector<val_t, aligned_allocator<val_t>>;
@@ -275,16 +287,25 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
     this->num_row_partitions_ = (this->csr_matrix_.num_rows + this->out_buf_len_ - 1) / this->out_buf_len_;
     this->num_col_partitions_ = (this->csr_matrix_.num_cols + this->vec_buf_len_ - 1) / this->vec_buf_len_;
     size_t num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
-    CPSRMatrix<val_t, graphlily::pack_size> cpsr_matrix = csr2cpsr<val_t, graphlily::pack_size>(
+    const uint32_t virtual_pack_size = graphlily::pack_size * graphlily::spmv_row_interleave_factor;
+    CPSRMatrix<val_t, virtual_pack_size> cpsr_matrix = csr2cpsr<val_t, virtual_pack_size>(
         this->csr_matrix_,
         graphlily::idx_marker,
         this->out_buf_len_,
         this->vec_buf_len_,
         this->num_channels_,
         skip_empty_rows);
-    std::vector<aligned_partition_indptr_t> channel_partition_indptr(this->num_channels_);
-    std::vector<aligned_packed_idx_t> channel_indices(this->num_channels_);
-    std::vector<aligned_packed_val_t> channel_vals(this->num_channels_);
+    // Data types to support virtual pack size
+    using virtual_packed_idx_t = typename CPSRMatrix<val_t, virtual_pack_size>::packed_idx_t;
+    using virtual_packed_val_t = typename CPSRMatrix<val_t, virtual_pack_size>::packed_val_t;
+    using virtual_partition_indptr_t = struct {graphlily::idx_t start; unsigned max_nnz; virtual_packed_idx_t nnz;};
+    using aligned_virtual_packed_idx_t = std::vector<virtual_packed_idx_t, aligned_allocator<virtual_packed_idx_t>>;
+    using aligned_virtual_packed_val_t = std::vector<virtual_packed_val_t, aligned_allocator<virtual_packed_val_t>>;
+    using aligned_virtual_partition_indptr_t = std::vector<virtual_partition_indptr_t, aligned_allocator<virtual_partition_indptr_t>>;
+    // Intermediate data of the above data types
+    std::vector<aligned_virtual_packed_idx_t> channel_indices(this->num_channels_);
+    std::vector<aligned_virtual_packed_val_t> channel_vals(this->num_channels_);
+    std::vector<aligned_virtual_partition_indptr_t> channel_partition_indptr(this->num_channels_);
     this->channel_packets_.resize(this->num_channels_);
     for (size_t c = 0; c < this->num_channels_; c++) {
         channel_partition_indptr[c].resize(num_partitions);
@@ -308,19 +329,39 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
                         + indices_partition.size();
                 }
                 channel_partition_indptr[c][j*this->num_col_partitions_ + i].nnz = indptr_partition.back();
+                uint32_t max_nnz = *std::max_element(indptr_partition.back().data,
+                                                     indptr_partition.back().data + virtual_pack_size);
+                assert(indices_partition.size() == max_nnz);
+                channel_partition_indptr[c][j*this->num_col_partitions_ + i].max_nnz = max_nnz;
             }
         }
         assert(channel_indices[c].size() == channel_vals[c].size());
-        this->channel_packets_[c].resize(2*num_partitions + channel_indices[c].size());
+        this->channel_packets_[c].resize(num_partitions*(1+graphlily::spmv_row_interleave_factor)
+                                         + channel_indices[c].size()*graphlily::spmv_row_interleave_factor);
         // partition indptr
         for (size_t i = 0; i < num_partitions; i++) {
-            this->channel_packets_[c][2*i].indices.data[0] = channel_partition_indptr[c][i].start;
-            this->channel_packets_[c][2*i + 1].indices = channel_partition_indptr[c][i].nnz;
+            this->channel_packets_[c][i*(1+graphlily::spmv_row_interleave_factor)].indices.data[0] =
+                channel_partition_indptr[c][i].start * graphlily::spmv_row_interleave_factor;
+            this->channel_packets_[c][i*(1+graphlily::spmv_row_interleave_factor)].indices.data[1] =
+                channel_partition_indptr[c][i].max_nnz * graphlily::spmv_row_interleave_factor;
+            for (size_t k = 0; k < graphlily::spmv_row_interleave_factor; k++) {
+                this->channel_packets_[c][i*(1+graphlily::spmv_row_interleave_factor) + 1 + k].indices =
+                    _slice<virtual_packed_idx_t, virtual_pack_size, packed_idx_t, graphlily::pack_size>(
+                        channel_partition_indptr[c][i].nnz, k*graphlily::pack_size);
+            }
         }
         // matrix indices and vals
+        uint32_t offset = num_partitions*(1+graphlily::spmv_row_interleave_factor);
         for (size_t i = 0; i < channel_indices[c].size(); i++) {
-            this->channel_packets_[c][2*num_partitions + i].indices = channel_indices[c][i];
-            this->channel_packets_[c][2*num_partitions + i].vals = channel_vals[c][i];
+            for (size_t k = 0; k < graphlily::spmv_row_interleave_factor; k++) {
+                uint32_t ii = i * graphlily::spmv_row_interleave_factor + k;
+                this->channel_packets_[c][offset + ii].indices =
+                    _slice<virtual_packed_idx_t, virtual_pack_size, packed_idx_t, graphlily::pack_size>(
+                        channel_indices[c][i], k*graphlily::pack_size);
+                this->channel_packets_[c][offset + ii].vals =
+                    _slice<virtual_packed_val_t, virtual_pack_size, packed_val_t, graphlily::pack_size>(
+                        channel_vals[c][i], k*graphlily::pack_size);
+            }
         }
     }
     this->vector_.resize(this->csr_matrix_.num_cols);

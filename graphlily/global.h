@@ -55,6 +55,7 @@ const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 
 // Kernel configurations
 const uint32_t pack_size = 8;
+const uint32_t spmv_row_interleave_factor = 1;
 const uint32_t num_hbm_channels = 16;
 
 // Data types (please change this according to the kernel!)
@@ -114,7 +115,7 @@ const std::string makefile_prologue =
     "\n"
     "VPP := v++\n"
     "\n"
-    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --save-temps\n"
+    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --kernel_frequency 200 --save-temps\n"
     "\n"
     "FUSED_KERNEL = $(BUILD_DIR)/fused.xclbin\n"
     "\n"
