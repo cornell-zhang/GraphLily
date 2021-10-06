@@ -12,6 +12,8 @@ const unsigned NUM_BANK_PER_HBM_CHANNEL = PACK_SIZE / NUM_PORT_PER_BANK;
 const unsigned BANK_ID_NBITS = 3;
 const unsigned BANK_ID_MASK = 7;
 
+const unsigned SPMV_ROW_INTERLEAVE_FACTOR = 1;
+
 // data types
 typedef unsigned IDX_T;
 typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
