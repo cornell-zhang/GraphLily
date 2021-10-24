@@ -132,7 +132,7 @@ BenchCase set_up_bench_case(std::string matrix_file_name,
 struct BenchCaseResult {
     BenchCaseInfo info;
     double avg_time_ms;
-    double avg_GOPS;
+    double avg_GTEPS;
     double avg_thpt_GBPS;
 };
 
@@ -218,7 +218,7 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
     if (!passed) {
         std::cout << "ERROR: [Benchmark] Result mismatch! Aborting..." << std::endl;
         benchmark_result.avg_time_ms = -1;
-        benchmark_result.avg_GOPS = -1;
+        benchmark_result.avg_GTEPS = -1;
         benchmark_result.avg_thpt_GBPS = -1;
         return benchmark_result;
     }
@@ -236,7 +236,7 @@ BenchCaseResult run_bench_case(graphlily::module::SpMSpVModule<graphlily::val_t,
     }
     benchmark_result.avg_time_ms = time_in_us / num_runs / 1000;
     benchmark_result.avg_thpt_GBPS = data_usage / 1000 / 1000 / benchmark_result.avg_time_ms;
-    benchmark_result.avg_GOPS = benchmark_result.avg_thpt_GBPS / (sizeof(graphlily::val_t)
+    benchmark_result.avg_GTEPS = benchmark_result.avg_thpt_GBPS / (sizeof(graphlily::val_t)
         + sizeof(graphlily::idx_t));
 
     return benchmark_result;
@@ -344,7 +344,7 @@ int main(int argc, char *argv[]) {
                 << std::setw(20) << "vector sparsity"
                 << std::setw(10) << "result"
                 << std::setw(20) << "time(ms)"
-                << std::setw(20) << "performance(GOPS)"
+                << std::setw(20) << "performance(GTEPS)"
                 << std::setw(20) << "throughput(GB/s)"
                 << std::endl;
     std::cout << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
@@ -356,7 +356,7 @@ int main(int argc, char *argv[]) {
                 << std::setw(20) << benchmark_results[i].info.spv_str
                 << std::setw(10) << ((benchmark_results[i].avg_time_ms >= 0) ? "PASSED" : "FAILED")
                 << std::setw(20) << benchmark_results[i].avg_time_ms
-                << std::setw(20) << benchmark_results[i].avg_GOPS
+                << std::setw(20) << benchmark_results[i].avg_GTEPS
                 << std::setw(20) << benchmark_results[i].avg_thpt_GBPS
                 << std::endl;
     }
@@ -373,7 +373,7 @@ int main(int argc, char *argv[]) {
                 << std::setw(20) << "vector sparsity"
                 << std::setw(10) << "result"
                 << std::setw(20) << "time(ms)"
-                << std::setw(20) << "performance(GOPS)"
+                << std::setw(20) << "performance(GTEPS)"
                 << std::setw(20) << "throughput(GB/s)"
                 << std::endl;
     // result_log_file << "  " << line(50 + 20 + 20 + 10 + 20 + 20 + 20) << std::endl;
@@ -388,7 +388,7 @@ int main(int argc, char *argv[]) {
                 << std::setw(20) << benchmark_results[i].info.spv_str
                 << std::setw(10) << ((benchmark_results[i].avg_time_ms >= 0) ? "PASSED" : "FAILED")
                 << std::setw(20) << benchmark_results[i].avg_time_ms
-                << std::setw(20) << benchmark_results[i].avg_GOPS
+                << std::setw(20) << benchmark_results[i].avg_GTEPS
                 << std::setw(20) << benchmark_results[i].avg_thpt_GBPS
                 << std::endl;
     }
