@@ -63,7 +63,7 @@ void bench_sssp(uint32_t num_channels, uint32_t spmv_out_buf_len,
     uint32_t nnz = sssp.get_nnz();
     double op_count = nnz * num_iterations;
     double throughput = op_count / 1000 / 1000 / 1000 / average_time_in_sec;
-    std::cout << "Pull Compute THROUGHPUT = " << throughput << " GOPS" << std::endl;
+    std::cout << "Pull Compute THROUGHPUT = " << throughput << " GTEPS" << std::endl;
 
     // Pull-Push
     float threshold = 0.001;
@@ -81,7 +81,7 @@ void bench_sssp(uint32_t num_channels, uint32_t spmv_out_buf_len,
         / 1000000 / num_runs;
     std::cout << "Pull-Push average_time: " << average_time_in_sec * 1000 << " ms" << std::endl;
     throughput = op_count / 1000 / 1000 / 1000 / average_time_in_sec;
-    std::cout << "Pull-Push Compute THROUGHPUT = " << throughput << " GOPS" << std::endl;
+    std::cout << "Pull-Push Compute THROUGHPUT = " << throughput << " GTEPS" << std::endl;
 }
 
 

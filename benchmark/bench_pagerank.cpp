@@ -62,7 +62,7 @@ void bench_pagerank(uint32_t num_channels, uint32_t spmv_out_buf_len,
     uint32_t nnz = pagerank.get_nnz();
     double op_count = nnz;
     double throughput = op_count / 1000 / 1000 / 1000 / average_time_in_sec;
-    std::cout << "PageRank Compute THROUGHPUT = " << throughput << " GOPS" << std::endl;
+    std::cout << "PageRank Compute THROUGHPUT = " << throughput << " GTEPS" << std::endl;
 }
 
 
