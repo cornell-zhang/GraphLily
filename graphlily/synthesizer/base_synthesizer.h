@@ -29,6 +29,7 @@ void _synthesize_impl(T* t) {
     t->generate_kernel_ini();
     t->generate_makefile();
     command = "cd " + graphlily::proj_folder_name + "; " + "make build";
+    command += " -j5";
     std::cout << command << std::endl;
     system(command.c_str());
     if (t->target_ == "sw_emu" || t->target_ == "hw_emu") {
@@ -54,9 +55,12 @@ private:
 
 public:
     BaseSynthesizer(std::string kernel_name) {
-        this->kernel_name_ = kernel_name;
-        this->makefile_body_ = graphlily::add_kernel_to_makefile(this->kernel_name_);
+        if (kernel_name != "") {
+            this->kernel_name_ = kernel_name;
+            this->makefile_body_ = graphlily::add_kernel_to_makefile(this->kernel_name_);
+        }
     }
+
 
     /*!
      * \brief Get the kernel name.

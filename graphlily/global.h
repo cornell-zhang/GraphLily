@@ -41,7 +41,7 @@ cl::Device find_device() {
 
 // HBM channels
 #define MAX_HBM_CHANNEL_COUNT 32
-#define CHANNEL_NAME(n) n | XCL_MEM_TOPOLOGY
+#define CHANNEL_NAME(n) (n | XCL_MEM_TOPOLOGY)
 const int HBM[MAX_HBM_CHANNEL_COUNT] = {
     CHANNEL_NAME(0),  CHANNEL_NAME(1),  CHANNEL_NAME(2),  CHANNEL_NAME(3),  CHANNEL_NAME(4),
     CHANNEL_NAME(5),  CHANNEL_NAME(6),  CHANNEL_NAME(7),  CHANNEL_NAME(8),  CHANNEL_NAME(9),
@@ -115,29 +115,35 @@ const std::string makefile_prologue =
     "\n"
     "VPP := v++\n"
     "\n"
-    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --kernel_frequency 200 --save-temps\n"
+    "CLFLAGS += -t $(TARGET) --platform $(DEVICE) --save-temps\n"
     "\n"
     "FUSED_KERNEL = $(BUILD_DIR)/fused.xclbin\n"
+    "ifneq ($(TARGET), hw)\n"
+    "\tCLFLAGS += -g\n" // this will enable waveform debugging for hw_emu
+    "else\n"
+    "\tCLFLAGS += --kernel_frequency 200\n"
+    "\tLDCLFLAGS += --optimize 3\n" // this will enable retiming
+    "endif\n"
     "\n"
     "emconfig.json:\n"
     "\temconfigutil --platform $(DEVICE)\n"
     "\n"
     "build: $(FUSED_KERNEL) emconfig.json\n"
-    "\n";
+    "\n"
+    "LDCLFLAGS += --config overlay.ini\n"; // TODO: now we let all kernels use the same ini
 
 const std::string makefile_epilogue =
     "$(FUSED_KERNEL): $(KERNEL_OBJS)\n"
     "\tmkdir -p $(BUILD_DIR)\n"
-    "\t$(VPP) $(CLFLAGS) --temp_dir $(BUILD_DIR) -l $(LDCLFLAGS) -o'$@' $(+)\n";
+    "\t$(VPP) $(CLFLAGS) --temp_dir $(BUILD_DIR) -I'$(<D)' -l $(LDCLFLAGS) -o'$@' $(+)\n";
 
 std::string add_kernel_to_makefile(std::string kernel_name) {
     std::string makefile_body;
-    makefile_body += ("LDCLFLAGS += --config " + kernel_name + ".ini" + "\n");
     makefile_body += ("KERNEL_OBJS += $(TEMP_DIR)/" + kernel_name + ".xo" + "\n");
     makefile_body += "\n";
     makefile_body += ("$(TEMP_DIR)/" + kernel_name + ".xo: " + kernel_name + ".cpp" + "\n");
     makefile_body += ("\tmkdir -p $(TEMP_DIR)\n");
-    makefile_body += ("\t$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k " + kernel_name + " -I'$(<D)' -o'$@' '$<'\n");
+    makefile_body += ("\t$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k " + kernel_name + " -I'$(<D)' -I'$(<D)/hisparse_lib' -o'$@' '$<'\n");
     makefile_body += "\n";
     return makefile_body;
 }

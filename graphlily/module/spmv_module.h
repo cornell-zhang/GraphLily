@@ -5,6 +5,7 @@
 #include <vector>
 #include <fstream>
 #include <chrono>
+#include <iomanip>
 
 #include "xcl2.hpp"
 
@@ -43,6 +44,12 @@ private:
     graphlily::SemiringType semiring_;
     /*! \brief The number of channels of the kernel */
     uint32_t num_channels_;
+    /*! \brief The number of channels for sub-kernel 0 */
+    uint32_t num_channels_sk0_;
+    /*! \brief The number of channels for sub-kernel 1 */
+    uint32_t num_channels_sk1_;
+    /*! \brief The number of channels for sub-kernel 2 */
+    uint32_t num_channels_sk2_;
     /*! \brief The length of output buffer of the kernel */
     uint32_t out_buf_len_;
     /*! \brief The number of row partitions */
@@ -92,6 +99,7 @@ private:
     void _check_data_type();
 
 public:
+
     SpMVModule(uint32_t num_channels,
                uint32_t out_buf_len,
                uint32_t vec_buf_len) : BaseModule("overlay") {
@@ -99,54 +107,47 @@ public:
         this->num_channels_ = num_channels;
         this->out_buf_len_ = out_buf_len;
         this->vec_buf_len_ = vec_buf_len;
+        // TODO: parameterize channel allocation
+        // ! will not work if num_channels != 16
+        this->num_channels_sk0_ = 4;
+        this->num_channels_sk1_ = 6;
+        this->num_channels_sk2_ = 6;
     }
 
     /*Overlay argument list:
-    * (H = num_hbm_channels)
+    * (H = num_hbm_channels for this spmv sub-kernel)
     * Index       Argument                     used in this module?
     * 0 ~ H-1     matrix for spmv              y
-    * H+0         vector for spmv              y
-    * H+1         mask for spmv (read port)    y
-    * H+2         mask for spmv (write port)   y
-    * H+3         output for spmv              y
-    *
-    * H+4 ~ +6    matrix for spmspv            n
-    * H+7         vector for spmspv            n
-    * H+8         mask for spmspv              n
-    * H+9         output for spmspv            n
-    *
-    * H+10        # of rows                    y
-    * H+11        # of columns                 y
-    *
-    * H+12        operation type               y
-    * H+13        mask type                    y
-    *
-    * H+14        overlay mode select          y
-    *
-    * H+15        apply vector length          n
-    * H+16        input value for assign       n
+    * H+2         row partition id
+    * H+3         partition length
+    * H+4         number of column partitions
+    * H+5         number of total partitions
+    * H+6         semiring
+    * H+7         zero value of this semiring
     */
     void set_unused_args() override {
+        // ** no unused args in split-kernel case
         // Set unused arguments for SpMSpV
-        for (uint32_t i = this->num_channels_ + 4; i < this->num_channels_ + 10; i++) {
-            this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
-        }
-        // Set unused scalar arguments
-        this->kernel_.setArg(this->num_channels_ + 15, (unsigned)NULL);
-        // To avoid runtime error of invalid scalar argument size
-        if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
-            this->kernel_.setArg(this->num_channels_ + 16, (long long)NULL);
-        } else {
-            this->kernel_.setArg(this->num_channels_ + 16, (unsigned)NULL);
-        }
-        if (this->mask_type_ == graphlily::kNoMask) {
-            this->kernel_.setArg(this->num_channels_ + 1, cl::Buffer(this->context_, 0, 4));
-            this->kernel_.setArg(this->num_channels_ + 2, cl::Buffer(this->context_, 0, 4));
-        }
+        // for (uint32_t i = this->num_channels_ + 4; i < this->num_channels_ + 10; i++) {
+        //     this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        // }
+        // // Set unused scalar arguments
+        // this->kernel_.setArg(this->num_channels_ + 15, (unsigned)NULL);
+        // // To avoid runtime error of invalid scalar argument size
+        // if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
+        //     this->kernel_.setArg(this->num_channels_ + 16, (long long)NULL);
+        // } else {
+        //     this->kernel_.setArg(this->num_channels_ + 16, (unsigned)NULL);
+        // }
+        // if (this->mask_type_ == graphlily::kNoMask) {
+        //     this->kernel_.setArg(this->num_channels_ + 1, cl::Buffer(this->context_, 0, 4));
+        //     this->kernel_.setArg(this->num_channels_ + 2, cl::Buffer(this->context_, 0, 4));
+        // }
     }
 
     void set_mode() override {
-        this->kernel_.setArg(this->num_channels_ + 14, 1);  // 1 is SpMV
+        // ** no mode needs to be set in split-kernel case
+        // this->kernel_.setArg(this->num_channels_ + 14, 1);  // 1 is SpMV
     }
 
     /*!
@@ -295,6 +296,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
         this->vec_buf_len_,
         this->num_channels_,
         skip_empty_rows);
+    // TODO: remove row-interleaving since HiSparse(FX) doesn't support it
     // Data types to support virtual pack size
     using virtual_packed_idx_t = typename CPSRMatrix<val_t, virtual_pack_size>::packed_idx_t;
     using virtual_packed_val_t = typename CPSRMatrix<val_t, virtual_pack_size>::packed_val_t;
@@ -373,13 +375,18 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     cl_int err;
+    std::cout << "Start to allocate memory on "
+              << this->num_channels_ << " channels" << std::endl;
     // Handle channel_packets
-    cl_mem_ext_ptr_t channel_packets_ext[this->num_channels_];
+    // cl_mem_ext_ptr_t channel_packets_ext[this->num_channels_];
+    std::vector<cl_mem_ext_ptr_t> channel_packets_ext;
+    channel_packets_ext.resize(this->num_channels_);
     this->channel_packets_buf.resize(this->num_channels_);
-    for (size_t c = 0; c < this->num_channels_; c++) {
+    for (unsigned c = 0; c < this->num_channels_; c++) {
         channel_packets_ext[c].obj = this->channel_packets_[c].data();
         channel_packets_ext[c].param = 0;
         channel_packets_ext[c].flags = graphlily::HBM[c];
+        // channel_packets_ext[c].flags = 0x80000000 + c;
         size_t channel_packets_size = sizeof(mat_pkt_t) * this->channel_packets_[c].size();
         // std::cout << "channel_packets_size: " << channel_packets_size << std::endl;
         if (channel_packets_size >= 256 * 1000 * 1000) {
@@ -387,11 +394,22 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
             exit(EXIT_FAILURE);
         }
         OCL_CHECK(err, this->channel_packets_buf[c] = cl::Buffer(this->context_,
-            CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+            CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
             channel_packets_size,
             &channel_packets_ext[c],
             &err));
     }
+
+    // for debug
+    for (unsigned c = 0; c < this->num_channels_; c++) {
+        void* buf_host_ptr;
+        this->channel_packets_buf[c].getInfo(CL_MEM_HOST_PTR, &buf_host_ptr);
+        printf("channel_packets_buf[%2d]: host pointer %p; channel_packets_ext[%2d]: obj %p, flags 0x%0x",
+               c, buf_host_ptr,
+               c, (void*)channel_packets_ext[c].obj, channel_packets_ext[c].flags);
+        std::cout << std::endl;
+    }
+
     // Handle results
     cl_mem_ext_ptr_t results_ext;
     results_ext.obj = this->results_.data();
@@ -403,14 +421,60 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
         &results_ext,
         &err));
     // Set arguments
-    for (size_t c = 0; c < this->num_channels_; c++) {
-        OCL_CHECK(err, err = this->kernel_.setArg(c, this->channel_packets_buf[c]));
+    unsigned ch_offset = 0;
+    for (size_t c = 0; c < this->num_channels_sk0_; c++) {
+        std::cout << "Setting SK0 argument " << c << " to HBM " << c + ch_offset << std::endl;
+        OCL_CHECK(err, err = this->spmv_sk0_.setArg(c, this->channel_packets_buf[c + ch_offset]));
     }
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 3, this->results_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 10, this->csr_matrix_.num_rows));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 11, this->csr_matrix_.num_cols));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 12, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 13, (char)this->mask_type_));
+    ch_offset += this->num_channels_sk0_;
+    for (size_t c = 0; c < this->num_channels_sk1_; c++) {
+        std::cout << "Setting SK1 argument " << c << " to HBM " << c + ch_offset << std::endl;
+        OCL_CHECK(err, err = this->spmv_sk1_.setArg(c, this->channel_packets_buf[c + ch_offset]));
+    }
+    ch_offset += this->num_channels_sk1_;
+    for (size_t c = 0; c < this->num_channels_sk2_; c++) {
+        std::cout << "Setting SK2 argument " << c << " to HBM " << c + ch_offset << std::endl;
+        OCL_CHECK(err, err = this->spmv_sk2_.setArg(c, this->channel_packets_buf[c + ch_offset]));
+    }
+    unsigned num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
+    val_t val_zero;
+    switch (this->semiring_.op) {
+    case kMulAdd:
+        val_zero = 0;
+        break;
+    case kLogicalAndOr:
+        val_zero = 0;
+        break;
+    case kAddMin:
+        val_zero = UFIXED_INF;
+        break;
+    default:
+        val_zero = 0;
+        break;
+    }
+    OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 4, (unsigned)this->num_col_partitions_));
+    OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 5, (unsigned)num_partitions));
+    OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 6, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 7, val_zero));
+    OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 4, (unsigned)this->num_col_partitions_));
+    OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 5, (unsigned)num_partitions));
+    OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 6, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 7, val_zero));
+    OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 4, (unsigned)this->num_col_partitions_));
+    OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 5, (unsigned)num_partitions));
+    OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 6, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 7, val_zero));
+    OCL_CHECK(err, err = this->spmv_result_drain_.setArg(0, this->results_buf));
+
+    // for (size_t c = 0; c < this->num_channels_; c++) {
+    //     OCL_CHECK(err, err = this->kernel_.setArg(c, this->channel_packets_buf[c]));
+    // }
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 3, this->results_buf));
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 10, this->csr_matrix_.num_rows));
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 11, this->csr_matrix_.num_cols));
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 12, (char)this->semiring_.op));
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 13, (char)this->mask_type_));
+
     // Send data to device
     for (size_t c = 0; c < this->num_channels_; c++) {
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects(
@@ -433,7 +497,9 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
                 sizeof(val_t) * this->csr_matrix_.num_cols,
                 &vector_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 0, this->vector_buf));
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 0, this->vector_buf));
+    OCL_CHECK(err, err = this->spmv_vector_loader_.setArg(0, this->vector_buf));
+    OCL_CHECK(err, err = this->spmv_vector_loader_.setArg(1, (unsigned)this->vector_.size()));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
     this->command_queue_.finish();
 }
@@ -441,37 +507,70 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
-    this->mask_.assign(mask.begin(), mask.end());
-    cl_mem_ext_ptr_t mask_ext;
-    mask_ext.obj = this->mask_.data();
-    mask_ext.param = 0;
-    mask_ext.flags = graphlily::HBM[21];
-    cl_int err;
-    OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
-                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(val_t) * this->csr_matrix_.num_rows,
-                &mask_ext,
-                &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf));
-    OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf));
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
-    this->command_queue_.finish();
+    // TODO: support mask for split-kernel spmv
+    // this->mask_.assign(mask.begin(), mask.end());
+    // cl_mem_ext_ptr_t mask_ext;
+    // mask_ext.obj = this->mask_.data();
+    // mask_ext.param = 0;
+    // mask_ext.flags = graphlily::HBM[21];
+    // cl_int err;
+    // OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
+    //             CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+    //             sizeof(val_t) * this->csr_matrix_.num_rows,
+    //             &mask_ext,
+    //             &err));
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf));
+    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf));
+    // OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
+    // this->command_queue_.finish();
 }
 
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::bind_mask_buf(cl::Buffer src_buf) {
-    this->mask_buf = src_buf;
-    this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf);
-    this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf);
+    // TODO: support mask for split-kernel spmv
+    // this->mask_buf = src_buf;
+    // this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf);
+    // this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf);
 }
 
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::run() {
     cl_int err;
-    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
-    this->command_queue_.finish();
+    // OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
+    // this->command_queue_.finish();
+
+    size_t rows_per_ch_in_last_row_part;
+    if (this->csr_matrix_.num_rows % this->out_buf_len_ == 0) {
+        rows_per_ch_in_last_row_part = this->out_buf_len_ / this->num_channels_;
+    } else {
+        rows_per_ch_in_last_row_part = this->csr_matrix_.num_rows % this->out_buf_len_ / this->num_channels_;
+    }
+    for (size_t row_part_id = 0; row_part_id < this->num_row_partitions_; row_part_id++) {
+        unsigned part_len = this->out_buf_len_ / this->num_channels_;
+        if (row_part_id == this->num_row_partitions_ - 1) {
+            part_len = rows_per_ch_in_last_row_part;
+        }
+        // std::cout << "INFO : SpMV Kernel Started: row partition " << row_part_id
+                //   << " with " << part_len << " rows per cluster" << std::endl;
+        OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 2, (unsigned)row_part_id));
+        OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 3, (unsigned)part_len));
+        OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 2, (unsigned)row_part_id));
+        OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 3, (unsigned)part_len));
+        OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 2, (unsigned)row_part_id));
+        OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 3, (unsigned)part_len));
+        OCL_CHECK(err, err = this->spmv_result_drain_.setArg(1, (unsigned)row_part_id));
+
+        OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_vector_loader_));
+        OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_sk0_));
+        OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_sk1_));
+        OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_sk2_));
+        OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_result_drain_));
+        this->command_queue_.finish();
+        // std::cout << "INFO : SpMV Kernel Finished: row partition " << row_part_id << std::endl;
+    }
+    // std::cout << "INFO : SpMV kernel complete!" << std::endl;
 }
 
 

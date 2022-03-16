@@ -10,15 +10,24 @@ namespace module {
 class BaseModule {
 protected:
     /*! \brief The kernel name */
-    std::string kernel_name_;
+    std::string kernel_name_; // ! meaningless for split-kernel overlay
     /*! \brief The target; can be sw_emu, hw_emu, hw */
     std::string target_;
 
     // OpenCL runtime
     cl::Device device_;
     cl::Context context_;
-    cl::Kernel kernel_;
+    cl::Kernel kernel_; // ! meaningless for split-kernel overlay
     cl::CommandQueue command_queue_;
+
+    // TODO: simple workaround for split-kernel
+    // TODO: need to find a way to organize it
+    cl::Kernel spmspv_apply_;
+    cl::Kernel spmv_result_drain_;
+    cl::Kernel spmv_sk0_;
+    cl::Kernel spmv_sk1_;
+    cl::Kernel spmv_sk2_;
+    cl::Kernel spmv_vector_loader_;
 
 public:
     BaseModule(std::string kernel_name) {
@@ -100,7 +109,49 @@ public:
      * \param xclbin_file_path The xclbin file path.
      */
     void set_up_runtime(std::string xclbin_file_path);
+
+    /*!
+     * \brief Load the xclbin file and set up runtime
+     *        for the design using split-kernel spmv.
+     * \param xclbin_file_path The xclbin file path.
+     */
+    void set_up_split_kernel_runtime(std::string xclbin_file_path);
 };
+
+void BaseModule::set_up_split_kernel_runtime(std::string xclbin_file_path) {
+    cl_int err;
+    // Set this->device_ and this->context_
+    if (this->target_ == "sw_emu" || this->target_ == "hw_emu") {
+        setenv("XCL_EMULATION_MODE", this->target_.c_str(), true);
+    }
+    this->device_ = graphlily::find_device();
+    this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
+    // load bitstream
+    auto file_buf = xcl::read_binary_file(xclbin_file_path);
+    cl::Program::Binaries binaries{{file_buf.data(), file_buf.size()}};
+    cl::Program program(this->context_, {this->device_}, binaries, NULL, &err);
+    if (err != CL_SUCCESS) {
+        std::cout << "Failed to program device with xclbin file\n";
+    } else {
+        std::cout << "Successfully programmed device with xclbin file\n";
+    }
+    // enumerate kernels
+    OCL_CHECK(err, this->spmspv_apply_ = cl::Kernel(program, "spmspv_apply", &err));
+    OCL_CHECK(err, this->spmv_sk0_ = cl::Kernel(program, "spmv_sk0", &err));
+    OCL_CHECK(err, this->spmv_sk1_ = cl::Kernel(program, "spmv_sk1", &err));
+    OCL_CHECK(err, this->spmv_sk2_ = cl::Kernel(program, "spmv_sk2", &err));
+    OCL_CHECK(err, this->spmv_vector_loader_ = cl::Kernel(program, "spmv_vector_loader", &err));
+    OCL_CHECK(err, this->spmv_result_drain_ = cl::Kernel(program, "spmv_result_drain", &err));
+    // Set this->command_queue_
+    OCL_CHECK(err, this->command_queue_ = cl::CommandQueue(this->context_,
+                                                           this->device_,
+                                                           CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE | CL_QUEUE_PROFILING_ENABLE,
+                                                           &err));
+    // Set unused arguments
+    this->set_unused_args();
+    // Set the mode
+    this->set_mode();
+}
 
 
 void BaseModule::set_up_runtime(std::string xclbin_file_path) {
