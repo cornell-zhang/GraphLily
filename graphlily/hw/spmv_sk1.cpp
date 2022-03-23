@@ -20,8 +20,8 @@ void spmv_sk1(
     const unsigned rows_per_c_in_partition,   // in
     const unsigned num_col_partitions,        // in
     const unsigned num_partitions,            // in
-    OP_T semiring,                            // in
-    VAL_T zero                                // in
+    OP_T semiring                            // in
+    // VAL_T zero                                // in
 ) {
     #pragma HLS interface m_axi port=matrix_hbm_4 offset=slave bundle=spmv_mat4
     #pragma HLS interface m_axi port=matrix_hbm_5 offset=slave bundle=spmv_mat5
@@ -41,7 +41,7 @@ void spmv_sk1(
     #pragma HLS interface s_axilite port=num_col_partitions bundle=control
     #pragma HLS interface s_axilite port=num_partitions bundle=control
     #pragma HLS interface s_axilite port=semiring bundle=control
-    #pragma HLS interface s_axilite port=zero bundle=control
+    // #pragma HLS interface s_axilite port=zero bundle=control
     #pragma HLS interface s_axilite port=return bundle=control
 
     #pragma HLS interface axis register both port=vec_in
@@ -57,6 +57,22 @@ void spmv_sk1(
     #pragma HLS bind_storage variable=res     type=FIFO impl=SRL
 
     axis_duplicate<6>(vec_in, vec_dup);
+
+    VAL_T zero;
+    switch (semiring) {
+    case MULADD:
+        zero = MulAddZero;
+        break;
+    case ANDOR:
+        zero = AndOrZero;
+        break;
+    case ADDMIN:
+        zero = AddMinZero;
+        break;
+    default:
+        zero = 0;
+        break;
+    }
 
     spmv_cluster<4>(
         matrix_hbm_4,

@@ -152,6 +152,15 @@ std::ostream& operator<<(std::ostream& os, const VEC_AXIS_T &p) {
     os << "user: "  << inst2str(p.user) << '}';
     return os;
 }
+
+std::ostream& operator<<(std::ostream& os, const VEC_AXIS_INTERNAL_T &p) {
+    os << '{' << "pktidx: " << VEC_AXIS_PKT_IDX(p) << '|';
+    for (unsigned i = 0; i < PACK_SIZE; i++) {
+        os << "val: " << float(VEC_AXIS_VAL(p, i)) / (1 << 24) << '|';
+    }
+    os << "user: "  << inst2str(p.user) << '}';
+    return os;
+}
 } // namespace anonymous
 #endif
 

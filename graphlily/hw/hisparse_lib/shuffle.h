@@ -33,7 +33,7 @@ static void arbiter_1p(
     #pragma HLS pipeline II=1 enable_flush
     #pragma HLS latency min=ARBITER_LATENCY max=ARBITER_LATENCY
 
-    #pragma HLS array_partition variable=in_addr complete
+    #pragma HLS array_partition variable=in_resend complete
     #pragma HLS array_partition variable=xbar_sel complete
 
     // prioritized valid and addr
@@ -111,7 +111,7 @@ static void arbiter_1p(
     #pragma HLS pipeline II=1 enable_flush
     #pragma HLS latency min=ARBITER_LATENCY max=ARBITER_LATENCY
 
-    #pragma HLS array_partition variable=in_addr complete
+    #pragma HLS array_partition variable=in_resend complete
     #pragma HLS array_partition variable=xbar_sel complete
 
     // prioritized valid and addr

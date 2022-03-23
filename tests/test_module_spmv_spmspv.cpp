@@ -18,6 +18,9 @@
 
 
 std::string target = "sw_emu";
+// std::string dataset_folder = "/work/shared/common/project_build/graphblas/"
+//                              "data/sparse_matrix_graph";
+std::string dataset_folder= "/path/to/data";
 uint32_t spmv_out_buf_len = 1024;
 uint32_t spmspv_out_buf_len = 512;
 uint32_t vec_buf_len = 256;
@@ -143,8 +146,7 @@ TEST(SpMV, MultipleCases) {
     // module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
     module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
-    std::string csr_float_npz_path = "/work/shared/common/project_build/graphblas/"
-                                     "data/sparse_matrix_graph/dense_32_csr_float32.npz";
+    std::string csr_float_npz_path = dataset_folder + "/dense_32_csr_float32.npz";
     CSRMatrix<float> dense_32_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         dense_32_matrix,
@@ -166,8 +168,7 @@ TEST(SpMV, MultipleCases) {
     // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
     // _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
 
-    csr_float_npz_path = "/work/shared/common/project_build/graphblas/"
-                         "data/sparse_matrix_graph/uniform_10K_10_csr_float32.npz";
+    /*csr_float_npz_path = dataset_folder + "/uniform_10K_10_csr_float32.npz";
     CSRMatrix<float> uniform_10K_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         uniform_10K_matrix,
@@ -176,7 +177,17 @@ TEST(SpMV, MultipleCases) {
     for (auto &x : uniform_10K_matrix.adj_data) x = 1.0 / uniform_10K_matrix.num_rows;
     // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, uniform_10K_matrix, true);
     // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, uniform_10K_matrix, true);
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, uniform_10K_matrix, true);
+    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, uniform_10K_matrix, true);*/
+
+    // google plus (108K x 108K, 13M Nnz)
+    csr_float_npz_path = dataset_folder + "/gplus_108K_13M_csr_float32.npz";
+    CSRMatrix<float> csr_matrix_gpuls = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
+    for (auto &x : csr_matrix_gpuls.adj_data) x = 1.0 / csr_matrix_gpuls.num_rows;
+    graphlily::io::util_round_csr_matrix_dim(
+        csr_matrix_gpuls,
+        graphlily::num_hbm_channels * graphlily::pack_size,
+        graphlily::pack_size);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, csr_matrix_gpuls, false);
 }
 
 

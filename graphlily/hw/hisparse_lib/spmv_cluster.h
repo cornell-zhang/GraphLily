@@ -19,7 +19,7 @@
 template<typename T, unsigned len>
 static T array_max(T array[len]) {
     #pragma HLS inline
-    #pragma HLS expression_balance
+    // #pragma HLS expression_balance
     T result = 0;
     for (unsigned i = 0; i < len; i++) {
         #pragma HLS unroll
@@ -203,6 +203,10 @@ static void spmv_cluster(
     VAL_T zero                              // in
 ) {
 
+#ifdef SPMV_CLUSTER_H_LINE_TRACING
+    std::cout << "INFO : [SpMV cluster] Enter SpMV cluster" << std::endl;
+#endif
+
     hls::stream<EDGE_PLD_T> ML2SF[PACK_SIZE];
     hls::stream<EDGE_PLD_T> SF2VAU[PACK_SIZE];
     hls::stream<UPDATE_PLD_T> VAU2SF[PACK_SIZE];
@@ -212,14 +216,14 @@ static void spmv_cluster(
     #pragma HLS stream variable=ML2SF   depth=FIFO_DEPTH
     #pragma HLS stream variable=SF2VAU  depth=FIFO_DEPTH
     #pragma HLS stream variable=VAU2SF  depth=FIFO_DEPTH
-    #pragma HLS stream variable=FS2PE   depth=FIFO_DEPTH
+    #pragma HLS stream variable=SF2PE   depth=FIFO_DEPTH
     #pragma HLS stream variable=PE2PK   depth=FIFO_DEPTH
     #pragma HLS stream variable=UPK2VAU depth=FIFO_DEPTH
 
     #pragma HLS bind_storage variable=ML2SF   type=FIFO impl=SRL
     #pragma HLS bind_storage variable=SF2VAU  type=FIFO impl=SRL
     #pragma HLS bind_storage variable=VAU2SF  type=FIFO impl=SRL
-    #pragma HLS bind_storage variable=FS2PE   type=FIFO impl=SRL
+    #pragma HLS bind_storage variable=SF2PE   type=FIFO impl=SRL
     #pragma HLS bind_storage variable=PE2PK   type=FIFO impl=SRL
     #pragma HLS bind_storage variable=UPK2VAU type=FIFO impl=SRL
 

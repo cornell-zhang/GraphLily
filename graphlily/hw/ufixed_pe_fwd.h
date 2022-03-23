@@ -293,11 +293,11 @@ void ufixed_pe_cluster_spmv_uram_part2(
     #pragma HLS array_partition variable=valid_A complete
     // A stage in-flight regs
     unsigned in_flight_A1_addr[num_PE];
-    #pragma HLS array_partition variable=in_flight_W1_addr complete
+    #pragma HLS array_partition variable=in_flight_A1_addr complete
     ValT in_flight_A1_data[num_PE];
-    #pragma HLS array_partition variable=in_flight_W1_data complete
+    #pragma HLS array_partition variable=in_flight_A1_data complete
     bool in_flight_A1_valid[num_PE];
-    #pragma HLS array_partition variable=in_flight_W1_valid complete
+    #pragma HLS array_partition variable=in_flight_A1_valid complete
     for (unsigned i = 0; i < num_PE; i++) {
         #pragma HLS unroll
         q_A[i] = 0;
