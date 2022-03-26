@@ -1,7 +1,7 @@
 #include <hls_stream.h>
 #include <ap_int.h>
 
-#include "hisparse_lib/hisparse.h"
+#include "libfpga/hisparse.h"
 
 #ifndef __SYNTHESIS__
 // #define SPMV_RESULT_DRAIN_LINE_TRACING

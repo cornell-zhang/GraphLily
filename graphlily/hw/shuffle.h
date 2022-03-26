@@ -6,7 +6,7 @@
 
 #include "hls_stream.h"
 
-#include "./util.h"
+#include "libfpga/util.h"
 
 
 #ifndef __SYNTHESIS__

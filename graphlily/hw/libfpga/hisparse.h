@@ -4,38 +4,42 @@
 #include <ap_fixed.h>
 #include <ap_int.h>
 #include <ap_axi_sdata.h>
-#include "../overlay.h"
+#include "ap_fixed.h"
+#include "./math_constants.h"
 
 #ifndef __SYNTHESIS__
 #include <iostream>
 #include <iomanip>
 #endif
 
+#define IDX_MARKER 0xffffffff
 
 //-------------------------------------------------------------------------
 // overlay configurations
 //-------------------------------------------------------------------------
-/* use configurations from overlay.h
 const unsigned PACK_SIZE = 8;
-*/
+const unsigned NUM_PORT_PER_BANK = 1;
+const unsigned NUM_BANK_PER_HBM_CHANNEL = PACK_SIZE / NUM_PORT_PER_BANK;
+const unsigned BANK_ID_NBITS = 3;
+const unsigned BANK_ID_MASK = 7;
 
 //-------------------------------------------------------------------------
 // basic data types
 //-------------------------------------------------------------------------
-/* use configurations from overlay.h
 const unsigned IBITS = 8;
 const unsigned FBITS = 32 - IBITS;
 typedef unsigned IDX_T;
 typedef ap_ufixed<32, IBITS, AP_RND, AP_SAT> VAL_T;
-*/
+
 #define VAL_T_BITCAST(v) (v(31,0))
 
 //-------------------------------------------------------------------------
 // kernel-memory interface packet types
 //-------------------------------------------------------------------------
-/* use configurations from overlay.h
 typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
+// typedef unsigned VAL_T;
 typedef struct {VAL_T data[PACK_SIZE];} PACKED_VAL_T;
+// typedef float VAL_T;
 
 typedef struct {
    PACKED_IDX_T indices;
@@ -45,7 +49,6 @@ typedef struct {
 typedef SPMV_MAT_PKT_T SPMSPV_MAT_PKT_T;
 
 typedef struct {IDX_T index; VAL_T val;} IDX_VAL_T;
-*/
 
 //-------------------------------------------------------------------------
 // intra-kernel dataflow payload types
@@ -167,13 +170,14 @@ std::ostream& operator<<(std::ostream& os, const VEC_AXIS_INTERNAL_T &p) {
 //-------------------------------------------------------------------------
 // Kernel configurations
 //-------------------------------------------------------------------------
-/* use configurations in overlay.h
+
+#include "./config.h"
+/* use configurations in config.h
 const unsigned SPMV_OUT_BUF_LEN =;
 const unsigned SPMSPV_OUT_BUF_LEN =;
 const unsigned VEC_BUF_LEN =;
 #define NUM_HBM_CHANNEL
 #define SPMV_NUM_PE_TOTAL
-const unsigned FIFO_DEPTH = 64;
 */
 
 // const unsigned OB_BANK_SIZE = 1024 * 8;
@@ -193,5 +197,34 @@ const unsigned SK0_CLUSTER = 4;
 const unsigned SK1_CLUSTER = 6;
 const unsigned SK2_CLUSTER = 6;
 
+
+const unsigned FIFO_DEPTH = 64;
+const unsigned BATCH_SIZE = 128;
+
+//-------------------------------------------------------------------------
+// Semiring and mask types
+//-------------------------------------------------------------------------
+
+// semiring
+typedef char OP_T;
+#define MULADD 0
+#define ANDOR  1
+#define ADDMIN 2
+
+const VAL_T MulAddZero = 0;
+const VAL_T AndOrZero  = 0;
+// const VAL_T AddMinZero = UINT_INF;
+const VAL_T AddMinZero = UFIXED_INF;
+// const VAL_T AddMinZero = FLOAT_INF;
+
+const VAL_T MulAddOne = 1;
+const VAL_T AndOrOne  = 1;
+const VAL_T AddMinOne = 0;
+
+// mask type
+typedef char MASK_T;
+#define NOMASK      0
+#define WRITETOZERO 1
+#define WRITETOONE  2
 
 #endif  // HISPARSE_H_

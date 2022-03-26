@@ -5,8 +5,8 @@
 #include <iostream>
 #include <iomanip>
 
-#include "./math_constants.h"
-#include "./util.h"
+#include "libfpga/math_constants.h"
+#include "libfpga/util.h"
 
 #ifndef __SYNTHESIS__
 bool line_tracing_ufixed_pe_cluster = true;

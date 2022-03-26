@@ -1,4 +1,4 @@
-#include "./overlay.h"
+#include "libfpga/hisparse.h"
 
 
 void kernel_assign_vector_sparse_new_frontier(

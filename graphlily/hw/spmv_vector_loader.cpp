@@ -2,7 +2,7 @@
 #include <ap_int.h>
 #include <assert.h>
 
-#include "hisparse_lib/hisparse.h"
+#include "libfpga/hisparse.h"
 
 void load_duplicate(
     const PACKED_VAL_T *packed_dense_vector,              // in

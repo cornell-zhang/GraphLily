@@ -1,9 +1,9 @@
 #include <hls_stream.h>
 #include <ap_fixed.h>
 
-#include "hisparse_lib/hisparse.h"
-#include "hisparse_lib/stream_utils.h"
-#include "hisparse_lib/spmv_cluster.h"
+#include "libfpga/hisparse.h"
+#include "libfpga/stream_utils.h"
+#include "libfpga/spmv_cluster.h"
 
 extern "C" {
 void spmv_sk2(

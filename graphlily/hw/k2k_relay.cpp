@@ -1,7 +1,7 @@
 #include <hls_stream.h>
 #include <ap_int.h>
 
-#include "hisparse_lib/hisparse.h"
+#include "libfpga/hisparse.h"
 
 extern "C" {
 void k2k_relay(

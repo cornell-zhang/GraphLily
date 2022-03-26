@@ -143,7 +143,7 @@ std::string add_kernel_to_makefile(std::string kernel_name) {
     makefile_body += "\n";
     makefile_body += ("$(TEMP_DIR)/" + kernel_name + ".xo: " + kernel_name + ".cpp" + "\n");
     makefile_body += ("\tmkdir -p $(TEMP_DIR)\n");
-    makefile_body += ("\t$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k " + kernel_name + " -I'$(<D)' -I'$(<D)/hisparse_lib' -o'$@' '$<'\n");
+    makefile_body += ("\t$(VPP) $(CLFLAGS) --temp_dir $(TEMP_DIR) -c -k " + kernel_name + " -I'$(<D)' -I'$(<D)/libfpga' -o'$@' '$<'\n");
     makefile_body += "\n";
     return makefile_body;
 }

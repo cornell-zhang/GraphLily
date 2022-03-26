@@ -82,7 +82,7 @@ void SplitKernelSynthesizer::link_kernel_code() {
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp -r " + graphlily::root_path + "/graphlily/hw/hisparse_lib"
+    command = "cp -r " + graphlily::root_path + "/graphlily/hw/libfpga"
                     + " " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
@@ -94,7 +94,7 @@ void SplitKernelSynthesizer::generate_kernel_header() {
     std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".h", std::ios_base::app);
+    std::ofstream header(graphlily::proj_folder_name + "/libfpga/config.h", std::ios_base::app);
     header << "const unsigned SPMV_OUT_BUF_LEN = " << this->spmv_out_buf_len_ << ";" << std::endl;
     header << "const unsigned SPMSPV_OUT_BUF_LEN = " << this->spmspv_out_buf_len_ << ";" << std::endl;
     header << "const unsigned VEC_BUF_LEN = " << this->vec_buf_len_ << ";" << std::endl;
@@ -102,7 +102,7 @@ void SplitKernelSynthesizer::generate_kernel_header() {
     header << "#define SPMV_NUM_PE_TOTAL " << this->num_channels_ * graphlily::pack_size << std::endl;
     header << std::endl;
     // header << "}  // namespace anonymous" << std::endl;
-    header << "#endif  // GRAPHLILY_HW_OVERLAY_H_" << std::endl;
+    header << "#endif  // GRAPHLILY_HW_CONFIG_H_" << std::endl;
     header.close();
 }
 
