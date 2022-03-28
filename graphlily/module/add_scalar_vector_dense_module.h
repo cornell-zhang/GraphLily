@@ -187,8 +187,17 @@ void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     // OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, val));
     // }
 
-    OCL_CHECK(err, this->val_buf = cl::Buffer(this->context_, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY,
-                                                sizeof(vector_data_t), &val, &err));
+    cl_mem_ext_ptr_t val_ext;
+    val_ext.obj = &val;
+    val_ext.param = 0;
+    val_ext.flags = graphlily::DDR[0];
+    OCL_CHECK(err, this->val_buf = cl::Buffer(this->context_,
+                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY,
+                sizeof(vector_data_t),
+                &val_ext,
+                &err));
+    // OCL_CHECK(err, this->val_buf = cl::Buffer(this->context_, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY,
+    //                                             sizeof(vector_data_t), &val, &err));
     OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, this->val_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->val_buf}, 0));
 

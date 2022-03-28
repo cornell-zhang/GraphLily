@@ -113,10 +113,12 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     system(command.c_str());
     std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
     ini << "[connectivity]" << std::endl;
+
     // SpMV nk tags
     ini << "nk=spmv_vector_loader:1:VL" << std::endl;
     ini << "nk=spmv_result_drain:1:RD" << std::endl;
     ini << "nk=k2k_relay:2:relay_SK2_vin.relay_SK2_rout" << std::endl;
+
     // SpMV slr tags
     ini << "slr=spmv_sk0_1:SLR0" << std::endl;
     ini << "slr=spmv_sk1_1:SLR1" << std::endl;
@@ -125,6 +127,7 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "slr=RD:SLR0" << std::endl;
     ini << "slr=relay_SK2_vin:SLR1" << std::endl;
     ini << "slr=relay_SK2_rout:SLR1" << std::endl;
+
     // SpMV sp tags
     // TODO: parameterize cluster allocation
     const unsigned SLR_0_CLUSTERS = 4;
@@ -143,9 +146,6 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
             << hbm_idx << "]" << std::endl;
     }
     ini << "sp=VL.packed_dense_vector:HBM[20]" << std::endl;
-    // TODO: support mask for spmv
-    ini << "sp=spmspv_apply_1.spmv_mask:HBM[21]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmv_mask_w:HBM[21]" << std::endl;
     ini << "sp=RD.packed_dense_result:HBM[22]" << std::endl;
 
     // SpMV sc tags
@@ -159,13 +159,24 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "sc=spmv_sk2_1.res_out:relay_SK2_rout.in:32" << std::endl;
     ini << "sc=relay_SK2_rout.out:RD.from_SLR2:32" << std::endl;
 
+    // SpMSpV slr tags
+    ini << "slr=spmspv_apply_1:SLR0" << std::endl;
+
     // SpMSpV
+    // TODO: support mask for spmv
+    ini << "sp=spmspv_apply_1.spmv_vector:HBM[20]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmv_mask:HBM[21]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmv_mask_w:HBM[21]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmv_out:HBM[22]" << std::endl;
+
     ini << "sp=spmspv_apply_1.spmspv_matrix:DDR[0]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_matrix_indptr:DDR[0]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_matrix_partptr:DDR[0]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_out:HBM[22]" << std::endl;
+    ini << "sp=spmspv_apply_1.val_ptr:DDR[0]" << std::endl;
+
     // enable retiming
     /* retiming will be automatically enabled
        if we build with "--optimize 3"
