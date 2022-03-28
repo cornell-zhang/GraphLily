@@ -30,6 +30,7 @@ public:
     // Device buffers
     cl::Buffer in_buf;
     cl::Buffer out_buf;
+    cl::Buffer val_buf;
 
 public:
     eWiseAddModule() : BaseModule("overlay") {}
@@ -61,24 +62,21 @@ public:
     */
     void set_unused_args() override {
         // Set unused arguments for SpMV
-        for (uint32_t i = 0; i < graphlily::num_hbm_channels; i++) {
-            this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
-        }
-        this->kernel_.setArg(graphlily::num_hbm_channels + 1, cl::Buffer(this->context_, 0, 4));
-        this->kernel_.setArg(graphlily::num_hbm_channels + 2, cl::Buffer(this->context_, 0, 4));
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 1, cl::Buffer(this->context_, 0, 4));
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 2, cl::Buffer(this->context_, 0, 4));
         // Set unused arguments for SpMSpV
-        for (uint32_t i = graphlily::num_hbm_channels + 4; i <= graphlily::num_hbm_channels + 9; i++) {
-            this->kernel_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        for (uint32_t i = SPMSPV_APPLY_OFFSET + 4; i <= SPMSPV_APPLY_OFFSET + 9; i++) {
+            this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         // Set unused scalar arguments
-        this->kernel_.setArg(graphlily::num_hbm_channels + 10, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 11, (unsigned)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 12, (char)NULL);
-        this->kernel_.setArg(graphlily::num_hbm_channels + 13, (char)NULL);
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 10, (unsigned)NULL);
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 11, (unsigned)NULL);
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 12, (char)NULL);
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 13, (char)NULL);
     }
 
     void set_mode() override {
-        this->kernel_.setArg(graphlily::num_hbm_channels + 14, 3);  // 3 is kernel_add_scalar_vector_dense
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 14, 3);  // 3 is kernel_add_scalar_vector_dense
     }
 
     /*!
@@ -96,7 +94,7 @@ public:
      */
     void bind_in_buf(cl::Buffer src_buf) {
         this->in_buf = src_buf;
-        this->kernel_.setArg(graphlily::num_hbm_channels + 3, this->in_buf);
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 3, this->in_buf);
     }
 
     /*!
@@ -104,7 +102,7 @@ public:
      */
     void bind_out_buf(cl::Buffer src_buf) {
         this->out_buf = src_buf;
-        this->kernel_.setArg(graphlily::num_hbm_channels + 0, this->out_buf);
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 0, this->out_buf);
     }
 
     /*!
@@ -151,7 +149,7 @@ void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_dense_vec_t &
                 sizeof(vector_data_t) * this->in_.size(),
                 &in_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 3, this->in_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 3, this->in_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->in_buf}, 0));
     this->command_queue_.finish();
 }
@@ -170,7 +168,7 @@ void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
                 sizeof(vector_data_t) * this->out_.size(),
                 &out_ext,
                 &err));
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 0, this->out_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 0, this->out_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->out_buf}, 0));
     this->command_queue_.finish();
 }
@@ -180,14 +178,21 @@ template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
     // TODO: is the overhead of setArg and enqueueTask large at run time?
-    OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 15, len));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 15, len));
+
     // To avoid runtime error of invalid scalar argument size
-    if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
-        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 16, 8, (void*)&val));
-    } else {
-        OCL_CHECK(err, err = this->kernel_.setArg(graphlily::num_hbm_channels + 16, val));
-    }
-    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->kernel_));
+    // if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
+    //     OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, sizeof(val), (void*)&val));
+    // } else {
+    // OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, val));
+    // }
+
+    OCL_CHECK(err, this->val_buf = cl::Buffer(this->context_, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY,
+                                                sizeof(vector_data_t), &val, &err));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, this->val_buf));
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->val_buf}, 0));
+
+    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmspv_apply_));
     this->command_queue_.finish();
 }
 

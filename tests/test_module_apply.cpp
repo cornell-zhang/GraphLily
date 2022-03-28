@@ -3,7 +3,7 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include "graphlily/synthesizer/overlay_synthesizer.h"
+#include "graphlily/synthesizer/split_kernel_synthesizer.h"
 
 #include "graphlily/module/assign_vector_dense_module.h"
 #include "graphlily/module/assign_vector_sparse_module.h"
@@ -42,7 +42,7 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 TEST(Synthesize, NULL) {
-    graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
+    graphlily::synthesizer::SplitKernelSynthesizer synthesizer(graphlily::num_hbm_channels,
                                                            spmv_out_buf_len,
                                                            spmspv_out_buf_len,
                                                            vec_buf_len);
@@ -54,7 +54,7 @@ TEST(Synthesize, NULL) {
 TEST(AddScalarVectorDense, Basic) {
     graphlily::module::eWiseAddModule<graphlily::val_t> module;
     module.set_target(target);
-    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     uint32_t length = 128;
     graphlily::val_t val = 1;
@@ -78,7 +78,7 @@ TEST(AddScalarVectorDense, Basic) {
 TEST(AssignVectorDense, Basic) {
     graphlily::module::AssignVectorDenseModule<graphlily::val_t> module;
     module.set_target(target);
-    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     uint32_t length = 128;
     graphlily::val_t val = 23;
@@ -108,7 +108,7 @@ TEST(AssignVectorSparseNoNewFrontier, Basic) {
     graphlily::module::AssignVectorSparseModule<graphlily::val_t,
         graphlily::idx_val_t> module(generate_new_frontier);
     module.set_target(target);
-    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     float mask_sparsity = 0.9;
     uint32_t inout_size = 8192;
@@ -148,7 +148,7 @@ TEST(AssignVectorSparseNewFrontier, Basic) {
     graphlily::module::AssignVectorSparseModule<graphlily::val_t,
         graphlily::idx_val_t> module(generate_new_frontier);
     module.set_target(target);
-    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     float mask_sparsity = 0.9;
     uint32_t inout_size = 128;
@@ -209,7 +209,7 @@ TEST(AssignVectorSparseNewFrontier, Basic) {
 TEST(CopyBufferBindBuffer, Basic) {
     graphlily::module::AssignVectorDenseModule<graphlily::val_t> module;
     module.set_target(target);
-    module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
 
     uint32_t length = 128;
     std::vector<float, aligned_allocator<float>> mask_float(length);

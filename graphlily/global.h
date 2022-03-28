@@ -183,4 +183,6 @@ unsigned log2(unsigned x) {
 
 }  // namespace graphlily
 
+#define SPMSPV_APPLY_OFFSET 0
+
 #endif  // GRAPHLILY_GLOBAL_H_

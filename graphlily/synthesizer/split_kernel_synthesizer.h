@@ -160,9 +160,9 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "sc=relay_SK2_rout.out:RD.from_SLR2:32" << std::endl;
 
     // SpMSpV
-    ini << "sp=spmspv_apply_1.spmspv_matrix:HBM[30]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_indptr:HBM[30]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_partptr:HBM[30]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix:DDR[0]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_indptr:DDR[0]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_partptr:DDR[0]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_out:HBM[22]" << std::endl;
