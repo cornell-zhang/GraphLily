@@ -181,6 +181,16 @@ unsigned log2(unsigned x) {
     }
 }
 
+// Pack the raw bits of the variable with arbitrary precision, e.g. ap_ufixed,
+// to unsigned int, mainly used to pass ap_[type] to OpenCL kernel as scalar.
+// The unpacker is defined as `LOAD_RAW_BITS_FROM_UINT` in hw/libfpga/hisparse.h
+template<typename val_t>
+inline unsigned pack_raw_bits_to_uint(val_t val) {
+    ap_uint<32> temp;
+    temp(31,0) = val(31,0);
+    return temp.to_uint();
+}
+
 }  // namespace graphlily
 
 #define SPMSPV_APPLY_OFFSET 0

@@ -31,7 +31,7 @@ void spmspv_apply(
     /*-------- arguments for apply kernels -------------*/
     // val must be the last argument, otherwise fixed point causes an XRT run-time error
     unsigned length,                        // NUM_HBM_CHANNEL + 15
-    VAL_T *val_ptr                               // NUM_HBM_CHANNEL + 16
+    unsigned val_ufixed                     // NUM_HBM_CHANNEL + 16
 ) {
 
 #pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem32
@@ -69,11 +69,10 @@ void spmspv_apply(
 
 /*-------- arguments for apply kernels -------------*/
 #pragma HLS INTERFACE s_axilite port=length bundle=control
+#pragma HLS INTERFACE s_axilite port=val_ufixed bundle=control
 
-#pragma HLS interface m_axi port=val_ptr offset=slave bundle=apply_val
-#pragma HLS INTERFACE s_axilite port=val_ptr bundle=control
-
-VAL_T val = *val_ptr;
+VAL_T val;
+LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
 
 #ifndef __SYNTHESIS__
     switch (mode) {

@@ -32,6 +32,7 @@ typedef unsigned IDX_T;
 typedef ap_ufixed<32, IBITS, AP_RND, AP_SAT> VAL_T;
 
 #define VAL_T_BITCAST(v) (v(31,0))
+#define LOAD_RAW_BITS_FROM_UINT(v_ap, v_u) ((v_ap)(31,0) = ap_uint<32>(v_u)(31,0))
 
 //-------------------------------------------------------------------------
 // kernel-memory interface packet types

@@ -121,13 +121,7 @@ public:
         }
         // Set unused scalar arguments
         this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 15, (unsigned)NULL);
-        // To avoid runtime error of invalid scalar argument size
-        // if (!(std::is_same<vector_data_t, unsigned>::value || std::is_same<vector_data_t, float>::value)) {
-        //     this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, (long long)NULL);
-        // } else {
-        //     this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, (unsigned)NULL);
-        // }
-        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, cl::Buffer(this->context_, 0, sizeof(vector_data_t)));
+        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, (unsigned)NULL);
         if (this->mask_type_ == graphlily::kNoMask) {
             this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 8, cl::Buffer(this->context_, 0, 4));
         }

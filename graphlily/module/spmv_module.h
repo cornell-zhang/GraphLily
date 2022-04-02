@@ -437,33 +437,34 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
         OCL_CHECK(err, err = this->spmv_sk2_.setArg(c, this->channel_packets_buf[c + ch_offset]));
     }
     unsigned num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
-    // val_t val_zero;
-    // switch (this->semiring_.op) {
-    // case kMulAdd:
-    //     val_zero = 0;
-    //     break;
-    // case kLogicalAndOr:
-    //     val_zero = 0;
-    //     break;
-    // case kAddMin:
-    //     val_zero = UFIXED_INF;
-    //     break;
-    // default:
-    //     val_zero = 0;
-    //     break;
-    // }
+    val_t val_zero;
+    switch (this->semiring_.op) {
+    case kMulAdd:
+        val_zero = 0;
+        break;
+    case kLogicalAndOr:
+        val_zero = 0;
+        break;
+    case kAddMin:
+        val_zero = UFIXED_INF;
+        break;
+    default:
+        val_zero = 0;
+        break;
+    }
+    unsigned zero = graphlily::pack_raw_bits_to_uint(val_zero);
     OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 4, (unsigned)this->num_col_partitions_));
     OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 5, (unsigned)num_partitions));
     OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 6, (char)this->semiring_.op));
-    // OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 7, val_zero));
+    OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 7, (unsigned)zero));
     OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 4, (unsigned)this->num_col_partitions_));
     OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 5, (unsigned)num_partitions));
     OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 6, (char)this->semiring_.op));
-    // OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 7, val_zero));
+    OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 7, (unsigned)zero));
     OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 4, (unsigned)this->num_col_partitions_));
     OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 5, (unsigned)num_partitions));
     OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 6, (char)this->semiring_.op));
-    // OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 7, val_zero));
+    OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 7, (unsigned)zero));
     OCL_CHECK(err, err = this->spmv_result_drain_.setArg(0, this->results_buf));
 
     // for (size_t c = 0; c < this->num_channels_; c++) {
