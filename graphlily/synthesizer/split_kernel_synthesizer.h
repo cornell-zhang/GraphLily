@@ -94,14 +94,15 @@ void SplitKernelSynthesizer::generate_kernel_header() {
     std::string command = "mkdir -p " + graphlily::proj_folder_name;
     std::cout << command << std::endl;
     system(command.c_str());
-    std::ofstream header(graphlily::proj_folder_name + "/libfpga/config.h", std::ios_base::app);
+    std::ofstream header(graphlily::proj_folder_name + "/libfpga/config.h", std::ios_base::out);
+    header << "#ifndef GRAPHLILY_HW_CONFIG_H_" << std::endl;
+    header << "#define GRAPHLILY_HW_CONFIG_H_" << std::endl;
     header << "const unsigned SPMV_OUT_BUF_LEN = " << this->spmv_out_buf_len_ << ";" << std::endl;
     header << "const unsigned SPMSPV_OUT_BUF_LEN = " << this->spmspv_out_buf_len_ << ";" << std::endl;
     header << "const unsigned VEC_BUF_LEN = " << this->vec_buf_len_ << ";" << std::endl;
     header << "#define NUM_HBM_CHANNEL " << this->num_channels_ << std::endl;
     header << "#define SPMV_NUM_PE_TOTAL " << this->num_channels_ * graphlily::pack_size << std::endl;
     header << std::endl;
-    // header << "}  // namespace anonymous" << std::endl;
     header << "#endif  // GRAPHLILY_HW_CONFIG_H_" << std::endl;
     header.close();
 }
@@ -175,7 +176,6 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "sp=spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_out:HBM[22]" << std::endl;
-    ini << "sp=spmspv_apply_1.val_ptr:DDR[0]" << std::endl;
 
     // enable retiming
     /* retiming will be automatically enabled

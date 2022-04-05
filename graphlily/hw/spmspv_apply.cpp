@@ -97,11 +97,11 @@ LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
     }
 #endif
 
-    VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
-    #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=1
-    #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=2
-    #pragma HLS resource variable=out_uram_spmspv core=RAM_2P latency=3
-    // #pragma HLS resource variable=out_uram_spmspv core=XPM_MEMORY uram latency=2
+    // VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
+    // #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=1
+    // #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=2
+    // #pragma HLS resource variable=out_uram_spmspv core=RAM_2P latency=3
+    // // #pragma HLS resource variable=out_uram_spmspv core=XPM_MEMORY uram latency=2
 
     /*
         If we do not specify the latency here, the tool will automatically decide the latency of the URAM,
@@ -121,8 +121,7 @@ LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
                 num_rows,
                 num_cols,
                 Op,
-                mask_type,
-                out_uram_spmspv
+                mask_type
             );
             break;
         case 3:
