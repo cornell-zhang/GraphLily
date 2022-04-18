@@ -156,28 +156,28 @@ TEST(SpMV, MultipleCases) {
 
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, dense_32_matrix, false);
     _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kNoMask, dense_32_matrix, false);
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, false);
-    // _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, false);
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, false);
-    // _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, false);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, false);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, false);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, false);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, false);
 
     _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, dense_32_matrix, true);
     _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kNoMask, dense_32_matrix, true);
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, true);
-    // _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, true);
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
-    // _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, true);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToZero, dense_32_matrix, true);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
+    _test_spmv_module(module, graphlily::LogicalSemiring, graphlily::kMaskWriteToOne, dense_32_matrix, true);
 
-    /*csr_float_npz_path = dataset_folder + "/uniform_10K_10_csr_float32.npz";
+    csr_float_npz_path = dataset_folder + "/uniform_10K_10_csr_float32.npz";
     CSRMatrix<float> uniform_10K_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         uniform_10K_matrix,
         graphlily::num_hbm_channels * graphlily::pack_size,
         graphlily::pack_size);
     for (auto &x : uniform_10K_matrix.adj_data) x = 1.0 / uniform_10K_matrix.num_rows;
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, uniform_10K_matrix, true);
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, uniform_10K_matrix, true);
-    // _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, uniform_10K_matrix, true);*/
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask, uniform_10K_matrix, true);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToZero, uniform_10K_matrix, true);
+    _test_spmv_module(module, graphlily::ArithmeticSemiring, graphlily::kMaskWriteToOne, uniform_10K_matrix, true);
 
     // google plus (108K x 108K, 13M Nnz)
     csr_float_npz_path = dataset_folder + "/gplus_108K_13M_csr_float32.npz";
@@ -267,9 +267,9 @@ TEST(SpMSpV, MultipleCases) {
     for (auto &x : csc_matrix_dense1K.adj_data) x = 1.0 / csc_matrix_dense1K.num_rows;
 
     // uniform (10K x 10K avg. degree 10)
-    // CSCMatrix<float> csc_matrix_uniform10K10 = graphlily::io::csr2csc(
-    //     graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "uniform_10K_10_csr_float32.npz"));
-    // for (auto &x : csc_matrix_uniform10K10.adj_data) x = 1.0 / csc_matrix_uniform10K10.num_rows;
+    CSCMatrix<float> csc_matrix_uniform10K10 = graphlily::io::csr2csc(
+        graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "uniform_10K_10_csr_float32.npz"));
+    for (auto &x : csc_matrix_uniform10K10.adj_data) x = 1.0 / csc_matrix_uniform10K10.num_rows;
 
     // google plus (108K x 108K, 13M Nnz)
     CSCMatrix<float> csc_matrix_gpuls = graphlily::io::csr2csc(
@@ -299,8 +299,8 @@ TEST(SpMSpV, MultipleCases) {
     _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
         "dense1K", csc_matrix_dense1K, 0.50);
 
-    // _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
-    //     "uniform10K10", csc_matrix_uniform10K10, 0.50);
+    _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
+        "uniform10K10", csc_matrix_uniform10K10, 0.50);
     _test_spmspv_module(module, graphlily::ArithmeticSemiring, graphlily::kNoMask,
         "google+", csc_matrix_gpuls, 0.99);
 
@@ -325,9 +325,9 @@ TEST(SpMSpV, MultipleCases) {
 }
 
 
-// TEST(Clean, NULL) {
-//     clean_proj_folder();
-// }
+TEST(Clean, NULL) {
+    clean_proj_folder();
+}
 
 
 int main(int argc, char ** argv) {

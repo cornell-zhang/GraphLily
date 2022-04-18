@@ -28,3 +28,4 @@ lib/
 data
 build*
 spmspv
+compile_flags.txt

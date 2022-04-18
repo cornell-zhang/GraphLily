@@ -139,10 +139,11 @@ public:
         // } else {
         //     this->kernel_.setArg(this->num_channels_ + 16, (unsigned)NULL);
         // }
-        // if (this->mask_type_ == graphlily::kNoMask) {
-        //     this->kernel_.setArg(this->num_channels_ + 1, cl::Buffer(this->context_, 0, 4));
-        //     this->kernel_.setArg(this->num_channels_ + 2, cl::Buffer(this->context_, 0, 4));
-        // }
+        // Set mask buf to empty for SpMV kNoMask config of some modules(e.g. SSSP, PageRank)
+        if (this->mask_type_ == graphlily::kNoMask) {
+            cl_int err;
+            OCL_CHECK(err, err = this->spmv_result_drain_.setArg(1, cl::Buffer(this->context_, 0, 4)));
+        }
     }
 
     void set_mode() override {
@@ -466,6 +467,8 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 6, (char)this->semiring_.op));
     OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 7, (unsigned)zero));
     OCL_CHECK(err, err = this->spmv_result_drain_.setArg(0, this->results_buf));
+    OCL_CHECK(err, err = this->spmv_result_drain_.setArg(3, (unsigned)zero));
+    OCL_CHECK(err, err = this->spmv_result_drain_.setArg(4, (char)this->mask_type_));
 
     // for (size_t c = 0; c < this->num_channels_; c++) {
     //     OCL_CHECK(err, err = this->kernel_.setArg(c, this->channel_packets_buf[c]));
@@ -473,8 +476,6 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 3, this->results_buf));
     // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 10, this->csr_matrix_.num_rows));
     // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 11, this->csr_matrix_.num_cols));
-    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 12, (char)this->semiring_.op));
-    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 13, (char)this->mask_type_));
 
     // Send data to device
     for (size_t c = 0; c < this->num_channels_; c++) {
@@ -508,22 +509,20 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_vector_host_to_device(aligne
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
-    // TODO: support mask for split-kernel spmv
-    // this->mask_.assign(mask.begin(), mask.end());
-    // cl_mem_ext_ptr_t mask_ext;
-    // mask_ext.obj = this->mask_.data();
-    // mask_ext.param = 0;
-    // mask_ext.flags = graphlily::HBM[21];
-    // cl_int err;
-    // OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
-    //             CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-    //             sizeof(val_t) * this->csr_matrix_.num_rows,
-    //             &mask_ext,
-    //             &err));
-    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf));
-    // OCL_CHECK(err, err = this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf));
-    // OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
-    // this->command_queue_.finish();
+    this->mask_.assign(mask.begin(), mask.end());
+    cl_mem_ext_ptr_t mask_ext;
+    mask_ext.obj = this->mask_.data();
+    mask_ext.param = 0;
+    mask_ext.flags = graphlily::HBM[21];
+    cl_int err;
+    OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
+                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+                sizeof(val_t) * this->csr_matrix_.num_rows,
+                &mask_ext,
+                &err));
+    OCL_CHECK(err, err = this->spmv_result_drain_.setArg(1, this->mask_buf));
+    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
+    this->command_queue_.finish();
 }
 
 
@@ -561,7 +560,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::run() {
         OCL_CHECK(err, err = this->spmv_sk1_.setArg(this->num_channels_sk1_ + 3, (unsigned)part_len));
         OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 2, (unsigned)row_part_id));
         OCL_CHECK(err, err = this->spmv_sk2_.setArg(this->num_channels_sk2_ + 3, (unsigned)part_len));
-        OCL_CHECK(err, err = this->spmv_result_drain_.setArg(1, (unsigned)row_part_id));
+        OCL_CHECK(err, err = this->spmv_result_drain_.setArg(2, (unsigned)row_part_id));
 
         OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_vector_loader_));
         OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_sk0_));

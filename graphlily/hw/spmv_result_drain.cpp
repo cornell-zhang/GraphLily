@@ -4,21 +4,30 @@
 #include "libfpga/hisparse.h"
 
 #ifndef __SYNTHESIS__
+#include <iostream>
+#include <cstdlib>
 // #define SPMV_RESULT_DRAIN_LINE_TRACING
 #endif
 
 extern "C" {
 void spmv_result_drain(
     PACKED_VAL_T *packed_dense_result,      // out
+    PACKED_VAL_T *packed_dense_mask,        // in
     const unsigned row_part_id,             // in
     // const unsigned rows_per_c_in_partition, // in
+    unsigned zero_ufixed,                   // in
+    MASK_T mask_type,                       // in
     hls::stream<VEC_AXIS_T> &from_SLR0,     // out
     hls::stream<VEC_AXIS_T> &from_SLR1,     // out
     hls::stream<VEC_AXIS_T> &from_SLR2      // out
 ) {
     #pragma HLS interface m_axi port=packed_dense_result offset=slave bundle=spmv_vin
+    #pragma HLS interface m_axi port=packed_dense_mask offset=slave bundle=spmv_mask
     #pragma HLS interface s_axilite port=packed_dense_result bundle=control
+    #pragma HLS interface s_axilite port=packed_dense_mask bundle=control
     #pragma HLS interface s_axilite port=row_part_id bundle=control
+    #pragma HLS interface s_axilite port=zero_ufixed bundle=control
+    #pragma HLS interface s_axilite port=mask_type bundle=control
     #pragma HLS interface s_axilite port=return bundle=control
 
     #pragma HLS interface axis register both port=from_SLR0
@@ -26,7 +35,10 @@ void spmv_result_drain(
     #pragma HLS interface axis register both port=from_SLR2
 
     // TODO: maunally handle burst write?
-    // TODO: support mask
+
+    // zero value for mask
+    VAL_T zero;
+    LOAD_RAW_BITS_FROM_UINT(zero, zero_ufixed);
 
     // write back
     char current_input = 0;
@@ -105,9 +117,36 @@ void spmv_result_drain(
         unsigned abs_pkt_idx = write_counter + pkt_idx_offset;
         if (do_write) {
             PACKED_VAL_T rout;
+            PACKED_VAL_T mask;
+            if (mask_type != NOMASK) {
+                mask = packed_dense_mask[abs_pkt_idx];
+            }
             for (unsigned k = 0; k < PACK_SIZE; k++) {
                 #pragma HLS unroll
-                VAL_T_BITCAST(rout.data[k]) = VEC_AXIS_VAL(pkt, k);
+                bool do_write_m = false; // do write after checking mask
+                switch (mask_type) {
+                    case NOMASK:
+                        do_write_m = true;
+                        break;
+                    case WRITETOONE:
+                        do_write_m = (mask.data[k] != zero);
+                        break;
+                    case WRITETOZERO:
+                        do_write_m = (mask.data[k] == zero);
+                        break;
+                    default:
+                        do_write_m = false;
+                        #ifndef __SYNTHESIS__
+                        std::cout << "Invalid mask type" << std::endl;
+                        std::exit(EXIT_FAILURE);
+                        #endif
+                        break;
+                }
+                if (do_write_m) {
+                    VAL_T_BITCAST(rout.data[k]) = VEC_AXIS_VAL(pkt, k);
+                } else {
+                    VAL_T_BITCAST(rout.data[k]) = VAL_T_BITCAST(zero);
+                }
             }
             write_counter++;
             packed_dense_result[abs_pkt_idx] = rout;
