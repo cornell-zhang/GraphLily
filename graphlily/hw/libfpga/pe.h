@@ -167,7 +167,7 @@ static void ufixed_pe_output(
 // unsigned fixed-point pe
 //----------------------------------------------------------------
 template<int id, unsigned bank_size, unsigned pack_size>
-static void pe(
+static void pe_uram(
     hls::stream<UPDATE_PLD_T> &input,
     hls::stream<VEC_PLD_T> &output,
     const unsigned used_buf_len,
@@ -176,6 +176,67 @@ static void pe(
 ) {
     VAL_T output_buffer[bank_size];
     #pragma HLS bind_storage variable=output_buffer type=RAM_2P impl=URAM latency=3
+
+    // reset output buffer before doing anything
+    loop_reset_ob:
+    for (unsigned i = 0; i < used_buf_len; i++) {
+        #pragma HLS pipeline II=1
+        output_buffer[i] = zero;
+    }
+
+    // wait on the first SOD
+    bool got_SOD = false;
+    pe_sync_SOD:
+    while (!got_SOD) {
+        #pragma HLS pipeline II=1
+        UPDATE_PLD_T p = input.read();
+        got_SOD = (p.inst == SOD);
+    }
+
+    // start processing
+    bool exit = false;
+    pe_main_loop:
+    while (!exit) {
+        #pragma HLS pipeline off
+        // this function will exit upon EOD
+        ufixed_pe_process<id, bank_size, pack_size>(input, semiring, output_buffer);
+
+        // read the next payload and decide whether continue processing or exit
+        bool got_valid_pld = false;
+        pe_sync_SODEOS:
+        while (!got_valid_pld) {
+            #pragma HLS pipeline II=1
+            UPDATE_PLD_T p = input.read();
+            if (p.inst == SOD) {
+                got_valid_pld = true;
+                exit = false;
+            } else if (p.inst == EOS) {
+                got_valid_pld = true;
+                exit = true;
+            } else {
+                got_valid_pld = false;
+                exit = false;
+            }
+        }
+    }
+
+    // dump results
+    output.write(VEC_PLD_SOD);
+    ufixed_pe_output<id, bank_size, pack_size>(output, output_buffer, used_buf_len);
+    output.write(VEC_PLD_EOD);
+    output.write(VEC_PLD_EOS);
+}
+
+template<int id, unsigned bank_size, unsigned pack_size>
+static void pe_bram(
+    hls::stream<UPDATE_PLD_T> &input,
+    hls::stream<VEC_PLD_T> &output,
+    const unsigned used_buf_len,
+    OP_T semiring,
+    VAL_T zero
+) {
+    VAL_T output_buffer[bank_size];
+    #pragma HLS bind_storage variable=output_buffer type=RAM_2P impl=BRAM latency=3
 
     // reset output buffer before doing anything
     loop_reset_ob:

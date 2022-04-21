@@ -5,8 +5,7 @@
 // details, please see the implementation in graphlily::synthesizer.
 const unsigned SPMV_OUT_BUF_LEN = 1024;
 const unsigned SPMSPV_OUT_BUF_LEN = 512;
-const unsigned VEC_BUF_LEN = 256;
+const unsigned SPMV_VEC_BUF_LEN = 256;
 #define NUM_HBM_CHANNEL 16
-#define SPMV_NUM_PE_TOTAL 128
 
 #endif  // GRAPHLILY_HW_CONFIG_H_

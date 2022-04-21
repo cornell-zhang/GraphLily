@@ -320,56 +320,56 @@ static void spmv_cluster(
     std::cout << "INFO : [SpMV cluster] Shuffler 2 complete" << std::endl;
 #endif
 
-    pe<0, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<0, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[0],
         PE2PK[0],
         rows_in_partition / PACK_SIZE,
         semiring,
         zero
     );
-    pe<1, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<1, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[1],
         PE2PK[1],
         rows_in_partition / PACK_SIZE,
         semiring,
         zero
     );
-    pe<2, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<2, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[2],
         PE2PK[2],
         rows_in_partition / PACK_SIZE,
         semiring,
         zero
     );
-    pe<3, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<3, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[3],
         PE2PK[3],
         rows_in_partition / PACK_SIZE,
         semiring,
         zero
     );
-    pe<4, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<4, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[4],
         PE2PK[4],
         rows_in_partition / PACK_SIZE,
         semiring,
         zero
     );
-    pe<5, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<5, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[5],
         PE2PK[5],
         rows_in_partition / PACK_SIZE,
         semiring,
         zero
     );
-    pe<6, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<6, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[6],
         PE2PK[6],
         rows_in_partition / PACK_SIZE,
         semiring,
         zero
     );
-    pe<7, OB_BANK_SIZE, PACK_SIZE>(
+    pe_uram<7, OB_BANK_SIZE, PACK_SIZE>(
         SF2PE[7],
         PE2PK[7],
         rows_in_partition / PACK_SIZE,

@@ -176,9 +176,8 @@ std::ostream& operator<<(std::ostream& os, const VEC_AXIS_INTERNAL_T &p) {
 /* use configurations in config.h
 const unsigned SPMV_OUT_BUF_LEN =;
 const unsigned SPMSPV_OUT_BUF_LEN =;
-const unsigned VEC_BUF_LEN =;
+const unsigned SPMV_VEC_BUF_LEN =;
 #define NUM_HBM_CHANNEL
-#define SPMV_NUM_PE_TOTAL
 */
 
 // const unsigned OB_BANK_SIZE = 1024 * 8;
@@ -187,11 +186,15 @@ const unsigned VEC_BUF_LEN =;
 const unsigned INTERLEAVE_FACTOR = 1;
 
 const unsigned LOGICAL_OB_SIZE = SPMV_OUT_BUF_LEN;
-const unsigned LOGICAL_VB_SIZE = VEC_BUF_LEN;
+const unsigned LOGICAL_VB_SIZE = SPMV_VEC_BUF_LEN;
 
 const unsigned NUM_HBM_CHANNELS = NUM_HBM_CHANNEL;
 const unsigned OB_PER_CLUSTER = SPMV_OUT_BUF_LEN / NUM_HBM_CHANNELS;
-const unsigned VB_PER_CLUSTER = VEC_BUF_LEN;
+/* Input vector across different clusters remains replicated, thus the variables
+   VB_PER_CLUSTER, SPMV_VEC_BUF_LEN, and LOGICAL_VB_SIZE are all equal. And note
+   that PHYSICAL_VB_SIZE = LOGICAL_VB_SIZE x NUM_HBM_CHANNELS(i.e. NUM_CLUSTERS)
+   while PHYSICAL_OB_SIZE = LOGICAL_OB_SIZE. */
+const unsigned VB_PER_CLUSTER = SPMV_VEC_BUF_LEN;
 const unsigned OB_BANK_SIZE = OB_PER_CLUSTER / PACK_SIZE;
 const unsigned VB_BANK_SIZE = VB_PER_CLUSTER / PACK_SIZE;
 const unsigned SK0_CLUSTER = 4;

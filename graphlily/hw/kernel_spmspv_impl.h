@@ -345,56 +345,56 @@ void spmspv_core(
     }
     #endif
 
-    pe<0, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<0, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[0],
         PE_to_WB_stream[0],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe<1, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<1, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[1],
         PE_to_WB_stream[1],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe<2, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<2, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[2],
         PE_to_WB_stream[2],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe<3, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<3, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[3],
         PE_to_WB_stream[3],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe<4, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<4, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[4],
         PE_to_WB_stream[4],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe<5, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<5, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[5],
         PE_to_WB_stream[5],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe<6, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<6, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[6],
         PE_to_WB_stream[6],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe<7, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram<7, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[7],
         PE_to_WB_stream[7],
         used_buf_len_per_pe,

@@ -121,7 +121,7 @@ const std::string makefile_prologue =
     "ifneq ($(TARGET), hw)\n"
     "\tCLFLAGS += -g\n" // this will enable waveform debugging for hw_emu
     "else\n"
-    "\tCLFLAGS += --kernel_frequency 200\n"
+    "\tCLFLAGS += --kernel_frequency 300\n"
     "\tLDCLFLAGS += --optimize 3\n" // this will enable retiming
     "endif\n"
     "\n"

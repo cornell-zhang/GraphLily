@@ -18,13 +18,16 @@
 
 
 std::string target = "sw_emu";
-// std::string dataset_folder = "/work/shared/common/project_build/graphblas/"
-//                              "data/sparse_matrix_graph";
-std::string dataset_folder= "/path/to/data";
-uint32_t spmv_out_buf_len = 1024;
-uint32_t spmspv_out_buf_len = 512;
-uint32_t vec_buf_len = 256;
-
+std::string dataset_folder = "/work/shared/common/project_build/graphblas/"
+                             "data/sparse_matrix_graph";
+// std::string dataset_folder= "/path/to/data";
+uint32_t spmv_out_buf_bank_size = 1024 * 8;
+uint32_t spmv_vec_buf_bank_size = 1024 * 4;
+uint32_t spmv_pe_num = graphlily::pack_size * graphlily::num_hbm_channels;
+uint32_t spmv_out_buf_len = spmv_out_buf_bank_size * spmv_pe_num;
+uint32_t spmv_vec_buf_len = spmv_vec_buf_bank_size * graphlily::pack_size;
+uint32_t spmspv_out_buf_bank_size = 1024 * 2;
+uint32_t spmspv_out_buf_len = spmspv_out_buf_bank_size * graphlily::pack_size;
 
 void clean_proj_folder() {
     std::string command = "rm -rf ./" + graphlily::proj_folder_name;
@@ -91,7 +94,7 @@ TEST(Synthesize, NULL) {
     graphlily::synthesizer::SplitKernelSynthesizer synthesizer(graphlily::num_hbm_channels,
                                                            spmv_out_buf_len,
                                                            spmspv_out_buf_len,
-                                                           vec_buf_len);
+                                                           spmv_vec_buf_len);
     synthesizer.set_target(target);
     synthesizer.synthesize();
 }
@@ -141,7 +144,7 @@ void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily
 TEST(SpMV, MultipleCases) {
     graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> module(graphlily::num_hbm_channels,
                                                                              spmv_out_buf_len,
-                                                                             vec_buf_len);
+                                                                             spmv_vec_buf_len);
     module.set_target(target);
     // module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
     module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
@@ -263,17 +266,17 @@ TEST(SpMSpV, MultipleCases) {
 
     // dense 1K x 1K
     CSCMatrix<float> csc_matrix_dense1K = graphlily::io::csr2csc(
-        graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "dense_1K_csr_float32.npz"));
+        graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "/dense_1K_csr_float32.npz"));
     for (auto &x : csc_matrix_dense1K.adj_data) x = 1.0 / csc_matrix_dense1K.num_rows;
 
     // uniform (10K x 10K avg. degree 10)
     CSCMatrix<float> csc_matrix_uniform10K10 = graphlily::io::csr2csc(
-        graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "uniform_10K_10_csr_float32.npz"));
+        graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "/uniform_10K_10_csr_float32.npz"));
     for (auto &x : csc_matrix_uniform10K10.adj_data) x = 1.0 / csc_matrix_uniform10K10.num_rows;
 
     // google plus (108K x 108K, 13M Nnz)
     CSCMatrix<float> csc_matrix_gpuls = graphlily::io::csr2csc(
-        graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "gplus_108K_13M_csr_float32.npz"));
+        graphlily::io::load_csr_matrix_from_float_npz(dataset_folder + "/gplus_108K_13M_csr_float32.npz"));
     for (auto &x : csc_matrix_gpuls.adj_data) x = 1.0 / csc_matrix_gpuls.num_rows;
 
     // bank conflict test case
