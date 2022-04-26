@@ -240,10 +240,10 @@ static void write_back_results (
                             do_write = true;
                             break;
                         case WRITETOONE:
-                            do_write = (mask[index] != Zero);
+                            do_write = (mask[index] != 0);
                             break;
                         case WRITETOZERO:
-                            do_write = (mask[index] == Zero);
+                            do_write = (mask[index] == 0);
                             break;
                         default:
                             do_write = false;

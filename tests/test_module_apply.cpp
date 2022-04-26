@@ -17,10 +17,14 @@
 #include "graphlily/io/data_formatter.h"
 
 
-std::string target = "sw_emu";
-uint32_t spmv_out_buf_len = 1024;
-uint32_t spmspv_out_buf_len = 512;
-uint32_t vec_buf_len = 256;
+std::string target = "hw";
+uint32_t spmv_out_buf_bank_size = 1024 * 8;
+uint32_t spmv_vec_buf_bank_size = 1024 * 4;
+uint32_t spmv_pe_num = graphlily::pack_size * graphlily::num_hbm_channels;
+uint32_t spmv_out_buf_len = spmv_out_buf_bank_size * spmv_pe_num;
+uint32_t spmv_vec_buf_len = spmv_vec_buf_bank_size * graphlily::pack_size;
+uint32_t spmspv_out_buf_bank_size = 1024 * 2;
+uint32_t spmspv_out_buf_len = spmspv_out_buf_bank_size * graphlily::pack_size;
 
 
 void clean_proj_folder() {
@@ -45,7 +49,7 @@ TEST(Synthesize, NULL) {
     graphlily::synthesizer::SplitKernelSynthesizer synthesizer(graphlily::num_hbm_channels,
                                                            spmv_out_buf_len,
                                                            spmspv_out_buf_len,
-                                                           vec_buf_len);
+                                                           spmv_vec_buf_len);
     synthesizer.set_target(target);
     synthesizer.synthesize();
 }

@@ -59,8 +59,8 @@ private:
                The index field of the first element is the non-zero count of the results */
     aligned_sparse_vec_t results_;
     /*! \brief The nnz of the results */
-    idx_val_t results_nnz_[1];
-    /*! \brief The sparse matrix using float data type*/
+    aligned_sparse_vec_t results_nnz_; // idx_val_t scalar. bypass XRT unaligned pointer warnings
+    /*! \brief The sparse matrix using float data type */
     CSCMatrix<float> csc_matrix_float_;
     /*! \brief The sparse matrix */
     CSCMatrix<matrix_data_t> csc_matrix_;
@@ -276,6 +276,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::load_and_format_matr
 
     // prepare output memory
     this->results_.resize(this->get_num_rows() + 1);
+    this->results_nnz_.resize(1);
 
     std::fill(this->results_.begin(), this->results_.end(), (idx_val_t){0, 0});
 }
@@ -337,7 +338,6 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
 
     // Handle results
     cl_mem_ext_ptr_t results_ext;
-
     results_ext.obj = this->results_.data();
     results_ext.param = 0;
     results_ext.flags = graphlily::HBM[22];
@@ -349,7 +349,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
         &err));
 
     cl_mem_ext_ptr_t results_nnz_ext;
-    results_nnz_ext.obj = this->results_nnz_;
+    results_nnz_ext.obj = this->results_nnz_.data();
     results_nnz_ext.param = 0;
     results_nnz_ext.flags = graphlily::HBM[22];
 
@@ -441,6 +441,16 @@ graphlily::aligned_dense_float_vec_t
 SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::compute_reference_results(
         graphlily::aligned_sparse_float_vec_t &vector,
         graphlily::aligned_dense_float_vec_t &mask) {
+    // define inf based on val_t
+    float inf;
+    if (std::is_same<graphlily::val_t, float>::value) {
+        inf = float(graphlily::FLOAT_INF);
+    } else if (std::is_same<graphlily::val_t, unsigned>::value) {
+        inf = float(graphlily::UINT_INF);
+    } else {
+        inf = float(graphlily::UFIXED_INF);
+    }
+
     // measure dimensions
     unsigned vec_nnz_total = vector[0].index;
     unsigned num_rows = this->csc_matrix_.num_rows;
@@ -475,14 +485,13 @@ SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::compute_reference_results
                     reference_results[current_row_id] = reference_results[current_row_id] || incr;
                     break;
                 case kAddMin:
-                    if (nnz_from_mat > FLOAT_INF || nnz_from_vec > FLOAT_INF) {
-                        incr = FLOAT_INF;
+                    // simulate the AP_SAT oveflow mode
+                    if (nnz_from_mat > inf || nnz_from_vec > inf) {
+                        incr = inf;
                     } else {
-                        incr = nnz_from_mat + nnz_from_vec;
-                        if (incr > FLOAT_INF) incr = FLOAT_INF;
+                        incr = std::min(nnz_from_mat + nnz_from_vec, inf);
                     }
-                    reference_results[current_row_id] = (reference_results[current_row_id] < incr) ?
-                        reference_results[current_row_id] : incr;
+                    reference_results[current_row_id] = std::min(reference_results[current_row_id], incr);
                     break;
                 default:
                     std::cerr << "ERROR: [Module SpMSpV] Invalid semiring" << std::endl;
@@ -498,10 +507,10 @@ SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::compute_reference_results
                 mask_off = false;
                 break;
             case kMaskWriteToOne:
-                mask_off = (mask[i] == this->semiring_.zero);
+                mask_off = (mask[i] == 0);
                 break;
             case kMaskWriteToZero:
-                mask_off = (mask[i] != this->semiring_.zero);
+                mask_off = (mask[i] != 0);
                 break;
             default:
                 mask_off = true;

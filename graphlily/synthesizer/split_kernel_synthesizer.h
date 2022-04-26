@@ -146,6 +146,7 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
             << hbm_idx << "]" << std::endl;
     }
     ini << "sp=VL.packed_dense_vector:HBM[20]" << std::endl;
+    ini << "sp=RD.packed_dense_mask:HBM[21]" << std::endl;
     ini << "sp=RD.packed_dense_result:HBM[22]" << std::endl;
 
     // SpMV sc tags

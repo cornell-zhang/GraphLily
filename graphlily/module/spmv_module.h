@@ -376,8 +376,10 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     cl_int err;
+    #ifdef SPMV_MODULE_DEBUG
     std::cout << "Start to allocate memory on "
               << this->num_channels_ << " channels" << std::endl;
+    #endif
     // Handle channel_packets
     // cl_mem_ext_ptr_t channel_packets_ext[this->num_channels_];
     std::vector<cl_mem_ext_ptr_t> channel_packets_ext;
@@ -402,6 +404,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     }
 
     // for debug
+    #ifdef SPMV_MODULE_DEBUG
     for (unsigned c = 0; c < this->num_channels_; c++) {
         void* buf_host_ptr;
         this->channel_packets_buf[c].getInfo(CL_MEM_HOST_PTR, &buf_host_ptr);
@@ -410,6 +413,7 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
                c, (void*)channel_packets_ext[c].obj, channel_packets_ext[c].flags);
         std::cout << std::endl;
     }
+    #endif
 
     // Handle results
     cl_mem_ext_ptr_t results_ext;
@@ -424,36 +428,27 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_matrix_host_to_device() {
     // Set arguments
     unsigned ch_offset = 0;
     for (size_t c = 0; c < this->num_channels_sk0_; c++) {
+        #ifdef SPMV_MODULE_DEBUG
         std::cout << "Setting SK0 argument " << c << " to HBM " << c + ch_offset << std::endl;
+        #endif
         OCL_CHECK(err, err = this->spmv_sk0_.setArg(c, this->channel_packets_buf[c + ch_offset]));
     }
     ch_offset += this->num_channels_sk0_;
     for (size_t c = 0; c < this->num_channels_sk1_; c++) {
+        #ifdef SPMV_MODULE_DEBUG
         std::cout << "Setting SK1 argument " << c << " to HBM " << c + ch_offset << std::endl;
+        #endif
         OCL_CHECK(err, err = this->spmv_sk1_.setArg(c, this->channel_packets_buf[c + ch_offset]));
     }
     ch_offset += this->num_channels_sk1_;
     for (size_t c = 0; c < this->num_channels_sk2_; c++) {
+        #ifdef SPMV_MODULE_DEBUG
         std::cout << "Setting SK2 argument " << c << " to HBM " << c + ch_offset << std::endl;
+        #endif
         OCL_CHECK(err, err = this->spmv_sk2_.setArg(c, this->channel_packets_buf[c + ch_offset]));
     }
     unsigned num_partitions = this->num_row_partitions_ * this->num_col_partitions_;
-    val_t val_zero;
-    switch (this->semiring_.op) {
-    case kMulAdd:
-        val_zero = 0;
-        break;
-    case kLogicalAndOr:
-        val_zero = 0;
-        break;
-    case kAddMin:
-        val_zero = UFIXED_INF;
-        break;
-    default:
-        val_zero = 0;
-        break;
-    }
-    unsigned zero = graphlily::pack_raw_bits_to_uint(val_zero);
+    unsigned zero = graphlily::pack_raw_bits_to_uint(this->semiring_.zero);
     OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 4, (unsigned)this->num_col_partitions_));
     OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 5, (unsigned)num_partitions));
     OCL_CHECK(err, err = this->spmv_sk0_.setArg(this->num_channels_sk0_ + 6, (char)this->semiring_.op));
@@ -587,6 +582,15 @@ for (size_t row_idx = 0; row_idx < this->csr_matrix_float_.num_rows; row_idx++) 
 template<typename matrix_data_t, typename vector_data_t>
 graphlily::aligned_dense_float_vec_t
 SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dense_float_vec_t &vector) {
+    float inf;
+    if (std::is_same<graphlily::val_t, float>::value) {
+        inf = float(graphlily::FLOAT_INF);
+    } else if (std::is_same<graphlily::val_t, unsigned>::value) {
+        inf = float(graphlily::UINT_INF);
+    } else {
+        inf = float(graphlily::UFIXED_INF);
+    }
+
     aligned_dense_float_vec_t reference_results(this->csr_matrix_.num_rows);
     std::fill(reference_results.begin(), reference_results.end(), this->semiring_.zero);
     switch (this->semiring_.op) {
@@ -598,8 +602,12 @@ SpMVModule<matrix_data_t, vector_data_t>::compute_reference_results(aligned_dens
                 || (this->csr_matrix_float_.adj_data[i] && vector[idx]));
             break;
         case graphlily::kAddMin:
-            SPMV(reference_results[row_idx] = std::min(reference_results[row_idx],
-                this->csr_matrix_float_.adj_data[i] + vector[idx]));
+            SPMV(
+                // simulate the AP_SAT overflow mode
+                float incr = (this->csr_matrix_float_.adj_data[i] > inf || vector[idx] > inf)
+                    ? inf : std::min(this->csr_matrix_float_.adj_data[i] + vector[idx], inf);
+                reference_results[row_idx] = std::min(reference_results[row_idx], incr);
+            );
             break;
         default:
             std::cerr << "Invalid semiring" << std::endl;
@@ -617,13 +625,13 @@ graphlily::aligned_dense_float_vec_t SpMVModule<matrix_data_t, vector_data_t>::c
     if (this->mask_type_ == graphlily::kMaskWriteToZero) {
         for (size_t i = 0; i < this->csr_matrix_.num_rows; i++) {
             if (mask[i] != 0) {
-                reference_results[i] = 0;
+                reference_results[i] = this->semiring_.zero;
             }
         }
     } else {
         for (size_t i = 0; i < this->csr_matrix_.num_rows; i++) {
             if (mask[i] == 0) {
-                reference_results[i] = 0;
+                reference_results[i] = this->semiring_.zero;
             }
         }
     }

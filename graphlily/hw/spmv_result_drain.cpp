@@ -12,11 +12,11 @@
 extern "C" {
 void spmv_result_drain(
     PACKED_VAL_T *packed_dense_result,      // out
-    PACKED_VAL_T *packed_dense_mask,        // in
+    const PACKED_VAL_T *packed_dense_mask,  // in
     const unsigned row_part_id,             // in
     // const unsigned rows_per_c_in_partition, // in
-    unsigned zero_ufixed,                   // in
-    MASK_T mask_type,                       // in
+    const unsigned zero_ufixed,             // in
+    const MASK_T mask_type,                 // in
     hls::stream<VEC_AXIS_T> &from_SLR0,     // out
     hls::stream<VEC_AXIS_T> &from_SLR1,     // out
     hls::stream<VEC_AXIS_T> &from_SLR2      // out
@@ -129,10 +129,10 @@ void spmv_result_drain(
                         do_write_m = true;
                         break;
                     case WRITETOONE:
-                        do_write_m = (mask.data[k] != zero);
+                        do_write_m = (mask.data[k] != 0);
                         break;
                     case WRITETOZERO:
-                        do_write_m = (mask.data[k] == zero);
+                        do_write_m = (mask.data[k] == 0);
                         break;
                     default:
                         do_write_m = false;
