@@ -75,8 +75,7 @@ static void CPSR_matrix_loader(
                 #pragma HLS UNROLL
                 if (i < stream_length[k]) {
                     if (mat_pkt.indices.data[k] == IDX_MARKER) {
-                        // ! Be careful: mat_pkt.vals.data[k] can not be larger than power(2, 8)
-                        row_idx[k] += (PACK_SIZE * mat_pkt.vals.data[k](31, 24));
+                        row_idx[k] += (PACK_SIZE * mat_pkt.vals.data[k](31, 0));
                     } else {
                         EDGE_PLD_T input_to_SF_1;
                         input_to_SF_1.mat_val = mat_pkt.vals.data[k];

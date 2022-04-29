@@ -181,14 +181,27 @@ unsigned log2(unsigned x) {
     }
 }
 
-// Pack the raw bits of the variable with arbitrary precision, e.g. ap_ufixed,
-// to unsigned int, mainly used to pass ap_[type] to OpenCL kernel as scalar.
+// TODO: add unsigned/float support, if val_t is not ap_fixed?
+
+// Pack the raw bits of the arbitrary precision variable (e.g. ap_ufixed) to a
+// *pseudo* uint32, mainly used to pass ap_[type] to OpenCL kernel as scalar.
 // The unpacker is defined as `LOAD_RAW_BITS_FROM_UINT` in hw/libfpga/hisparse.h
 template<typename val_t>
 inline unsigned pack_raw_bits_to_uint(val_t val) {
     ap_uint<32> temp;
     temp(31,0) = val(31,0);
     return temp.to_uint();
+}
+
+// Pack the raw bits of uint32 to a pseudo val_t type (e.g. ap_ufixed/ap_uint).
+// Note: in this way, the logical value of val_t is NOT equal to the original
+// uint32 in most cases. For instance, packing uint32(256) to ap_ufixed<32, 8>,
+// while 256 exceeds the logical range of ap_ufixed<32, 8>.
+template<typename val_t>
+inline val_t pack_uint_to_raw_bits(unsigned val) {
+    val_t temp;
+    temp(31,0) = ap_uint<32>(val)(31,0);
+    return temp;
 }
 
 }  // namespace graphlily
