@@ -12,24 +12,8 @@ static bool line_tracing_spmspv = false;
 static bool line_tracing_spmspv_checkout = false;
 #endif
 
-// typedef struct shuffle_inout_vale_type {
-//     VAL_T mat_val;
-//     VAL_T vec_val;
-// } SF_IO_VAL_T;
-
-// typedef struct shuffle_inout_type {
-//     IDX_T index;
-//     SF_IO_VAL_T data;
-// } SF_IO_T;
-
-// typedef struct vector_loader_out_type {
-//     IDX_T current_column_id;
-//     VAL_T vector_value;
-// } VL_O_T;
-
-
 // vector loader for spmspv
-void load_vector_from_gmem(
+static void load_vector_from_gmem(
     // vector data, row_id
     const IDX_VAL_T *vector,
     // number of non-zeros
@@ -49,7 +33,7 @@ void load_vector_from_gmem(
 
 
 // data loader for spmspv
-void load_matrix_from_gmem(
+static void load_matrix_from_gmem(
     // matrix data, row_id
     const SPMSPV_MAT_PKT_T *matrix,
     // matrix indptr
@@ -124,91 +108,6 @@ void load_matrix_from_gmem(
     }
 }
 
-
-// // bram access used for checkout results
-// void bram_access_read_2ports(
-//     // real read ports
-//     IDX_T rd_addr0[PACK_SIZE],
-//     VAL_T rd_data0[PACK_SIZE],
-//     IDX_T rd_addr1[PACK_SIZE],
-//     VAL_T rd_data1[PACK_SIZE],
-//     // bram
-//     const VAL_T bram[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE]
-// ) {
-//     #pragma HLS pipeline II=1
-//     // #pragma HLS inline
-
-//     loop_rd_get_data_unroll:
-//     for (unsigned int BKid = 0; BKid < PACK_SIZE; BKid++) {
-//         #pragma HLS unroll
-//         rd_data0[BKid] = bram[rd_addr0[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr0[BKid] / NUM_HBM_CHANNEL];
-//         rd_data1[BKid] = bram[rd_addr1[BKid] % NUM_HBM_CHANNEL][BKid][rd_addr1[BKid] / NUM_HBM_CHANNEL];
-//     }
-// }
-
-
-// // change results to sparse
-// void checkout_results(
-//     // data to be checked
-//     const VAL_T dense_data[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE],
-//     // FIFOs
-//     hls::stream<IDX_VAL_T> cr_output_streams[PACK_SIZE * 2],
-//     // control signals
-//     hls::stream<IDX_T> &npld_to_wb,
-//     IDX_T mat_row_id_base,
-//     IDX_T num_rows,
-//     VAL_T zero
-// ) {
-//     IDX_T npld_before_mask = 0;
-//     IDX_T index_arr0[PACK_SIZE];
-//     IDX_T index_arr1[PACK_SIZE];
-//     VAL_T data_arr0[PACK_SIZE];
-//     VAL_T data_arr1[PACK_SIZE];
-//     #pragma HLS array_partition variable=index_arr0 complete
-//     #pragma HLS array_partition variable=index_arr1 complete
-//     #pragma HLS array_partition variable=data_arr0 complete
-//     #pragma HLS array_partition variable=data_arr1 complete
-
-//     unsigned int num_rounds = ((num_rows + 2 * PACK_SIZE) - 1) / (PACK_SIZE * 2);
-//     loop_over_dense_data_pipeline:
-//     for (unsigned int round_cnt = 0; round_cnt < num_rounds; round_cnt++) {
-//         #pragma HLS pipeline II=1
-//         IDX_T local_npld_incr = 0;
-
-//         loop_before_read_banks_unroll:
-//         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
-//             #pragma HLS unroll
-//             index_arr0[Bank_id] = round_cnt * 2;
-//             index_arr1[Bank_id] = round_cnt * 2 + 1;
-//         }
-
-//         bram_access_read_2ports(index_arr0, data_arr0, index_arr1, data_arr1, dense_data);
-
-//         loop_after_read_banks_unroll:
-//         for (unsigned int Bank_id = 0; Bank_id < PACK_SIZE; Bank_id++) {
-//             #pragma HLS unroll
-//             if (data_arr0[Bank_id] != zero) {
-//                 IDX_VAL_T pld;
-//                 pld.index = round_cnt * 2 * PACK_SIZE + Bank_id + mat_row_id_base;
-//                 pld.val = data_arr0[Bank_id];
-//                 cr_output_streams[Bank_id].write(pld);
-//                 local_npld_incr++;
-
-//             }
-//             if (data_arr1[Bank_id] != zero) {
-//                 IDX_VAL_T pld;
-//                 pld.index = (round_cnt * 2 + 1) * PACK_SIZE + Bank_id + mat_row_id_base;
-//                 pld.val = data_arr1[Bank_id];
-//                 cr_output_streams[Bank_id + PACK_SIZE].write(pld);
-//                 local_npld_incr++;
-
-//             }
-//         }
-//         npld_before_mask += local_npld_incr;
-//     }
-//     npld_to_wb << npld_before_mask;
-// }
-
 // write back to gemm
 static void write_back_results (
     hls::stream<VEC_PLD_T> PE_to_WB_stream[PACK_SIZE],
@@ -250,11 +149,14 @@ static void write_back_results (
                             break;
                     }
                     if (do_write) {
+                        IDX_VAL_T res_pld;
+                        res_pld.index = index;
+                        res_pld.val = p.val;
                         incr++;
-                        res_out[Nnz + incr] = (IDX_VAL_T){.index=index, .val=p.val};
+                        res_out[Nnz + incr] = res_pld;
                         #ifndef __SYNTHESIS__
                         if (line_tracing_spmspv_checkout) {
-                            std::cout << "INFO: [kernel SpMSpV write results]"
+                            std::cout << "INFO: [kernel SpMSpV] Write results"
                                         << " non-zero " << p.val
                                         << " found at " << p.idx
                                         << " mapped to " << index << std::endl << std::flush;
@@ -273,7 +175,7 @@ static void write_back_results (
 }
 
 // load vec/mat -> shuffle -> pe compute -> writeback
-void spmspv_core(
+static void spmspv_core(
     const SPMSPV_MAT_PKT_T *matrix,
     const IDX_T *mat_indptr,
     const IDX_T *mat_partptr,
@@ -292,23 +194,18 @@ void spmspv_core(
     const unsigned used_buf_len_per_pe
 ) {
     // fifos
-    // hls::stream<IDX_T> DL_to_SF_npld_stream;
-    // hls::stream<IDX_T> SF_to_PE_npld_stream;
-    // #pragma HLS stream variable=DL_to_SF_npld_stream depth=2
-    // #pragma HLS stream variable=SF_to_PE_npld_stream depth=2
-
     hls::stream<IDX_VAL_T> VL_to_ML_stream;
+    #pragma HLS stream variable=VL_to_ML_stream depth=FIFO_DEPTH
+
     hls::stream<UPDATE_PLD_T> DL_to_SF_stream[PACK_SIZE];
     hls::stream<UPDATE_PLD_T> SF_to_PE_stream[PACK_SIZE];
     hls::stream<VEC_PLD_T> PE_to_WB_stream[PACK_SIZE];
-    #pragma HLS stream variable=VL_to_ML_stream depth=FIFO_DEPTH
     #pragma HLS stream variable=DL_to_SF_stream depth=FIFO_DEPTH
     #pragma HLS stream variable=SF_to_PE_stream depth=FIFO_DEPTH
     #pragma HLS stream variable=PE_to_WB_stream depth=FIFO_DEPTH
-    #pragma HLS RESOURCE variable=VL_to_ML_stream core=FIFO_SRL
-    #pragma HLS RESOURCE variable=DL_to_SF_stream core=FIFO_SRL
-    #pragma HLS RESOURCE variable=SF_to_PE_stream core=FIFO_SRL
-    #pragma HLS RESOURCE variable=PE_to_WB_stream core=FIFO_SRL
+    #pragma HLS bind_storage variable=DL_to_SF_stream type=FIFO impl=SRL
+    #pragma HLS bind_storage variable=SF_to_PE_stream type=FIFO impl=SRL
+    #pragma HLS bind_storage variable=PE_to_WB_stream type=FIFO impl=SRL
 
     // dataflow pipeline
     #pragma HLS dataflow
@@ -426,63 +323,7 @@ void spmspv_core(
     #endif
 }
 
-
-// // write back
-// void write_back_results(
-//     const VAL_T output_buffer[PACK_SIZE][SPMSPV_OUT_BUF_LEN / PACK_SIZE],
-//     IDX_VAL_T *result,
-//     const VAL_T *mask,
-//     IDX_T num_rows,
-//     IDX_T result_Nnz,
-//     IDX_T &result_Nnz_incr,
-//     IDX_T mat_row_id_base,
-//     VAL_T zero,
-//     MASK_T mask_type
-// ) {
-//     hls::stream<IDX_T> CR_to_WB_npld_stream;
-//     #pragma HLS stream variable=CR_to_WB_npld_stream depth=2
-
-//     hls::stream<IDX_VAL_T> CR_to_WB_stream[PACK_SIZE * 2];
-//     #pragma HLS stream variable=CR_to_WB_stream depth=FIFO_DEPTH
-//     #pragma HLS RESOURCE variable=CR_to_WB_stream core=FIFO_SRL
-
-//     // dataflow pipeline
-//     #pragma HLS dataflow
-
-//     checkout_results(
-//         output_buffer,
-//         CR_to_WB_stream,
-//         CR_to_WB_npld_stream,
-//         mat_row_id_base,
-//         num_rows,
-//         zero
-//     );
-//     #ifndef __SYNTHESIS__
-//     if (line_tracing_spmspv) {
-//         std::cout << "INFO: [Kernel SpMSpV] Checkout Results complete" << std::endl << std::flush;
-//     }
-//     #endif
-
-//     write_back_gmem(
-//         CR_to_WB_stream,
-//         CR_to_WB_npld_stream,
-//         mask,
-//         result,
-//         result_Nnz,
-//         result_Nnz_incr,
-//         zero,
-//         mask_type
-//     );
-
-//     #ifndef __SYNTHESIS__
-//     if (line_tracing_spmspv) {
-//         std::cout << "INFO: [Kernel SpMSpV] Result writeback complete" << std::endl << std::flush;
-//     }
-//     #endif
-// }
-
-
-void kernel_spmspv(
+static void kernel_spmspv(
     const SPMSPV_MAT_PKT_T *matrix,
     const IDX_T *mat_indptr,
     const IDX_T *mat_partptr,
@@ -492,27 +333,12 @@ void kernel_spmspv(
     IDX_T num_rows,
     IDX_T num_cols,
     OP_T Op,
-    MASK_T mask_type
+    MASK_T mask_type,
+    VAL_T Zero
 ) {
     #pragma HLS inline off
 
     IDX_T vec_num_nnz = vector[0].index;
-    VAL_T Zero;
-
-    switch (Op) {
-    case MULADD:
-        Zero = MulAddZero;
-        break;
-    case ANDOR:
-        Zero = AndOrZero;
-        break;
-    case ADDMIN:
-        Zero = AddMinZero;
-        break;
-    default:
-        Zero = 0;
-        break;
-    }
 
     // result Nnz counter
     IDX_T result_Nnz = 0;
@@ -539,17 +365,6 @@ void kernel_spmspv(
             std::cout << "          indptr base: " << mat_indptr_base << std::endl << std::flush;
         }
         #endif
-        // loop_reset_output_buffer:
-        // for (int i = 0; i < (num_rows_this_part + SPMV_NUM_PE_TOTAL - 1) / SPMV_NUM_PE_TOTAL; i++) {
-        //     #pragma HLS UNROLL factor=2
-        //     for (int c = 0; c < NUM_HBM_CHANNEL; c++) {
-        //         #pragma HLS UNROLL
-        //         for (int PE_idx = 0; PE_idx < PACK_SIZE; PE_idx++) {
-        //             #pragma HLS UNROLL
-        //             output_buffer[c][PE_idx][i] = Zero;
-        //         }
-        //     }
-        // }
         spmspv_core(
             matrix,
             mat_indptr,

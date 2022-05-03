@@ -89,46 +89,39 @@ public:
         this->out_buf_len_ = out_buf_len;
     }
 
-    /*Overlay argument list:
-    * (H = num_hbm_channels)
-    * Index       Argument                     used in this module?
-    * 0 ~ H-1     matrix for spmv              n
-    * H+0         vector for spmv              n
-    * H+1         mask for spmv (read port)    n
-    * H+2         mask for spmv (write port)   n
-    * H+3         output for spmv              n
+    /* SpMSpV apply overlay argument list:
+    * Index       Argument                              Used in this module?
+    * 0           vector for spmv                       n
+    * 1           mask for spmv (read port)             n
+    * 2           mask for spmv (write port)            n
+    * 3           output for spmv                       n
     *
-    * H+4 ~ +6    matrix for spmspv            y
-    * H+7         vector for spmspv            y
-    * H+8         mask for spmspv              y
-    * H+9         output for spmspv            y
+    * 4~6         matrix for spmspv                     y
+    * 7           vector for spmspv                     y
+    * 8           mask for spmspv                       y
+    * 9           output for spmspv                     y
     *
-    * H+10        # of rows                    y
-    * H+11        # of columns                 y
+    * 10          number of rows                        y
+    * 11          number of columns                     y
+    * 12          semiring operation type               y
     *
-    * H+12        operation type               y
-    * H+13        mask type                    y
-    *
-    * H+14        overlay mode select          y
-    *
-    * H+15        apply vector length          n
-    * H+16        input value for assign       n
+    * 13          mask type                             y
+    * 14          overlay mode select                   y
+    * 15          apply vector length                   n
+    * 16          apply input value or semiring zero    y
     */
     void set_unused_args() override {
-        // Set unused arguments for SpMV
-        for (uint32_t i = 0; i < SPMSPV_APPLY_OFFSET + 4; i++) {
+        for (size_t i = 0; i <= 3; ++i) {
             this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
-        // Set unused scalar arguments
-        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 15, (unsigned)NULL);
-        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 16, (unsigned)NULL);
         if (this->mask_type_ == graphlily::kNoMask) {
-            this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 8, cl::Buffer(this->context_, 0, 4));
+            this->spmspv_apply_.setArg(8, cl::Buffer(this->context_, 0, 4));
         }
+        this->spmspv_apply_.setArg(15, (unsigned)NULL);
     }
 
     void set_mode() override {
-        this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 14, 2);  // 2 is SpMSpV
+        this->spmspv_apply_.setArg(14, 2);  // 2 is SpMSpV
     }
 
     /*!
@@ -318,13 +311,17 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
         &channel_partptr_ext,
         &err));
 
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 4, this->channel_packets_buf));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 5, this->channel_indptr_buf));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 6, this->channel_partptr_buf));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 10, this->csc_matrix_.num_rows));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 11, this->csc_matrix_.num_cols));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 12, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 13, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(4, this->channel_packets_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(5, this->channel_indptr_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(6, this->channel_partptr_buf));
+
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(10, this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(11, this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(12, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(13, (char)this->mask_type_));
+
+    unsigned zero = graphlily::pack_raw_bits_to_uint(this->semiring_.zero);
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(16, zero));
 
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
         this->channel_packets_buf,
@@ -359,7 +356,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
                 &results_nnz_ext,
                 &err));
 
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 9, this->results_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(9, this->results_buf));
     // std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
     //           << std::endl << std::flush;
 }
@@ -386,7 +383,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
                 &err));
 
     // set argument
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 7, this->vector_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(7, this->vector_buf));
 
     // Send vector to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
@@ -418,7 +415,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
                 &err));
 
     // set argument
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(SPMSPV_APPLY_OFFSET + 8, this->mask_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(8, this->mask_buf));
 
     // Send mask to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));

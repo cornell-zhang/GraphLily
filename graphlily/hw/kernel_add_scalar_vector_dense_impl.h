@@ -3,7 +3,7 @@
 #include <assert.h>
 
 
-void kernel_add_scalar_vector_dense(
+static void kernel_add_scalar_vector_dense(
     const PACKED_VAL_T *in,  // The input vector
     PACKED_VAL_T *out,       // The output vector
     unsigned length,         // The length of the in/out vector

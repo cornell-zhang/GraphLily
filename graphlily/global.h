@@ -206,6 +206,4 @@ inline val_t pack_uint_to_raw_bits(unsigned val) {
 
 }  // namespace graphlily
 
-#define SPMSPV_APPLY_OFFSET 0
-
 #endif  // GRAPHLILY_GLOBAL_H_

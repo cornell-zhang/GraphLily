@@ -5,9 +5,9 @@
 #include <cstdlib>
 
 
-void kernel_assign_vector_dense(
+static void kernel_assign_vector_dense(
     const PACKED_VAL_T *mask,  // The mask vector
-    PACKED_VAL_T *in,          // The input vector
+    const PACKED_VAL_T *in,    // The input vector
     PACKED_VAL_T *out,         // The output vector
     unsigned length,           // The length of the mask/inout vector
     VAL_T val,                 // The value to be assigned to the inout vector

@@ -1,7 +1,7 @@
 #include "libfpga/hisparse.h"
 
 
-void kernel_assign_vector_sparse_new_frontier(
+static void kernel_assign_vector_sparse_new_frontier(
     const IDX_VAL_T *mask,    // The sparse mask vector. The index field of the first element is the length.
     VAL_T *inout,             // The inout vector.
     IDX_VAL_T *new_frontier   // The new frontier. The index field of the first element is the length.

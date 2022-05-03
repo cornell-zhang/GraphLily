@@ -11,38 +11,38 @@
 extern "C" {
 
 void spmspv_apply(
-    PACKED_VAL_T *spmv_vector,              // NUM_HBM_CHANNEL + 0
-    PACKED_VAL_T *spmv_mask,                // NUM_HBM_CHANNEL + 1
-    PACKED_VAL_T *spmv_mask_w,              // NUM_HBM_CHANNEL + 2, used for write into spmv_mask
-    PACKED_VAL_T *spmv_out,                 // NUM_HBM_CHANNEL + 3
+    /*------------------ arguments for SpMV --------------------*/
+    PACKED_VAL_T *spmv_vector,              // inout, HBM[20]
+    const PACKED_VAL_T *spmv_mask,          // in,    HBM[21]
+    PACKED_VAL_T *spmv_mask_w,              // out,   HBM[21], write into mask
+    const PACKED_VAL_T *spmv_out,           // in,    HBM[22]
     /*----------------- arguments for SpMSpV -------------------*/
-    const SPMSPV_MAT_PKT_T *spmspv_matrix,  // NUM_HBM_CHANNEL + 4
-    const IDX_T *spmspv_matrix_indptr,      // NUM_HBM_CHANNEL + 5
-    const IDX_T *spmspv_matrix_partptr,     // NUM_HBM_CHANNEL + 6
-    IDX_VAL_T *spmspv_vector,               // NUM_HBM_CHANNEL + 7
-    VAL_T *spmspv_mask,                     // NUM_HBM_CHANNEL + 8
-    IDX_VAL_T *spmspv_out,                  // NUM_HBM_CHANNEL + 9
-    /*-------- arguments shared by all kernels -------------*/
-    unsigned num_rows,                      // NUM_HBM_CHANNEL + 10
-    unsigned num_cols,                      // NUM_HBM_CHANNEL + 11
-    OP_T Op,                                // NUM_HBM_CHANNEL + 12
-    MASK_T mask_type,                       // NUM_HBM_CHANNEL + 13
-    unsigned mode,                          // NUM_HBM_CHANNEL + 14
-    /*-------- arguments for apply kernels -------------*/
-    // val must be the last argument, otherwise fixed point causes an XRT run-time error
-    unsigned length,                        // NUM_HBM_CHANNEL + 15
-    unsigned val_ufixed                     // NUM_HBM_CHANNEL + 16
+    const SPMSPV_MAT_PKT_T *spmspv_matrix,  // in,    DDR[0]
+    const IDX_T *spmspv_matrix_indptr,      // in,    DDR[0]
+    const IDX_T *spmspv_matrix_partptr,     // in,    DDR[0]
+    IDX_VAL_T *spmspv_vector,               // inout, HBM[20]
+    VAL_T *spmspv_mask,                     // inout, HBM[21]
+    IDX_VAL_T *spmspv_out,                  // out,   HBM[22]
+    /*-------------- arguments shared by kernels ---------------*/
+    IDX_T num_rows,                         // in
+    IDX_T num_cols,                         // in
+    OP_T semiring,                          // in
+    MASK_T mask_type,                       // in
+    unsigned mode,                          // in
+    unsigned length,                        // in
+    unsigned val_ufixed                     // in
 ) {
 
+/*------------------ arguments for SpMV --------------------*/
 #pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem32
-#pragma HLS INTERFACE m_axi port=spmv_mask offset=slave bundle=spmv_gmem33
+#pragma HLS INTERFACE m_axi port=spmv_mask   offset=slave bundle=spmv_gmem33
 #pragma HLS INTERFACE m_axi port=spmv_mask_w offset=slave bundle=spmv_gmem34
-#pragma HLS INTERFACE m_axi port=spmv_out offset=slave bundle=spmv_gmem35
+#pragma HLS INTERFACE m_axi port=spmv_out    offset=slave bundle=spmv_gmem35
 
 #pragma HLS INTERFACE s_axilite port=spmv_vector bundle=control
-#pragma HLS INTERFACE s_axilite port=spmv_mask bundle=control
+#pragma HLS INTERFACE s_axilite port=spmv_mask   bundle=control
 #pragma HLS INTERFACE s_axilite port=spmv_mask_w bundle=control
-#pragma HLS INTERFACE s_axilite port=spmv_out bundle=control
+#pragma HLS INTERFACE s_axilite port=spmv_out    bundle=control
 
 /*----------------- arguments for SpMSpV -------------------*/
 #pragma HLS interface m_axi port=spmspv_matrix         offset=slave bundle=spmspv_gmem0
@@ -59,18 +59,18 @@ void spmspv_apply(
 #pragma HLS interface s_axilite port=spmspv_mask           bundle=control
 #pragma HLS interface s_axilite port=spmspv_out            bundle=control
 
-/*-------- arguments shared by all kernels ---------*/
-#pragma HLS INTERFACE s_axilite port=num_rows bundle=control
-#pragma HLS INTERFACE s_axilite port=num_cols bundle=control
-#pragma HLS INTERFACE s_axilite port=Op bundle=control
-#pragma HLS INTERFACE s_axilite port=mask_type bundle=control
-#pragma HLS INTERFACE s_axilite port=mode bundle=control
-#pragma HLS INTERFACE s_axilite port=return bundle=control
-
-/*-------- arguments for apply kernels -------------*/
-#pragma HLS INTERFACE s_axilite port=length bundle=control
+/*-------------- arguments shared by kernels ---------------*/
+#pragma HLS INTERFACE s_axilite port=num_rows   bundle=control
+#pragma HLS INTERFACE s_axilite port=num_cols   bundle=control
+#pragma HLS INTERFACE s_axilite port=semiring   bundle=control
+#pragma HLS INTERFACE s_axilite port=mask_type  bundle=control
+#pragma HLS INTERFACE s_axilite port=mode       bundle=control
+#pragma HLS INTERFACE s_axilite port=length     bundle=control
 #pragma HLS INTERFACE s_axilite port=val_ufixed bundle=control
 
+#pragma HLS INTERFACE s_axilite port=return bundle=control
+
+// val is used as (1) semiring zero in SpMSpV, (2) input value in apply kernel
 VAL_T val;
 LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
 
@@ -97,18 +97,6 @@ LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
     }
 #endif
 
-    // VAL_T out_uram_spmspv[NUM_HBM_CHANNEL][PACK_SIZE][SPMSPV_OUT_BUF_LEN / SPMV_NUM_PE_TOTAL];
-    // #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=1
-    // #pragma HLS ARRAY_PARTITION variable=out_uram_spmspv complete dim=2
-    // #pragma HLS resource variable=out_uram_spmspv core=RAM_2P latency=3
-    // // #pragma HLS resource variable=out_uram_spmspv core=XPM_MEMORY uram latency=2
-
-    /*
-        If we do not specify the latency here, the tool will automatically decide the latency of the URAM,
-        which could cause problems for the PE due to RAW hazards.
-        The URAM latency could be 1, 2, 3, or 4. If specified, it will be applied to both read and write.
-    */
-
     switch (mode) {
         case 2:
             kernel_spmspv(
@@ -120,8 +108,9 @@ LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
                 spmspv_out,
                 num_rows,
                 num_cols,
-                Op,
-                mask_type
+                semiring,
+                mask_type,
+                val
             );
             break;
         case 3:

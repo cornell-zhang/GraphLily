@@ -160,11 +160,10 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "sc=spmv_sk2_1.res_out:relay_SK2_rout.in:32" << std::endl;
     ini << "sc=relay_SK2_rout.out:RD.from_SLR2:32" << std::endl;
 
-    // SpMSpV slr tags
+    // SpMSpV apply overlay slr tags
     ini << "slr=spmspv_apply_1:SLR0" << std::endl;
 
-    // SpMSpV
-    // TODO: support mask for spmv
+    // SpMSpV apply overlay sp tags
     ini << "sp=spmspv_apply_1.spmv_vector:HBM[20]" << std::endl;
     ini << "sp=spmspv_apply_1.spmv_mask:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmv_mask_w:HBM[21]" << std::endl;
