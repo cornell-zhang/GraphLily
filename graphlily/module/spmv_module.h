@@ -102,7 +102,7 @@ public:
 
     SpMVModule(uint32_t num_channels,
                uint32_t out_buf_len,
-               uint32_t vec_buf_len) : BaseModule("overlay") {
+               uint32_t vec_buf_len) : BaseModule() {
         this->_check_data_type();
         this->num_channels_ = num_channels;
         this->out_buf_len_ = out_buf_len;

@@ -84,7 +84,7 @@ private:
     void _check_data_type();
 
 public:
-    SpMSpVModule(uint32_t out_buf_len) : BaseModule("overlay") {
+    SpMSpVModule(uint32_t out_buf_len) : BaseModule() {
         this->_check_data_type();
         this->out_buf_len_ = out_buf_len;
     }

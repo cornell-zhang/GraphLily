@@ -32,7 +32,7 @@ public:
     cl::Buffer out_buf;
 
 public:
-    eWiseAddModule() : BaseModule("overlay") {}
+    eWiseAddModule() : BaseModule() {}
 
     /* SpMSpV apply overlay argument list:
     * Index       Argument                              Used in this module?

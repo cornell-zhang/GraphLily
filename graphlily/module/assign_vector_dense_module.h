@@ -34,7 +34,7 @@ public:
     cl::Buffer inout_buf;
 
 public:
-    AssignVectorDenseModule() : BaseModule("overlay") {}
+    AssignVectorDenseModule() : BaseModule() {}
 
     /* SpMSpV apply overlay argument list:
     * Index       Argument                              Used in this module?

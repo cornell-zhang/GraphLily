@@ -37,7 +37,7 @@ public:
     cl::Buffer new_frontier_buf;
 
 public:
-    AssignVectorSparseModule(bool generate_new_frontier) : BaseModule("overlay") {
+    AssignVectorSparseModule(bool generate_new_frontier) : BaseModule() {
         this->generate_new_frontier_ = generate_new_frontier;
     }
 
