@@ -79,7 +79,7 @@ static void ufixed_pe_process(
     // in-flight write queue for data-forwarding
     // designed for URAM latnecy=3 (RDL=3, WRL=2)
     IN_FLIGHT_WRITE ifwq[5];
-    #pragma HLS array_partition variable=ifwq complete;
+    #pragma HLS array_partition variable=ifwq complete
     ifwq[0] = (IN_FLIGHT_WRITE){false, 0, 0};
     ifwq[1] = (IN_FLIGHT_WRITE){false, 0, 0};
     ifwq[2] = (IN_FLIGHT_WRITE){false, 0, 0};
@@ -163,6 +163,32 @@ static void ufixed_pe_output(
     }
 }
 
+template<int id, unsigned bank_size, unsigned pack_size>
+static void ufixed_pe_output_sparse(
+    hls::stream<VEC_PLD_T> &output,
+    VAL_T output_buffer[bank_size],
+    const unsigned used_buf_len,
+    VAL_T zero
+) {
+    bool exit = false;
+    unsigned dump_count = 0;
+    pe_output_loop:
+    for (unsigned dump_count = 0; dump_count < used_buf_len; dump_count++) {
+        #pragma HLS pipeline II=1
+        VAL_T q = output_buffer[dump_count];
+        if (q != zero) {
+            VEC_PLD_T out_pld;
+            out_pld.val = q;
+            out_pld.idx = dump_count * pack_size + id;
+            out_pld.inst = 0x0;
+            output.write(out_pld);
+#ifdef PE_LINE_TRACING
+            std::cout << "  write output: " << VEC_PLD_EOD << std::endl;
+#endif
+        }
+    }
+}
+
 //----------------------------------------------------------------
 // unsigned fixed-point pe
 //----------------------------------------------------------------
@@ -228,7 +254,7 @@ static void pe_uram(
 }
 
 template<int id, unsigned bank_size, unsigned pack_size>
-static void pe_bram(
+static void pe_bram_sparse(
     hls::stream<UPDATE_PLD_T> &input,
     hls::stream<VEC_PLD_T> &output,
     const unsigned used_buf_len,
@@ -283,7 +309,7 @@ static void pe_bram(
 
     // dump results
     output.write(VEC_PLD_SOD);
-    ufixed_pe_output<id, bank_size, pack_size>(output, output_buffer, used_buf_len);
+    ufixed_pe_output_sparse<id, bank_size, pack_size>(output, output_buffer, used_buf_len, zero);
     output.write(VEC_PLD_EOD);
     output.write(VEC_PLD_EOS);
 }

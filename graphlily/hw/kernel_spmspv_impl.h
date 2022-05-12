@@ -9,7 +9,7 @@
 #include <iostream>
 #include <iomanip>
 static bool line_tracing_spmspv = false;
-static bool line_tracing_spmspv_checkout = false;
+static bool line_tracing_spmspv_write_back = false;
 #endif
 
 // vector loader for spmspv
@@ -114,64 +114,66 @@ static void write_back_results (
     IDX_VAL_T *res_out,
     const VAL_T *mask,
     IDX_T mat_row_id_base,
-    IDX_T Nnz,
-    IDX_T &Nnz_incr,
+    IDX_T &Nnz,
     VAL_T Zero,
     MASK_T mask_type
 ) {
+    IDX_T res_idx = Nnz;
     bool exit = false;
-    IDX_T incr = 0;
+    char current_input = 0; // read from multiple PE output streams
+    ap_uint<PACK_SIZE> finished = 0;
+
+    spmspv_write_back_loop:
     while (!exit) {
         #pragma HLS pipeline II=1
-        ap_uint<PACK_SIZE> got_EOS = 0;
-        for (unsigned k = 0; k < PACK_SIZE; k++) {
-            #pragma HLS unroll
-            VEC_PLD_T p = PE_to_WB_stream[k].read();
-            if (p.inst == EOS) {
-                got_EOS[k] = 1;
-            } else if (p.inst != SOD && p.inst != EOD) {
-                got_EOS[k] = 0;
-                if (p.val != Zero) {
-                    IDX_T index = mat_row_id_base + p.idx;
-                    bool do_write = false;
-                    switch (mask_type) {
-                        case NOMASK:
-                            do_write = true;
-                            break;
-                        case WRITETOONE:
-                            do_write = (mask[index] != 0);
-                            break;
-                        case WRITETOZERO:
-                            do_write = (mask[index] == 0);
-                            break;
-                        default:
-                            do_write = false;
-                            break;
+        #pragma HLS dependence variable=res_out inter false
+
+        VEC_PLD_T pld;
+        if (!finished[current_input] && PE_to_WB_stream[current_input].read_nb(pld)) {
+            if (pld.inst == EOS) {
+                finished[current_input] = true;
+            } else if (pld.inst != SOD && pld.inst != EOD) {
+                IDX_T index = mat_row_id_base + pld.idx;
+                bool do_write = false;
+                switch (mask_type) {
+                    case NOMASK:
+                        do_write = true;
+                        break;
+                    case WRITETOONE:
+                        do_write = (mask[index] != 0);
+                        break;
+                    case WRITETOZERO:
+                        do_write = (mask[index] == 0);
+                        break;
+                    default:
+                        do_write = false;
+                        break;
+                }
+                if (do_write) {
+                    IDX_VAL_T res_pld;
+                    res_pld.index = index;
+                    res_pld.val = pld.val;
+                    res_idx++;
+                    res_out[res_idx] = res_pld;
+                    #ifndef __SYNTHESIS__
+                    if (line_tracing_spmspv_write_back) {
+                        std::cout << "INFO: [kernel SpMSpV] Write results"
+                                  << " non-zero " << pld.val
+                                  << " found at " << pld.idx
+                                  << " mapped to " << index << std::endl << std::flush;
                     }
-                    if (do_write) {
-                        IDX_VAL_T res_pld;
-                        res_pld.index = index;
-                        res_pld.val = p.val;
-                        incr++;
-                        res_out[Nnz + incr] = res_pld;
-                        #ifndef __SYNTHESIS__
-                        if (line_tracing_spmspv_checkout) {
-                            std::cout << "INFO: [kernel SpMSpV] Write results"
-                                        << " non-zero " << p.val
-                                        << " found at " << p.idx
-                                        << " mapped to " << index << std::endl << std::flush;
-                        }
-                        #endif
-                    }
+                    #endif
                 }
             }
         }
-        if (got_EOS.and_reduce()) {
-            exit = true;
+
+        exit = finished.and_reduce();
+
+        if ( (++current_input) == PACK_SIZE) {
+            current_input = 0;
         }
     }
-
-    Nnz_incr = incr;
+    Nnz = res_idx;
 }
 
 // load vec/mat -> shuffle -> pe compute -> writeback
@@ -186,8 +188,7 @@ static void spmspv_core(
     IDX_T mat_indptr_base,
     IDX_T mat_row_id_base,
     IDX_T part_id,
-    IDX_T Nnz,
-    IDX_T &Nnz_incr,
+    IDX_T &Nnz,
     OP_T Op,
     VAL_T Zero,
     MASK_T mask_type,
@@ -242,56 +243,56 @@ static void spmspv_core(
     }
     #endif
 
-    pe_bram<0, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<0, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[0],
         PE_to_WB_stream[0],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe_bram<1, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<1, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[1],
         PE_to_WB_stream[1],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe_bram<2, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<2, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[2],
         PE_to_WB_stream[2],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe_bram<3, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<3, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[3],
         PE_to_WB_stream[3],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe_bram<4, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<4, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[4],
         PE_to_WB_stream[4],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe_bram<5, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<5, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[5],
         PE_to_WB_stream[5],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe_bram<6, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<6, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[6],
         PE_to_WB_stream[6],
         used_buf_len_per_pe,
         Op,
         Zero
     );
-    pe_bram<7, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
+    pe_bram_sparse<7, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
         SF_to_PE_stream[7],
         PE_to_WB_stream[7],
         used_buf_len_per_pe,
@@ -311,7 +312,6 @@ static void spmspv_core(
         mask,
         mat_row_id_base,
         Nnz,
-        Nnz_incr,
         Zero,
         mask_type
     );
@@ -356,7 +356,6 @@ static void kernel_spmspv(
         IDX_T num_rows_this_part = (part_id == (num_parts - 1)) ? num_rows_last_part : SPMSPV_OUT_BUF_LEN;
         IDX_T mat_indptr_base = (num_cols + 1) * part_id;
         IDX_T mat_row_id_base = SPMSPV_OUT_BUF_LEN * part_id;
-        IDX_T result_Nnz_incr;
         #ifndef __SYNTHESIS__
         if (line_tracing_spmspv) {
             std::cout << "INFO: [Kernel SpMSpV] Partition " << part_id <<" start" << std::endl << std::flush;
@@ -377,13 +376,11 @@ static void kernel_spmspv(
             mat_row_id_base,
             part_id,
             result_Nnz,
-            result_Nnz_incr,
             Op,
             Zero,
             mask_type,
             (num_rows_this_part + PACK_SIZE - 1) / PACK_SIZE
         );
-        result_Nnz += result_Nnz_incr;
         #ifndef __SYNTHESIS__
         if (line_tracing_spmspv) {
             std::cout << "INFO: [Kernel SpMSpV] Partition " << part_id
