@@ -16,6 +16,7 @@
 
 using graphlily::io::CSCMatrix;
 using graphlily::io::FormattedCSCMatrix;
+using graphlily::io::ColumnCyclicSplitCSC;
 using graphlily::io::formatCSC;
 
 
@@ -29,12 +30,18 @@ private:
     graphlily::MaskType mask_type_;
     /*! \brief The semiring */
     graphlily::SemiringType semiring_;
+    /*! \brief The number of HBM channels */
+    uint32_t spmspv_num_channels_;
     /*! \brief The length of output buffer of the kernel */
     uint32_t out_buf_len_;
     /*! \brief The number of row partitions */
     uint32_t num_row_partitions_;
-    /*! \brief The number of packets */
-    uint32_t num_packets_;
+    /*! \brief The number of columns for each channel partition */
+    std::vector<uint32_t> num_cols_each_channel_;
+    /*! \brief The index of the first argument after SpMSpV matrix, i.e. SpMSpV
+     *         vector input is as 0 index.
+     */
+    uint32_t arg_index_offset_;
 
     using packet_t = struct {graphlily::idx_t indices[graphlily::pack_size];
                              matrix_data_t vals[graphlily::pack_size];};
@@ -45,11 +52,11 @@ private:
     using aligned_packet_t = std::vector<packet_t, aligned_allocator<packet_t>>;
 
     /*! \brief Matrix packets (indices + vals) */
-    aligned_packet_t channel_packets_;
+    std::vector<aligned_packet_t> channel_packets_;
     /*! \brief Matrix indptr */
-    aligned_idx_t channel_indptr_;
+    std::vector<aligned_idx_t> channel_indptr_;
     /*! \brief Matrix partptr */
-    aligned_idx_t channel_partptr_;
+    std::vector<aligned_idx_t> channel_partptr_;
     /*! \brief Internal copy of the sparse vector.
                The index field of the first element is the non-zero count of the vector */
     aligned_sparse_vec_t vector_;
@@ -64,14 +71,12 @@ private:
     CSCMatrix<float> csc_matrix_float_;
     /*! \brief The sparse matrix */
     CSCMatrix<matrix_data_t> csc_matrix_;
-    /*! \brief The formatted matrix */
-    FormattedCSCMatrix<packet_t> formatted_csc_matrix_;
 
 public:
     // Device buffers
-    cl::Buffer channel_packets_buf;
-    cl::Buffer channel_indptr_buf;
-    cl::Buffer channel_partptr_buf;
+    std::vector<cl::Buffer> channel_packets_buf;
+    std::vector<cl::Buffer> channel_indptr_buf;
+    std::vector<cl::Buffer> channel_partptr_buf;
     cl::Buffer vector_buf;
     cl::Buffer mask_buf;
     cl::Buffer results_buf;
@@ -86,42 +91,47 @@ private:
 public:
     SpMSpVModule(uint32_t out_buf_len) : BaseModule() {
         this->_check_data_type();
+        this->spmspv_num_channels_ = graphlily::spmspv_num_hbm_channels;
+        this->arg_index_offset_ = 4 + 3 * this->spmspv_num_channels_;
         this->out_buf_len_ = out_buf_len;
     }
 
-    /* SpMSpV apply overlay argument list:
+    /* SpMSpV apply overlay argument list: (k = 4 + 3 * HBM channels)
     * Index       Argument                              Used in this module?
     * 0           vector for spmv                       n
     * 1           mask for spmv (read port)             n
     * 2           mask for spmv (write port)            n
     * 3           output for spmv                       n
     *
-    * 4~6         matrix for spmspv                     y
-    * 7           vector for spmspv                     y
-    * 8           mask for spmspv                       y
-    * 9           output for spmspv                     y
+    * 4~6         matrix for spmspv in HBM[23]          y
+    * 7~9         matrix for spmspv in HBM[24]          y/n
+    * ...         matrix for spmspv in HBM[??]          y/n
     *
-    * 10          number of rows                        y
-    * 11          number of columns                     y
-    * 12          semiring operation type               y
+    * k+0         vector for spmspv                     y
+    * k+1         mask for spmspv                       y
+    * k+2         output for spmspv                     y
     *
-    * 13          mask type                             y
-    * 14          overlay mode select                   y
-    * 15          apply vector length                   n
-    * 16          apply input value or semiring zero    y
+    * k+3         number of rows                        y
+    * k+4         number of columns                     y
+    * k+5         semiring operation type               y
+    *
+    * k+6         mask type                             y
+    * k+7         overlay mode select                   y
+    * k+8         apply vector length                   n
+    * k+9         apply input value or semiring zero    y
     */
     void set_unused_args() override {
         for (size_t i = 0; i <= 3; ++i) {
             this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         if (this->mask_type_ == graphlily::kNoMask) {
-            this->spmspv_apply_.setArg(8, cl::Buffer(this->context_, 0, 4));
+            this->spmspv_apply_.setArg(arg_index_offset_ + 1, cl::Buffer(this->context_, 0, 4));
         }
-        this->spmspv_apply_.setArg(15, (unsigned)NULL);
+        this->spmspv_apply_.setArg(arg_index_offset_ + 8, (unsigned)NULL);
     }
 
     void set_mode() override {
-        this->spmspv_apply_.setArg(14, 2);  // 2 is SpMSpV
+        this->spmspv_apply_.setArg(arg_index_offset_ + 7, 2);  // 2 is SpMSpV
     }
 
     /*!
@@ -253,16 +263,25 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::load_and_format_matr
         CSCMatrix<float> const &csc_matrix_float) {
     this->csc_matrix_float_ = csc_matrix_float;
     this->csc_matrix_ = graphlily::io::csc_matrix_convert_from_float<matrix_data_t>(csc_matrix_float);
-    this->formatted_csc_matrix_ = formatCSC<matrix_data_t, packet_t>(this->csc_matrix_,
-                                                                     this->semiring_,
-                                                                     graphlily::pack_size,
-                                                                     this->out_buf_len_);
-    this->num_row_partitions_ = this->formatted_csc_matrix_.num_row_partitions;
-    this->num_packets_ = this->formatted_csc_matrix_.num_packets_total;
 
-    this->channel_packets_ = this->formatted_csc_matrix_.get_formatted_packet();
-    this->channel_indptr_ = this->formatted_csc_matrix_.get_formatted_indptr();
-    this->channel_partptr_ = this->formatted_csc_matrix_.get_formatted_partptr();
+    std::vector<CSCMatrix<matrix_data_t> > csc_matrices = ColumnCyclicSplitCSC<matrix_data_t>(this->csc_matrix_,
+                                                                                              this->spmspv_num_channels_);
+    FormattedCSCMatrix<packet_t> formatted_csc_matrices[this->spmspv_num_channels_];
+    this->channel_packets_.resize(this->spmspv_num_channels_);
+    this->channel_indptr_.resize(this->spmspv_num_channels_);
+    this->channel_partptr_.resize(this->spmspv_num_channels_);
+    this->num_cols_each_channel_.resize(this->spmspv_num_channels_);
+    for (uint32_t c = 0; c < this->spmspv_num_channels_; c++) {
+        formatted_csc_matrices[c] = formatCSC<matrix_data_t, packet_t>(csc_matrices[c],
+                                                                       this->semiring_,
+                                                                       graphlily::pack_size,
+                                                                       this->out_buf_len_);
+        this->channel_packets_[c] = formatted_csc_matrices[c].get_formatted_packet();
+        this->channel_indptr_[c] = formatted_csc_matrices[c].get_formatted_indptr();
+        this->channel_partptr_[c] = formatted_csc_matrices[c].get_formatted_partptr();
+        this->num_cols_each_channel_[c] = formatted_csc_matrices[c].num_cols;
+    }
+    this->num_row_partitions_ = formatted_csc_matrices[0].num_row_partitions;
 
     // reserve enough space for the vector
     this->vector_.resize(this->get_num_cols() + 1);
@@ -279,55 +298,74 @@ template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_device() {
     cl_int err;
     // Handle matrix packet, indptr and partptr
-    cl_mem_ext_ptr_t channel_packets_ext;
-    cl_mem_ext_ptr_t channel_indptr_ext;
-    cl_mem_ext_ptr_t channel_partptr_ext;
+    cl_mem_ext_ptr_t channel_packets_ext[this->spmspv_num_channels_];
+    cl_mem_ext_ptr_t channel_indptr_ext[this->spmspv_num_channels_];
+    cl_mem_ext_ptr_t channel_partptr_ext[this->spmspv_num_channels_];
 
-    channel_packets_ext.obj = this->channel_packets_.data();
-    channel_packets_ext.param = 0;
-    channel_packets_ext.flags = graphlily::DDR[0];
+    this->channel_packets_buf.resize(this->spmspv_num_channels_);
+    this->channel_indptr_buf.resize(this->spmspv_num_channels_);
+    this->channel_partptr_buf.resize(this->spmspv_num_channels_);
 
-    channel_indptr_ext.obj = this->channel_indptr_.data();
-    channel_indptr_ext.param = 0;
-    channel_indptr_ext.flags = graphlily::DDR[0];
+    for (size_t c = 0; c < this->spmspv_num_channels_; c++) {
+        channel_packets_ext[c].obj = this->channel_packets_[c].data();
+        channel_packets_ext[c].param = 0;
+        channel_packets_ext[c].flags = graphlily::HBM[c + 23];
 
-    channel_partptr_ext.obj = this->channel_partptr_.data();
-    channel_partptr_ext.param = 0;
-    channel_partptr_ext.flags = graphlily::DDR[0];
+        channel_indptr_ext[c].obj = this->channel_indptr_[c].data();
+        channel_indptr_ext[c].param = 0;
+        channel_indptr_ext[c].flags = graphlily::HBM[c + 23];
 
-    OCL_CHECK(err, this->channel_packets_buf = cl::Buffer(this->context_,
-        CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(packet_t) * this->num_packets_,
-        &channel_packets_ext,
-        &err));
-    OCL_CHECK(err, this->channel_indptr_buf = cl::Buffer(this->context_,
-        CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(graphlily::idx_t) * (this->get_num_cols() + 1) * this->num_row_partitions_ ,
-        &channel_indptr_ext,
-        &err));
-    OCL_CHECK(err, this->channel_partptr_buf = cl::Buffer(this->context_,
-        CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-        sizeof(graphlily::idx_t) * (this->num_row_partitions_ + 1),
-        &channel_partptr_ext,
-        &err));
+        channel_partptr_ext[c].obj = this->channel_partptr_[c].data();
+        channel_partptr_ext[c].param = 0;
+        channel_partptr_ext[c].flags = graphlily::HBM[c + 23];
 
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(4, this->channel_packets_buf));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(5, this->channel_indptr_buf));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(6, this->channel_partptr_buf));
+        size_t channel_packets_size = sizeof(packet_t) * this->channel_packets_[c].size()
+                                      + sizeof(unsigned) * this->channel_indptr_[c].size()
+                                      + sizeof(unsigned) * this->channel_partptr_[c].size();
+        std::cout << "channel_packets_size: " << channel_packets_size << std::endl;
+        if (channel_packets_size >= 256 * 1024 * 1024) {
+            std::cout << "The capcity of one HBM channel is 256 MB" << std::endl;
+            exit(EXIT_FAILURE);
+        }
 
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(10, this->csc_matrix_.num_rows));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(11, this->csc_matrix_.num_cols));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(12, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(13, (char)this->mask_type_));
+        OCL_CHECK(err, this->channel_packets_buf[c] = cl::Buffer(this->context_,
+            CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+            sizeof(packet_t) * this->channel_packets_[c].size(),
+            &channel_packets_ext[c],
+            &err));
+        OCL_CHECK(err, this->channel_indptr_buf[c] = cl::Buffer(this->context_,
+            CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+            sizeof(graphlily::idx_t) * (this->num_cols_each_channel_[c] + 1) * this->num_row_partitions_ ,
+            &channel_indptr_ext[c],
+            &err));
+        OCL_CHECK(err, this->channel_partptr_buf[c] = cl::Buffer(this->context_,
+            CL_MEM_READ_ONLY | CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
+            sizeof(graphlily::idx_t) * (this->num_row_partitions_ + 1),
+            &channel_partptr_ext[c],
+            &err));
+    }
+
+    for (size_t c = 0; c < this->spmspv_num_channels_; c++) {
+        OCL_CHECK(err, err = this->spmspv_apply_.setArg(4 + 3*c, this->channel_packets_buf[c]));
+        OCL_CHECK(err, err = this->spmspv_apply_.setArg(5 + 3*c, this->channel_indptr_buf[c]));
+        OCL_CHECK(err, err = this->spmspv_apply_.setArg(6 + 3*c, this->channel_partptr_buf[c]));
+    }
+
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 3, this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 4, this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 5, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 6, (char)this->mask_type_));
 
     unsigned zero = graphlily::pack_raw_bits_to_uint(this->semiring_.zero);
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(16, zero));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 9, zero));
 
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
-        this->channel_packets_buf,
-        this->channel_indptr_buf,
-        this->channel_partptr_buf,
-        }, 0 /* 0 means from host*/));
+    for (size_t c = 0; c < this->spmspv_num_channels_; c++) {
+        OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
+            this->channel_packets_buf[c],
+            this->channel_indptr_buf[c],
+            this->channel_partptr_buf[c],
+            }, 0 /* 0 means from host*/));
+    }
 
     this->command_queue_.finish();
     // std::cout << "INFO: [Module SpMSpV - send matrix] matrix successfully send to device."
@@ -356,7 +394,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
                 &results_nnz_ext,
                 &err));
 
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(9, this->results_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 2, this->results_buf));
     // std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
     //           << std::endl << std::flush;
 }
@@ -383,7 +421,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
                 &err));
 
     // set argument
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(7, this->vector_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 0, this->vector_buf));
 
     // Send vector to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
@@ -415,7 +453,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
                 &err));
 
     // set argument
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(8, this->mask_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 1, this->mask_buf));
 
     // Send mask to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));

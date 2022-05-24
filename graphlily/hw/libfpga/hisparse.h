@@ -23,6 +23,8 @@ const unsigned NUM_BANK_PER_HBM_CHANNEL = PACK_SIZE / NUM_PORT_PER_BANK;
 const unsigned BANK_ID_NBITS = 3;
 const unsigned BANK_ID_MASK = 7;
 
+#define SPMSPV_NUM_HBM_CHANNEL 2
+
 //-------------------------------------------------------------------------
 // basic data types
 //-------------------------------------------------------------------------
@@ -59,6 +61,16 @@ typedef ap_uint<2> INST_T;
 #define SOD 0x1 // start-of-data
 #define EOD 0x2 // end-of-data
 #define EOS 0x3 // end-of-stream
+
+// used between SpMSpV vector loader <-> SpMSpV matrix loader
+struct IDX_VAL_INST_T {
+    IDX_T index;
+    VAL_T val;
+    INST_T inst;
+};
+#define IDX_VAL_INST_SOD ((IDX_VAL_INST_T){0,0,SOD})
+#define IDX_VAL_INST_EOD ((IDX_VAL_INST_T){0,0,EOD})
+#define IDX_VAL_INST_EOS ((IDX_VAL_INST_T){0,0,EOS})
 
 // edge payload (COO), used between SpMV matrix loader <-> SpMV shuffle 1
 struct EDGE_PLD_T {

@@ -169,9 +169,14 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "sp=spmspv_apply_1.spmv_mask_w:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmv_out:HBM[22]" << std::endl;
 
-    ini << "sp=spmspv_apply_1.spmspv_matrix:DDR[0]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_indptr:DDR[0]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_partptr:DDR[0]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_0:HBM[23]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_indptr_0:HBM[23]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_partptr_0:HBM[23]" << std::endl;
+
+    ini << "sp=spmspv_apply_1.spmspv_matrix_1:HBM[24]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_indptr_1:HBM[24]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_partptr_1:HBM[24]" << std::endl;
+
     ini << "sp=spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_out:HBM[22]" << std::endl;
