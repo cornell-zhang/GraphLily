@@ -1,5 +1,8 @@
 #include "./libfpga/hisparse.h"
 
+#include "./kernel_spmv_vector_loader.h"
+#include "./kernel_spmv_result_drain.h"
+
 #include "./kernel_spmspv_impl.h"
 
 #include "./kernel_add_scalar_vector_dense_impl.h"
@@ -10,12 +13,12 @@
 
 extern "C" {
 
-void spmspv_apply(
+void spmv_vl_rd_spmspv_apply(
     /*------------------ arguments for SpMV --------------------*/
     PACKED_VAL_T *spmv_vector,              // inout, HBM[20]
     const PACKED_VAL_T *spmv_mask,          // in,    HBM[21]
     PACKED_VAL_T *spmv_mask_w,              // out,   HBM[21], write into mask
-    const PACKED_VAL_T *spmv_out,           // in,    HBM[22]
+    PACKED_VAL_T *spmv_out,                 // inout, HBM[22]
     /*----------------- arguments for SpMSpV -------------------*/
 #if (SPMSPV_NUM_HBM_CHANNEL >= 1)
     SPMSPV_MAT_ARGS(0),                     // in,    HBM[23]
@@ -49,19 +52,34 @@ void spmspv_apply(
     MASK_T mask_type,                       // in
     unsigned mode,                          // in
     unsigned length,                        // in
-    unsigned val_ufixed                     // in
+    unsigned val_ufixed,                    // in
+    unsigned spmv_row_part_id,              // in, only used by SpMV RD so far
+    /*-------------- streams for SpMV VL and RD ---------------*/
+    hls::stream<VEC_AXIS_T> &to_SLR0,                      // out
+    hls::stream<VEC_AXIS_T> &to_SLR1,                      // out
+    hls::stream<VEC_AXIS_T> &to_SLR2,
+    hls::stream<VEC_AXIS_T> &from_SLR0,     // out
+    hls::stream<VEC_AXIS_T> &from_SLR1,     // out
+    hls::stream<VEC_AXIS_T> &from_SLR2      // out
 ) {
 
 /*------------------ arguments for SpMV --------------------*/
-#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem32
-#pragma HLS INTERFACE m_axi port=spmv_mask   offset=slave bundle=spmv_gmem33
-#pragma HLS INTERFACE m_axi port=spmv_mask_w offset=slave bundle=spmv_gmem34
-#pragma HLS INTERFACE m_axi port=spmv_out    offset=slave bundle=spmv_gmem35
+#pragma HLS INTERFACE m_axi port=spmv_vector offset=slave bundle=spmv_gmem_vec
+#pragma HLS INTERFACE m_axi port=spmv_mask   offset=slave bundle=spmv_gmem_mask
+#pragma HLS INTERFACE m_axi port=spmv_mask_w offset=slave bundle=spmv_gmem_mask_w
+#pragma HLS INTERFACE m_axi port=spmv_out    offset=slave bundle=spmv_gmem_out
 
 #pragma HLS INTERFACE s_axilite port=spmv_vector bundle=control
 #pragma HLS INTERFACE s_axilite port=spmv_mask   bundle=control
 #pragma HLS INTERFACE s_axilite port=spmv_mask_w bundle=control
 #pragma HLS INTERFACE s_axilite port=spmv_out    bundle=control
+
+#pragma HLS interface axis register both port=to_SLR0
+#pragma HLS interface axis register both port=to_SLR1
+#pragma HLS interface axis register both port=to_SLR2
+#pragma HLS interface axis register both port=from_SLR0
+#pragma HLS interface axis register both port=from_SLR1
+#pragma HLS interface axis register both port=from_SLR2
 
 /*----------------- arguments for SpMSpV -------------------*/
 #if (SPMSPV_NUM_HBM_CHANNEL >= 1)
@@ -111,13 +129,14 @@ void spmspv_apply(
 #pragma HLS interface s_axilite port=spmspv_out     bundle=control
 
 /*-------------- arguments shared by kernels ---------------*/
-#pragma HLS INTERFACE s_axilite port=num_rows   bundle=control
-#pragma HLS INTERFACE s_axilite port=num_cols   bundle=control
-#pragma HLS INTERFACE s_axilite port=semiring   bundle=control
-#pragma HLS INTERFACE s_axilite port=mask_type  bundle=control
-#pragma HLS INTERFACE s_axilite port=mode       bundle=control
-#pragma HLS INTERFACE s_axilite port=length     bundle=control
-#pragma HLS INTERFACE s_axilite port=val_ufixed bundle=control
+#pragma HLS INTERFACE s_axilite port=num_rows         bundle=control
+#pragma HLS INTERFACE s_axilite port=num_cols         bundle=control
+#pragma HLS INTERFACE s_axilite port=semiring         bundle=control
+#pragma HLS INTERFACE s_axilite port=mask_type        bundle=control
+#pragma HLS INTERFACE s_axilite port=mode             bundle=control
+#pragma HLS INTERFACE s_axilite port=length           bundle=control
+#pragma HLS INTERFACE s_axilite port=val_ufixed       bundle=control
+#pragma HLS interface s_axilite port=spmv_row_part_id bundle=control
 
 #pragma HLS INTERFACE s_axilite port=return bundle=control
 
@@ -127,6 +146,9 @@ LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
 
 #ifndef __SYNTHESIS__
     switch (mode) {
+        case 1:
+            std::cout << "Running SpMV Vector Loader and Result Drain" << std::endl;
+            break;
         case 2:
             std::cout << "Running SpMSpV" << std::endl;
             break;
@@ -149,6 +171,24 @@ LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
 #endif
 
     switch (mode) {
+        case 1:
+            kernel_spmv_vector_loader(
+                spmv_vector,
+                num_cols,
+                to_SLR0,
+                to_SLR1,
+                to_SLR2
+            );
+            kernel_spmv_result_drain(
+                spmv_out,
+                spmv_mask,
+                spmv_row_part_id,
+                val,
+                mask_type,
+                from_SLR0,
+                from_SLR1,
+                from_SLR2
+            );
         case 2:
             kernel_spmspv(
 #if (SPMSPV_NUM_HBM_CHANNEL >= 1)

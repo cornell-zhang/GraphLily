@@ -28,12 +28,10 @@ protected:
 
     // TODO: simple workaround for split-kernel
     // TODO: need to find a way to organize it
-    cl::Kernel spmspv_apply_;
-    cl::Kernel spmv_result_drain_;
+    cl::Kernel spmv_vl_rd_spmspv_apply_;
     cl::Kernel spmv_sk0_;
     cl::Kernel spmv_sk1_;
     cl::Kernel spmv_sk2_;
-    cl::Kernel spmv_vector_loader_;
 
 public:
     BaseModule() {}
@@ -144,12 +142,10 @@ public:
 void BaseModule::set_up_kernels() {
     cl_int err;
     cl::Program &program = this->program_;
-    OCL_CHECK(err, this->spmspv_apply_ = cl::Kernel(program, "spmspv_apply", &err));
     OCL_CHECK(err, this->spmv_sk0_ = cl::Kernel(program, "spmv_sk0", &err));
     OCL_CHECK(err, this->spmv_sk1_ = cl::Kernel(program, "spmv_sk1", &err));
     OCL_CHECK(err, this->spmv_sk2_ = cl::Kernel(program, "spmv_sk2", &err));
-    OCL_CHECK(err, this->spmv_vector_loader_ = cl::Kernel(program, "spmv_vector_loader", &err));
-    OCL_CHECK(err, this->spmv_result_drain_ = cl::Kernel(program, "spmv_result_drain", &err));
+    OCL_CHECK(err, this->spmv_vl_rd_spmspv_apply_ = cl::Kernel(program, "spmv_vl_rd_spmspv_apply", &err));
 }
 
 void BaseModule::set_up_command_queue() {

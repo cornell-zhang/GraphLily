@@ -39,7 +39,7 @@ private:
     /*! \brief The index of the first argument after SpMSpV matrix, i.e. SpMSpV
      *         vector input is as 0 index.
      */
-    uint32_t arg_index_offset_;
+    uint32_t overlay_arg_offset_;
 
     using packet_t = struct {graphlily::idx_t indices[graphlily::pack_size];
                              matrix_data_t vals[graphlily::pack_size];};
@@ -84,21 +84,21 @@ private:
 public:
     SpMSpVModule(uint32_t out_buf_len) : BaseModule() {
         this->_check_data_type();
+        // TODO: set num_channels from arguments
         this->spmspv_num_channels_ = graphlily::spmspv_num_hbm_channels;
-        this->arg_index_offset_ = 4 + 1 * this->spmspv_num_channels_;
+        this->overlay_arg_offset_ = 4 + 1 * this->spmspv_num_channels_;
         this->out_buf_len_ = out_buf_len;
     }
 
-    /* SpMSpV apply overlay argument list: (k = 4 + 1 * HBM channels)
+    /* Overlay (VL, RD of SpMV, SpMSpV, and apply) argument list:
+    *  (k = 4 + 1 * SpMSpV HBM channels)
     * Index       Argument                              Used in this module?
     * 0           vector for spmv                       n
     * 1           mask for spmv (read port)             n
     * 2           mask for spmv (write port)            n
     * 3           output for spmv                       n
     *
-    * 4           matrix for spmspv in HBM[23]          y
-    * 5           matrix for spmspv in HBM[24]          y/n
-    * ...         matrix for spmspv in HBM[??]          y/n
+    * 4~k-1       matrix for spmspv start from HBM[23]  y
     *
     * k+0         vector for spmspv                     y
     * k+1         mask for spmspv                       y
@@ -112,19 +112,21 @@ public:
     * k+7         overlay mode select                   y
     * k+8         apply vector length                   n
     * k+9         apply input value or semiring zero    y
+    * k+10        spmv RD row partition index           n
     */
     void set_unused_args() override {
         for (size_t i = 0; i <= 3; ++i) {
-            this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
+            this->spmv_vl_rd_spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         if (this->mask_type_ == graphlily::kNoMask) {
-            this->spmspv_apply_.setArg(arg_index_offset_ + 1, cl::Buffer(this->context_, 0, 4));
+            this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 1, cl::Buffer(this->context_, 0, 4));
         }
-        this->spmspv_apply_.setArg(arg_index_offset_ + 8, (unsigned)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 8, (unsigned)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 10, (unsigned)NULL);
     }
 
     void set_mode() override {
-        this->spmspv_apply_.setArg(arg_index_offset_ + 7, 2);  // 2 is SpMSpV
+        this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 7, 2);  // 2 is SpMSpV
     }
 
     /*!
@@ -324,15 +326,15 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
     // invoke kernel
     //--------------------------------------------------------------------
     for (size_t c = 0; c < this->spmspv_num_channels_; c++) {
-        OCL_CHECK(err, err = this->spmspv_apply_.setArg(4 + c, this->channel_packets_buf[c]));
+        OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(4 + c, this->channel_packets_buf[c]));
     }
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 3, this->csc_matrix_.num_rows));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 4, this->csc_matrix_.num_cols));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 5, (char)this->semiring_.op));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 6, (char)this->mask_type_));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 3, this->csc_matrix_.num_rows));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 4, this->csc_matrix_.num_cols));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 5, (char)this->semiring_.op));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 6, (char)this->mask_type_));
 
     unsigned zero = graphlily::pack_raw_bits_to_uint(this->semiring_.zero);
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 9, zero));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 9, zero));
 
     for (size_t c = 0; c < this->spmspv_num_channels_; c++) {
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({
@@ -369,7 +371,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_matrix_host_to_
         &results_nnz_ext,
         &err));
 
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 2, this->results_buf));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 2, this->results_buf));
     // std::cout << "INFO: [Module SpMSpV - allocate result] space for result successfully allocated on device."
     //           << std::endl << std::flush;
 }
@@ -396,7 +398,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_vector_host_to_
         &err));
 
     // set argument
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 0, this->vector_buf));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 0, this->vector_buf));
 
     // Send vector to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->vector_buf}, 0));
@@ -428,7 +430,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
         &err));
 
     // set argument
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(arg_index_offset_ + 1, this->mask_buf));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(overlay_arg_offset_ + 1, this->mask_buf));
 
     // Send mask to device
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
@@ -441,7 +443,7 @@ void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::send_mask_host_to_de
 template<typename matrix_data_t, typename vector_data_t, typename idx_val_t>
 void SpMSpVModule<matrix_data_t, vector_data_t, idx_val_t>::run() {
     cl_int err;
-    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmspv_apply_));
+    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmv_vl_rd_spmspv_apply_));
     this->command_queue_.finish();
 }
 

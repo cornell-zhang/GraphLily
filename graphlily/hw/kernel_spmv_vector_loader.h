@@ -4,7 +4,7 @@
 
 #include "libfpga/hisparse.h"
 
-void load_duplicate(
+static void load_duplicate(
     const PACKED_VAL_T *packed_dense_vector,              // in
     const unsigned num_cols,                              // in
     hls::stream<VEC_AXIS_INTERNAL_T> duplicate[3]                  // out
@@ -78,7 +78,7 @@ void load_duplicate(
 
 }
 
-void write_k2ks(
+static void write_k2ks(
     hls::stream<VEC_AXIS_INTERNAL_T> &in,                      // in
     hls::stream<VEC_AXIS_T> &out                      // out
 ) {
@@ -95,23 +95,13 @@ void write_k2ks(
     }
 }
 
-extern "C" {
-void spmv_vector_loader(
+static void kernel_spmv_vector_loader(
     const PACKED_VAL_T *packed_dense_vector,               // in
     const unsigned num_cols,                     // in
     hls::stream<VEC_AXIS_T> &to_SLR0,                      // out
     hls::stream<VEC_AXIS_T> &to_SLR1,                      // out
     hls::stream<VEC_AXIS_T> &to_SLR2                       // out
 ) {
-    #pragma HLS interface m_axi port=packed_dense_vector offset=slave bundle=spmv_vin
-    #pragma HLS interface s_axilite port=packed_dense_vector bundle=control
-    #pragma HLS interface s_axilite port=num_cols bundle=control
-    #pragma HLS interface s_axilite port=return bundle=control
-
-    #pragma HLS interface axis register both port=to_SLR0
-    #pragma HLS interface axis register both port=to_SLR1
-    #pragma HLS interface axis register both port=to_SLR2
-
     #pragma HLS dataflow
     hls::stream<VEC_AXIS_INTERNAL_T> duplicate[3];
     #pragma HLS stream variable=duplicate depth=8
@@ -121,4 +111,3 @@ void spmv_vector_loader(
     write_k2ks(duplicate[2], to_SLR2);
 
 } // kernel
-} // extern "C"

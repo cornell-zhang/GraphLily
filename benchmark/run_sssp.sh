@@ -1,9 +1,9 @@
 make bench_sssp
 
 num_channels=16
-spmv_out_buf_len=1024000
-spmspv_out_buf_len=256000
-vec_buf_len=30720
+spmv_out_buf_len=1048576
+spmspv_out_buf_len=262144
+vec_buf_len=524288
 
 bitstream=/work/shared/common/project_build/graphblas/bitstreams/
 bitstream+=overlay_16c_1000K_250K_30K_stream64_165MHz/overlay.xclbin

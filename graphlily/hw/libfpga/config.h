@@ -8,6 +8,6 @@ const unsigned SPMSPV_OUT_BUF_LEN = 256 * 1024;
 const unsigned SPMV_VEC_BUF_LEN = 256;
 // TODO: tag SpMV prefix to old NUM_HBM_CHANNEL
 #define NUM_HBM_CHANNEL 16
-#define SPMSPV_NUM_HBM_CHANNEL 6
+#define SPMSPV_NUM_HBM_CHANNEL 8
 
 #endif  // GRAPHLILY_HW_CONFIG_H_

@@ -32,10 +32,8 @@ public:
         this->makefile_body_ += graphlily::add_kernel_to_makefile("spmv_sk0");
         this->makefile_body_ += graphlily::add_kernel_to_makefile("spmv_sk1");
         this->makefile_body_ += graphlily::add_kernel_to_makefile("spmv_sk2");
-        this->makefile_body_ += graphlily::add_kernel_to_makefile("spmv_result_drain");
-        this->makefile_body_ += graphlily::add_kernel_to_makefile("spmv_vector_loader");
         this->makefile_body_ += graphlily::add_kernel_to_makefile("k2k_relay");
-        this->makefile_body_ += graphlily::add_kernel_to_makefile("spmspv_apply");
+        this->makefile_body_ += graphlily::add_kernel_to_makefile("spmv_vl_rd_spmspv_apply");
     }
 
     void generate_kernel_header() override;
@@ -56,16 +54,6 @@ void SplitKernelSynthesizer::link_kernel_code() {
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "spmspv_apply.cpp"
-                    + " " + graphlily::proj_folder_name + "/" + "spmspv_apply.cpp";
-    std::cout << command << std::endl;
-    system(command.c_str());
-
-    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "spmv_result_drain.cpp"
-                    + " " + graphlily::proj_folder_name + "/" + "spmv_result_drain.cpp";
-    std::cout << command << std::endl;
-    system(command.c_str());
-
     command = "cp " + graphlily::root_path + "/graphlily/hw/" + "spmv_sk0.cpp"
                     + " " + graphlily::proj_folder_name + "/" + "spmv_sk0.cpp";
     std::cout << command << std::endl;
@@ -81,8 +69,8 @@ void SplitKernelSynthesizer::link_kernel_code() {
     std::cout << command << std::endl;
     system(command.c_str());
 
-    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "spmv_vector_loader.cpp"
-                    + " " + graphlily::proj_folder_name + "/" + "spmv_vector_loader.cpp";
+    command = "cp " + graphlily::root_path + "/graphlily/hw/" + "spmv_vl_rd_spmspv_apply.cpp"
+                    + " " + graphlily::proj_folder_name + "/" + "spmv_vl_rd_spmspv_apply.cpp";
     std::cout << command << std::endl;
     system(command.c_str());
 
@@ -119,21 +107,40 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     std::ofstream ini(graphlily::proj_folder_name + "/" + this->kernel_name_ + ".ini");
     ini << "[connectivity]" << std::endl;
 
-    // SpMV nk tags
-    ini << "nk=spmv_vector_loader:1:VL" << std::endl;
-    ini << "nk=spmv_result_drain:1:RD" << std::endl;
+    //--------------------------------------------------------------------
+    // nk tags
+    //--------------------------------------------------------------------
     ini << "nk=k2k_relay:2:relay_SK2_vin.relay_SK2_rout" << std::endl;
 
-    // SpMV slr tags
+    //--------------------------------------------------------------------
+    // sc tags
+    //--------------------------------------------------------------------
+    // TODO: parameterize AXIS FIFO depth
+    ini << "sc=spmv_vl_rd_spmspv_apply_1.to_SLR0:spmv_sk0_1.vec_in:32" << std::endl;
+    ini << "sc=spmv_vl_rd_spmspv_apply_1.to_SLR1:spmv_sk1_1.vec_in:32" << std::endl;
+    ini << "sc=spmv_vl_rd_spmspv_apply_1.to_SLR2:relay_SK2_vin.in:32" << std::endl;
+    ini << "sc=relay_SK2_vin.out:spmv_sk2_1.vec_in:32" << std::endl;
+    ini << "sc=spmv_sk0_1.res_out:spmv_vl_rd_spmspv_apply_1.from_SLR0:32" << std::endl;
+    ini << "sc=spmv_sk1_1.res_out:spmv_vl_rd_spmspv_apply_1.from_SLR1:32" << std::endl;
+    ini << "sc=spmv_sk2_1.res_out:relay_SK2_rout.in:32" << std::endl;
+    ini << "sc=relay_SK2_rout.out:spmv_vl_rd_spmspv_apply_1.from_SLR2:32" << std::endl;
+
+    //--------------------------------------------------------------------
+    // slr tags
+    //--------------------------------------------------------------------
+    // SpMV SK[0-2] slr tags
     ini << "slr=spmv_sk0_1:SLR0" << std::endl;
     ini << "slr=spmv_sk1_1:SLR1" << std::endl;
     ini << "slr=spmv_sk2_1:SLR2" << std::endl;
-    ini << "slr=VL:SLR0" << std::endl;
-    ini << "slr=RD:SLR0" << std::endl;
     ini << "slr=relay_SK2_vin:SLR1" << std::endl;
     ini << "slr=relay_SK2_rout:SLR1" << std::endl;
+    // Overlay (SpMV VL, SpMV RD, SpMSpV, and apply) slr tags
+    ini << "slr=spmv_vl_rd_spmspv_apply_1:SLR0" << std::endl;
 
-    // SpMV sp tags
+    //--------------------------------------------------------------------
+    // sp tags
+    //--------------------------------------------------------------------
+    // SpMV SK[0-2] sp tags
     // TODO: parameterize cluster allocation
     const unsigned SLR_0_CLUSTERS = 4;
     const unsigned SLR_1_CLUSTERS = 6;
@@ -150,36 +157,19 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
         ini << ".matrix_hbm_" << hbm_idx << ":HBM["
             << hbm_idx << "]" << std::endl;
     }
-    ini << "sp=VL.packed_dense_vector:HBM[20]" << std::endl;
-    ini << "sp=RD.packed_dense_mask:HBM[21]" << std::endl;
-    ini << "sp=RD.packed_dense_result:HBM[22]" << std::endl;
 
-    // SpMV sc tags
-    // TODO: parameterize AXIS FIFO depth
-    ini << "sc=VL.to_SLR0:spmv_sk0_1.vec_in:32" << std::endl;
-    ini << "sc=VL.to_SLR1:spmv_sk1_1.vec_in:32" << std::endl;
-    ini << "sc=VL.to_SLR2:relay_SK2_vin.in:32" << std::endl;
-    ini << "sc=relay_SK2_vin.out:spmv_sk2_1.vec_in:32" << std::endl;
-    ini << "sc=spmv_sk0_1.res_out:RD.from_SLR0:32" << std::endl;
-    ini << "sc=spmv_sk1_1.res_out:RD.from_SLR1:32" << std::endl;
-    ini << "sc=spmv_sk2_1.res_out:relay_SK2_rout.in:32" << std::endl;
-    ini << "sc=relay_SK2_rout.out:RD.from_SLR2:32" << std::endl;
-
-    // SpMSpV apply overlay slr tags
-    ini << "slr=spmspv_apply_1:SLR0" << std::endl;
-
-    // SpMSpV apply overlay sp tags
-    ini << "sp=spmspv_apply_1.spmv_vector:HBM[20]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmv_mask:HBM[21]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmv_mask_w:HBM[21]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmv_out:HBM[22]" << std::endl;
+    // Overlay (SpMV VL, SpMV RD, SpMSpV, and apply) sp tags
+    ini << "sp=spmv_vl_rd_spmspv_apply_1.spmv_vector:HBM[20]" << std::endl;
+    ini << "sp=spmv_vl_rd_spmspv_apply_1.spmv_mask:HBM[21]" << std::endl;
+    ini << "sp=spmv_vl_rd_spmspv_apply_1.spmv_mask_w:HBM[21]" << std::endl;
+    ini << "sp=spmv_vl_rd_spmspv_apply_1.spmv_out:HBM[22]" << std::endl;
     for (size_t hbm_idx = 0; hbm_idx < this->spmspv_num_channels_; hbm_idx++) {
         ini << "sp=spmv_vl_rd_spmspv_apply_1.spmspv_mat_" << hbm_idx
             << ":HBM[" << hbm_idx + 23 << "]" << std::endl;
     }
-    ini << "sp=spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_out:HBM[22]" << std::endl;
+    ini << "sp=spmv_vl_rd_spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
+    ini << "sp=spmv_vl_rd_spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;
+    ini << "sp=spmv_vl_rd_spmspv_apply_1.spmspv_out:HBM[22]" << std::endl;
 
     // enable retiming
     /* retiming will be automatically enabled

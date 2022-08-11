@@ -29,6 +29,9 @@ private:
     aligned_dense_vec_t inout_;
     /*! \brief Internal copy of new_frontier */
     aligned_mask_t new_frontier_;
+    /*! \brief The offset of spmv(VL, RD), spmspv, and apply kernel
+               equals to 4 + spmspv HBM channels */
+    uint32_t overlay_arg_offset_;
 
 public:
     // Device buffers
@@ -39,55 +42,60 @@ public:
 public:
     AssignVectorSparseModule(bool generate_new_frontier) : BaseModule() {
         this->generate_new_frontier_ = generate_new_frontier;
+        this->overlay_arg_offset_ = 4 + graphlily::spmspv_num_hbm_channels;
     }
 
-    /* SpMSpV apply overlay argument list:
+    /* Overlay (VL, RD of SpMV, SpMSpV, and apply) argument list:
+    *  (k = 4 + 1 * SpMSpV HBM channels)
     * Index       Argument                              Used in this module?
     * 0           vector for spmv                       n
     * 1           mask for spmv (read port)             n
     * 2           mask for spmv (write port)            n
     * 3           output for spmv                       n
     *
-    * 4~9         matrix for spmspv                     n
-    * 10           vector for spmspv                    y
-    * 11           mask for spmspv                      y
-    * 12           output for spmspv                    y
+    * 4~k-1       matrix for spmspv start from HBM[23]  n
     *
-    * 13          number of rows                        n
-    * 14          number of columns                     n
-    * 15          semiring operation type               n
+    * k+0         vector for spmspv                     y
+    * k+1         mask for spmspv                       y
+    * k+2         output for spmspv                     y
     *
-    * 16          mask type                             n
-    * 17          overlay mode select                   y
-    * 18          apply vector length                   n
-    * 19          apply input value or semiring zero    y
+    * k+3         number of rows                        n
+    * k+4         number of columns                     n
+    * k+5         semiring operation type               n
+    *
+    * k+6         mask type                             n
+    * k+7         overlay mode select                   y
+    * k+8         apply vector length                   n
+    * k+9         apply input value or semiring zero    y
+    * k+10        spmv RD row partition index           n
     */
     void set_unused_args() override {
         // Set unused arguments for SpMV and SpMSpV
-        for (size_t i = 0; i <= 9; ++i) {
-            this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        for (size_t i = 0; i < this->overlay_arg_offset_; ++i) {
+            this->spmv_vl_rd_spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         // Set unused scalar arguments
-        this->spmspv_apply_.setArg(13, (unsigned)NULL);
-        this->spmspv_apply_.setArg(14, (unsigned)NULL);
-        this->spmspv_apply_.setArg(15, (char)NULL);
-        this->spmspv_apply_.setArg(16, (char)NULL);
-        this->spmspv_apply_.setArg(18, (unsigned)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 3, (unsigned)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 4, (unsigned)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 5, (char)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 6, (char)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 8, (unsigned)NULL);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 10, (unsigned)NULL);
         // Set unused arguments depending on `generate_new_frontier`
         if (!this->generate_new_frontier_) {
             // no new frontier, and no need for spmspv output
-            this->spmspv_apply_.setArg(12, cl::Buffer(this->context_, 0, 4));
+            this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 2, cl::Buffer(this->context_, 0, 4));
         } else {
             // generate new frontier, and no need for input value
-            this->spmspv_apply_.setArg(19, (unsigned)NULL);
+            this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 9, (unsigned)NULL);
         }
     }
 
     void set_mode() override {
         if (this->generate_new_frontier_) {
-            this->spmspv_apply_.setArg(17, 6);
+            this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 7, 6);
         } else {
-            this->spmspv_apply_.setArg(17, 5);
+            this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 7, 5);
         }
     }
 
@@ -107,9 +115,9 @@ public:
     void bind_mask_buf(cl::Buffer src_buf) {
         this->mask_buf = src_buf;
         if (this->generate_new_frontier_) {
-            this->spmspv_apply_.setArg(12, this->mask_buf);
+            this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 2, this->mask_buf);
         } else {
-            this->spmspv_apply_.setArg(10, this->mask_buf);
+            this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 0, this->mask_buf);
         }
     }
 
@@ -118,7 +126,7 @@ public:
      */
     void bind_inout_buf(cl::Buffer src_buf) {
         this->inout_buf = src_buf;
-        this->spmspv_apply_.setArg(11, this->inout_buf);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 1, this->inout_buf);
     }
 
     /*!
@@ -130,7 +138,7 @@ public:
             exit(EXIT_FAILURE);
         }
         this->new_frontier_buf = src_buf;
-        this->spmspv_apply_.setArg(10, this->new_frontier_buf);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 0, this->new_frontier_buf);
     }
 
     /*!
@@ -221,9 +229,9 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
                 &mask_ext,
                 &err));
     if (this->generate_new_frontier_) {
-        this->spmspv_apply_.setArg(12, this->mask_buf);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 2, this->mask_buf);
     } else {
-        this->spmspv_apply_.setArg(10, this->mask_buf);
+        this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 0, this->mask_buf);
     }
     if (this->generate_new_frontier_) {
         // allocate memory for new_frontier
@@ -237,7 +245,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
                     sizeof(sparse_vector_data_t) * this->new_frontier_.size(),
                     &new_frontier_ext,
                     &err));
-        OCL_CHECK(err, err = this->spmspv_apply_.setArg(10, this->new_frontier_buf));
+        OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 0, this->new_frontier_buf));
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->new_frontier_buf}, 0));
         this->command_queue_.finish();
     }
@@ -259,7 +267,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_inout_h
                 sizeof(vector_data_t) * this->inout_.size(),
                 &inout_ext,
                 &err));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(11, this->inout_buf));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 1, this->inout_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, 0));
     this->command_queue_.finish();
 }
@@ -272,9 +280,9 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::run(vector_d
         exit(EXIT_FAILURE);
     }
     cl_int err;
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(19, graphlily::pack_raw_bits_to_uint(val)));
+    OCL_CHECK(err, err = this->spmv_vl_rd_spmspv_apply_.setArg(this->overlay_arg_offset_ + 9, graphlily::pack_raw_bits_to_uint(val)));
 
-    this->command_queue_.enqueueTask(this->spmspv_apply_);
+    this->command_queue_.enqueueTask(this->spmv_vl_rd_spmspv_apply_);
     this->command_queue_.finish();
 }
 
@@ -285,7 +293,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::run() {
         std::cout << "[ERROR]: this->generate_new_frontier_ should be true" << std::endl;
         exit(EXIT_FAILURE);
     }
-    this->command_queue_.enqueueTask(this->spmspv_apply_);
+    this->command_queue_.enqueueTask(this->spmv_vl_rd_spmspv_apply_);
     this->command_queue_.finish();
 }
 
