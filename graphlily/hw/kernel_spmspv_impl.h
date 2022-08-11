@@ -56,24 +56,29 @@ static void load_vector_from_gmem(
 
 // data loader for SpMSpV from one HBM channel
 static void load_matrix_from_gmem(
-    // matrix data, row_id
+    // |--partptr--|--indptr--|--matrix data--|
     const SPMSPV_MAT_PKT_T *matrix,
-    // matrix indptr
-    const IDX_T *mat_indptr,
-    // matrix part ptr
-    const IDX_T *mat_partptr,
-    // partition base
+    // base addr inside indptr field, for certain partition
     IDX_T mat_indptr_base,
+    // base addr inside matrix data field, for certain partition
     IDX_T mat_row_id_base,
     // current part id
     IDX_T part_id,
+    // indptr offset over matrix pkts
+    IDX_T mat_indptr_offset,
     // fifos
     hls::stream<IDX_VAL_INST_T> &VL_to_ML_stream,
     hls::stream<INST_T> &DL_to_MG_inst,
     hls::stream<UPDATE_PLD_T> DL_to_MG_stream[PACK_SIZE]
 ) {
-    IDX_T mat_addr_base = mat_partptr[part_id];
     bool exit = false;
+
+    // CSC part pointers start from 0
+    IDX_T partptr_pack_idx = part_id / (2 * PACK_SIZE);
+    IDX_T partptr_pack_pos = part_id % (2 * PACK_SIZE);
+    IDX_T mat_data_addr_base = partptr_pack_pos / PACK_SIZE ?
+        matrix[partptr_pack_idx].vals.data[partptr_pack_pos % PACK_SIZE](31,0) :
+        matrix[partptr_pack_idx].indices.data[partptr_pack_pos % PACK_SIZE];
 
     DL_to_MG_inst.write(SOD); // no need to fill `DL_to_MG_stream` with SOD anymore
 
@@ -96,14 +101,21 @@ static void load_matrix_from_gmem(
 
             loop_get_column_len_ML:
             for (unsigned int i = 0; i < 2; i++) {
-                #pragma HLS pipeline II=1
-                col_slice[i] = mat_indptr[current_column_id + mat_indptr_base + i];
+                #pragma HLS unroll
+                IDX_T raw_mat_indptr_idx = current_column_id + mat_indptr_base + i;
+                // CSC index pointers start from `mat_indptr_offset`
+                IDX_T indptr_pack_idx = raw_mat_indptr_idx / (2 * PACK_SIZE);
+                IDX_T indptr_pack_pos = raw_mat_indptr_idx % (2 * PACK_SIZE);
+                SPMV_MAT_PKT_T pkt = matrix[mat_indptr_offset + indptr_pack_idx];
+                col_slice[i] = indptr_pack_pos / PACK_SIZE ?
+                    pkt.vals.data[indptr_pack_pos % PACK_SIZE](31,0) :
+                    pkt.indices.data[indptr_pack_pos % PACK_SIZE];
             }
 
             loop_over_pkts_ML:
             for (unsigned int i = 0; i < (col_slice[1] - col_slice[0]); i++) {
                 #pragma HLS pipeline II=1
-                SPMSPV_MAT_PKT_T packet_from_mat = matrix[i + mat_addr_base + col_slice[0]];
+                SPMSPV_MAT_PKT_T packet_from_mat = matrix[i + mat_data_addr_base + col_slice[0]];
                 DL_to_MG_inst.write(0);
 
                 loop_unpack_ML_unroll:
@@ -129,8 +141,9 @@ static void load_matrix_from_gmem(
 
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv_load_data) {
+        static int part_id = 0;
         std::cout << "INFO: [kernel SpMSpV] Load matrix finished, part_id = "
-                  << part_id << std::endl << std::flush;
+                  << part_id++ << std::endl << std::flush;
     }
     #endif
 }
@@ -197,7 +210,164 @@ static void merge_load_streams(
     #endif
 }
 
+
 // write back to gemm
+const unsigned WB_BURST_LEN = 512;
+
+typedef struct {
+    IDX_T offset;
+    ap_uint<10> length;
+    ap_uint<1> end;
+} CTRL_WORD_T;
+
+static void read_from_pe_streams (
+    hls::stream<VEC_PLD_T> PE_to_WB_stream[PACK_SIZE],
+    hls::stream<IDX_VAL_T> &burst_buf,
+    hls::stream<CTRL_WORD_T> &ctrl_stream,
+    const VAL_T *mask,
+    IDX_T mat_row_id_base,
+    IDX_T &Nnz,
+    VAL_T Zero,
+    MASK_T mask_type
+) {
+    IDX_T nnz_cnt = Nnz;
+    IDX_T batch_counter = 0;
+    bool exit = false;
+    char current_input = 0; // read from multiple PE output streams
+    ap_uint<PACK_SIZE> finished = 0;
+
+    spmspv_write_back_loop:
+    while (!exit) {
+        #pragma HLS pipeline II=1
+
+        VEC_PLD_T pld;
+        if (!finished[current_input]) {
+            if (PE_to_WB_stream[current_input].read_nb(pld)) {
+                if (pld.inst == EOS) {
+                    finished[current_input] = true;
+                    current_input = (current_input + 1) % PACK_SIZE; // switch to next pe
+                } else if (pld.inst != SOD && pld.inst != EOD) {
+                    IDX_T index = mat_row_id_base + pld.idx;
+                    bool do_write = false;
+                    switch (mask_type) {
+                        case NOMASK:
+                            do_write = true;
+                            break;
+                        case WRITETOONE:
+                            do_write = (mask[index] != 0);
+                            break;
+                        case WRITETOZERO:
+                            do_write = (mask[index] == 0);
+                            break;
+                        default:
+                            do_write = false;
+                            break;
+                    }
+                    if (do_write) {
+                        IDX_VAL_T res_pld;
+                        res_pld.index = index;
+                        res_pld.val = pld.val;
+                        burst_buf.write(res_pld);
+                        nnz_cnt++;
+                        // notify the burst writer if we have a whole batch
+                        if (batch_counter == WB_BURST_LEN - 1) {
+                            CTRL_WORD_T cw;
+                            cw.offset = nnz_cnt - WB_BURST_LEN + 1; // leave space for the head
+                            cw.length = WB_BURST_LEN;
+                            cw.end = 0;
+                            ctrl_stream.write(cw);
+                            batch_counter = 0;
+                        } else {
+                            batch_counter++;
+                        }
+                        // #ifndef __SYNTHESIS__
+                        // if (line_tracing_spmspv_write_back) {
+                        //     std::cout << "INFO: [kernel SpMSpV] Write results"
+                        //               << " non-zero " << pld.val
+                        //               << " found at " << pld.idx
+                        //               << " mapped to " << index << std::endl << std::flush;
+                        // }
+                        // #endif
+                    }
+                }
+            } else {
+                current_input = (current_input + 1) % PACK_SIZE; // switch to next pe
+            }
+        } else {
+            current_input = (current_input + 1) % PACK_SIZE; // switch to next pe
+        }
+        exit = finished.and_reduce();
+    }
+
+    // handle the reminder (if any)
+    if (batch_counter != 0) {
+        CTRL_WORD_T cw;
+        cw.offset = nnz_cnt - batch_counter + 1; // leave space for the head
+        cw.length = batch_counter;
+        cw.end = 0;
+        ctrl_stream.write(cw);
+    }
+
+    // denote the end of transaction
+    // here we don't adhere to the token sync protocol
+    CTRL_WORD_T cw_end;
+    cw_end.offset = 0;
+    cw_end.length = 0;
+    cw_end.end = 1;
+    ctrl_stream.write(cw_end);
+
+    // update nnz
+    Nnz = nnz_cnt;
+    #ifndef __SYNTHESIS__
+    if (line_tracing_spmspv_write_back) {
+        std::cout << "INFO: [kernel SpMSpV] Cummulative NNZ:"
+                    << " " << Nnz << std::endl << std::flush;
+    }
+    #endif
+}
+
+static void burst_wirte_to_gmem (
+    hls::stream<IDX_VAL_T> &burst_buf,
+    hls::stream<CTRL_WORD_T> &ctrl_stream, // carries the length of the current batch.
+    IDX_VAL_T *res_out
+) {
+    bool exit = false;
+    while (!exit) {
+        #pragma HLS pipeline off
+        CTRL_WORD_T cw = ctrl_stream.read();
+        exit = cw.end;
+        #ifndef __SYNTHESIS__
+        if (line_tracing_spmspv_write_back) {
+            if (!exit) {
+                std::cout << "INFO: [kernel SpMSpV] Burst write"
+                            << " offset " << cw.offset
+                            << " length " << cw.length << std::endl << std::flush;
+            }
+        }
+        #endif
+        if (!exit) {
+            for (unsigned i = cw.offset; i < cw.offset + cw.length; i++) {
+                #pragma HLS pipeline II=1
+                // all reads must be valid,
+                // because we feed a control word
+                // after pushing several payloads into
+                // the burst buffer
+                IDX_VAL_T p;
+                burst_buf.read_nb(p);
+                res_out[i] = p;
+                // #ifndef __SYNTHESIS__
+                // if (line_tracing_spmspv_write_back) {
+                //     std::cout << "INFO: [kernel SpMSpV] write"
+                //                 << " {" << p.val << "|@" << p.index << "}"
+                //                 << " into " << i << std::endl << std::flush;
+                // }
+                // #endif
+            }
+        }
+    }
+}
+
+const unsigned BURST_BUF_LEN = WB_BURST_LEN * 2; // for double buffer
 static void write_back_results (
     hls::stream<VEC_PLD_T> PE_to_WB_stream[PACK_SIZE],
     IDX_VAL_T *res_out,
@@ -207,75 +377,59 @@ static void write_back_results (
     VAL_T Zero,
     MASK_T mask_type
 ) {
-    IDX_T res_idx = Nnz;
-    bool exit = false;
-    char current_input = 0; // read from multiple PE output streams
-    ap_uint<PACK_SIZE> finished = 0;
+    hls::stream<IDX_VAL_T> burst_buf("burst write buffer");
+    #pragma HLS stream variable=burst_buf depth=BURST_BUF_LEN
+    #pragma HLS bind_storage variable=burst_buf type=FIFO impl=BRAM
+    hls::stream<CTRL_WORD_T> ctrl_stream("burst write control stream");
+    #pragma HLS stream variable=ctrl_stream depth=4
+    #pragma HLS bind_storage variable=ctrl_stream type=FIFO impl=SRL
 
-    spmspv_write_back_loop:
-    while (!exit) {
-        #pragma HLS pipeline II=1
-        #pragma HLS dependence variable=res_out inter false
+    #pragma HLS dataflow
+    read_from_pe_streams (
+        PE_to_WB_stream,
+        burst_buf,
+        ctrl_stream,
+        mask,
+        mat_row_id_base,
+        Nnz,
+        Zero,
+        mask_type
+    );
 
-        VEC_PLD_T pld;
-        if (!finished[current_input] && PE_to_WB_stream[current_input].read_nb(pld)) {
-            if (pld.inst == EOS) {
-                finished[current_input] = true;
-            } else if (pld.inst != SOD && pld.inst != EOD) {
-                IDX_T index = mat_row_id_base + pld.idx;
-                bool do_write = false;
-                switch (mask_type) {
-                    case NOMASK:
-                        do_write = true;
-                        break;
-                    case WRITETOONE:
-                        do_write = (mask[index] != 0);
-                        break;
-                    case WRITETOZERO:
-                        do_write = (mask[index] == 0);
-                        break;
-                    default:
-                        do_write = false;
-                        break;
-                }
-                if (do_write) {
-                    IDX_VAL_T res_pld;
-                    res_pld.index = index;
-                    res_pld.val = pld.val;
-                    res_idx++;
-                    res_out[res_idx] = res_pld;
-                    #ifndef __SYNTHESIS__
-                    if (line_tracing_spmspv_write_back) {
-                        std::cout << "INFO: [kernel SpMSpV] Write results"
-                                  << " non-zero " << pld.val
-                                  << " found at " << pld.idx
-                                  << " mapped to " << index << std::endl << std::flush;
-                    }
-                    #endif
-                }
-            }
-        }
-
-        exit = finished.and_reduce();
-
-        if ( (++current_input) == PACK_SIZE) {
-            current_input = 0;
-        }
-    }
-    Nnz = res_idx;
+    burst_wirte_to_gmem (
+        burst_buf,
+        ctrl_stream,
+        res_out
+    );
 }
+
+// abbreviation for matrix arguments, `x` is the index of HBM channel
+#define SPMSPV_MAT_ARGS(x) \
+const SPMSPV_MAT_PKT_T *spmspv_mat_##x
 
 // vec loader -> mat loader -> stream merger -> shuffle -> PE -> write back
 static void spmspv_core(
 #if (SPMSPV_NUM_HBM_CHANNEL >= 1)
-    const SPMSPV_MAT_PKT_T *matrix_0,
-    const IDX_T *mat_indptr_0,
-    const IDX_T *mat_partptr_0,
+    SPMSPV_MAT_ARGS(0),
 #endif
 #if (SPMSPV_NUM_HBM_CHANNEL >= 2)
-    const SPMSPV_MAT_PKT_T *matrix_1,
-    const IDX_T *mat_indptr_1,
-    const IDX_T *mat_partptr_1,
+    SPMSPV_MAT_ARGS(1),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 4)
+    SPMSPV_MAT_ARGS(2),
+    SPMSPV_MAT_ARGS(3),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 6)
+    SPMSPV_MAT_ARGS(4),
+    SPMSPV_MAT_ARGS(5),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+    SPMSPV_MAT_ARGS(6),
+    SPMSPV_MAT_ARGS(7),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 10)
+    SPMSPV_MAT_ARGS(8),
+    SPMSPV_MAT_ARGS(9),
 #endif
     const IDX_VAL_T *vector,
     const VAL_T *mask,
@@ -284,6 +438,7 @@ static void spmspv_core(
     IDX_T mat_indptr_base_each_channel[SPMSPV_NUM_HBM_CHANNEL],
     IDX_T mat_row_id_base,
     IDX_T part_id,
+    IDX_T num_parts, // i.e., num_row_partitions, equals to partptr_size
     IDX_T &Nnz,
     OP_T Op,
     VAL_T Zero,
@@ -291,7 +446,6 @@ static void spmspv_core(
     const unsigned used_buf_len_per_pe
 ) {
     // fifos
-
     hls::stream<IDX_VAL_INST_T> VL_to_ML_stream[SPMSPV_NUM_HBM_CHANNEL];
     hls::stream<INST_T> ML_to_MG_inst[SPMSPV_NUM_HBM_CHANNEL];
     hls::stream<UPDATE_PLD_T> ML_to_MG_stream[SPMSPV_NUM_HBM_CHANNEL][PACK_SIZE];
@@ -319,33 +473,40 @@ static void spmspv_core(
         VL_to_ML_stream
     );
 
+#define LOAD_MAT_FROM_HBM(x) \
+load_matrix_from_gmem( \
+    spmspv_mat_##x, \
+    mat_indptr_base_each_channel[x], \
+    mat_row_id_base, \
+    part_id, \
+    (num_parts + 2 * PACK_SIZE - 1) / (2 * PACK_SIZE), \
+    VL_to_ML_stream[x], \
+    ML_to_MG_inst[x], \
+    ML_to_MG_stream[x] \
+)
+
 #if (SPMSPV_NUM_HBM_CHANNEL >= 1)
-    load_matrix_from_gmem(
-        matrix_0,
-        mat_indptr_0,
-        mat_partptr_0,
-        mat_indptr_base_each_channel[0],
-        mat_row_id_base,
-        part_id,
-        VL_to_ML_stream[0],
-        ML_to_MG_inst[0],
-        ML_to_MG_stream[0]
-    );
+    LOAD_MAT_FROM_HBM(0);
 #endif
 #if (SPMSPV_NUM_HBM_CHANNEL >= 2)
-    load_matrix_from_gmem(
-        matrix_1,
-        mat_indptr_1,
-        mat_partptr_1,
-        mat_indptr_base_each_channel[1],
-        mat_row_id_base,
-        part_id,
-        VL_to_ML_stream[1],
-        ML_to_MG_inst[1],
-        ML_to_MG_stream[1]
-    );
+    LOAD_MAT_FROM_HBM(1);
 #endif
-
+#if (SPMSPV_NUM_HBM_CHANNEL >= 4)
+    LOAD_MAT_FROM_HBM(2);
+    LOAD_MAT_FROM_HBM(3);
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 6)
+    LOAD_MAT_FROM_HBM(4);
+    LOAD_MAT_FROM_HBM(5);
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+    LOAD_MAT_FROM_HBM(6);
+    LOAD_MAT_FROM_HBM(7);
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 10)
+    LOAD_MAT_FROM_HBM(8);
+    LOAD_MAT_FROM_HBM(9);
+#endif
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
         std::cout << "INFO: [Kernel SpMSpV] Data Loader complete" << std::endl << std::flush;
@@ -362,62 +523,22 @@ static void spmspv_core(
     }
     #endif
 
-    pe_bram_sparse<0, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[0],
-        PE_to_WB_stream[0],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
-    pe_bram_sparse<1, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[1],
-        PE_to_WB_stream[1],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
-    pe_bram_sparse<2, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[2],
-        PE_to_WB_stream[2],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
-    pe_bram_sparse<3, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[3],
-        PE_to_WB_stream[3],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
-    pe_bram_sparse<4, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[4],
-        PE_to_WB_stream[4],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
-    pe_bram_sparse<5, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[5],
-        PE_to_WB_stream[5],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
-    pe_bram_sparse<6, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[6],
-        PE_to_WB_stream[6],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
-    pe_bram_sparse<7, SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>(
-        SF_to_PE_stream[7],
-        PE_to_WB_stream[7],
-        used_buf_len_per_pe,
-        Op,
-        Zero
-    );
+#define PE_SPARSE(x) \
+pe_bram_sparse<(x), SPMSPV_OUT_BUF_LEN / PACK_SIZE, PACK_SIZE>( \
+    SF_to_PE_stream[x], \
+    PE_to_WB_stream[x], \
+    used_buf_len_per_pe, \
+    Op, \
+    Zero \
+)
+    PE_SPARSE(0);
+    PE_SPARSE(1);
+    PE_SPARSE(2);
+    PE_SPARSE(3);
+    PE_SPARSE(4);
+    PE_SPARSE(5);
+    PE_SPARSE(6);
+    PE_SPARSE(7);
 
     #ifndef __SYNTHESIS__
     if (line_tracing_spmspv) {
@@ -444,23 +565,33 @@ static void spmspv_core(
 
 static void kernel_spmspv(
 #if (SPMSPV_NUM_HBM_CHANNEL >= 1)
-    const SPMSPV_MAT_PKT_T *matrix_0,
-    const IDX_T *mat_indptr_0,
-    const IDX_T *mat_partptr_0,
+    SPMSPV_MAT_ARGS(0),             // in,  HBM[23]
 #endif
 #if (SPMSPV_NUM_HBM_CHANNEL >= 2)
-    const SPMSPV_MAT_PKT_T *matrix_1,
-    const IDX_T *mat_indptr_1,
-    const IDX_T *mat_partptr_1,
+    SPMSPV_MAT_ARGS(1),             // in,  HBM[24]
 #endif
-    const IDX_VAL_T *vector,
-    const VAL_T *mask,
-    IDX_VAL_T *result,
-    IDX_T num_rows,
-    IDX_T num_cols,
-    OP_T Op,
-    MASK_T mask_type,
-    VAL_T Zero
+#if (SPMSPV_NUM_HBM_CHANNEL >= 4)
+    SPMSPV_MAT_ARGS(2),             // in,  HBM[25]
+    SPMSPV_MAT_ARGS(3),             // in,  HBM[26]
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+    SPMSPV_MAT_ARGS(4),             // in,  HBM[27]
+    SPMSPV_MAT_ARGS(5),             // in,  HBM[28]
+    SPMSPV_MAT_ARGS(6),             // in,  HBM[29]
+    SPMSPV_MAT_ARGS(7),             // in,  HBM[30]
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 10)
+    SPMSPV_MAT_ARGS(8),             // in,  HBM[31]
+    SPMSPV_MAT_ARGS(9),             // in,  HBM[32]
+#endif
+    const IDX_VAL_T *vector,        // in,  HBM[20]
+    const VAL_T *mask,              // in,  HBM[21]
+    IDX_VAL_T *result,              // out, HBM[22]
+    IDX_T num_rows,                 // in
+    IDX_T num_cols,                 // in
+    OP_T Op,                        // in
+    MASK_T mask_type,               // in
+    VAL_T Zero                      // in
 ) {
     #pragma HLS inline off
 
@@ -469,7 +600,7 @@ static void kernel_spmspv(
     // result Nnz counter
     IDX_T result_Nnz = 0;
 
-    // total number of parts
+    // total number of parts, i.e., num_row_partition
     IDX_T num_parts = (num_rows + SPMSPV_OUT_BUF_LEN - 1) / SPMSPV_OUT_BUF_LEN;
 
     // number of rows in the last part
@@ -502,16 +633,29 @@ static void kernel_spmspv(
             std::cout << "          row id base: " << mat_row_id_base << std::endl << std::flush;
         }
         #endif
+
+#define SPMSPV_MAT_ON_HBM(x) spmspv_mat_##x
+
         spmspv_core(
 #if (SPMSPV_NUM_HBM_CHANNEL >= 1)
-            matrix_0,
-            mat_indptr_0,
-            mat_partptr_0,
+            SPMSPV_MAT_ON_HBM(0),
 #endif
 #if (SPMSPV_NUM_HBM_CHANNEL >= 2)
-            matrix_1,
-            mat_indptr_1,
-            mat_partptr_1,
+            SPMSPV_MAT_ON_HBM(1),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 4)
+            SPMSPV_MAT_ON_HBM(2),
+            SPMSPV_MAT_ON_HBM(3),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+            SPMSPV_MAT_ON_HBM(4),
+            SPMSPV_MAT_ON_HBM(5),
+            SPMSPV_MAT_ON_HBM(6),
+            SPMSPV_MAT_ON_HBM(7),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 10)
+            SPMSPV_MAT_ON_HBM(8),
+            SPMSPV_MAT_ON_HBM(9),
 #endif
             vector,
             mask,
@@ -520,6 +664,7 @@ static void kernel_spmspv(
             mat_indptr_base_each_channel,
             mat_row_id_base,
             part_id,
+            num_parts,
             result_Nnz,
             Op,
             Zero,

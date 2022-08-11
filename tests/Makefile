@@ -2,8 +2,8 @@ BUILD_DIR = ./build
 
 HOST_ARCH = x86
 
-CXXFLAGS += -Wall -g -std=c++11
-# CXXFLAGS += -O3
+CXXFLAGS += -Wall -g -std=c++14
+CXXFLAGS += -O3
 CXXFLAGS += -I$(GRAPHLILY_ROOT_PATH)
 
 LDFLAGS += -lrt -lstdc++

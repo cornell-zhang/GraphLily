@@ -11,17 +11,21 @@ class SplitKernelSynthesizer : public BaseSynthesizer {
 private:
     // Kernel configuration
     uint32_t num_channels_;
+    uint32_t spmspv_num_channels_;
+
     uint32_t spmv_out_buf_len_;
     uint32_t spmspv_out_buf_len_;
     uint32_t spmv_vec_buf_len_;
 
 public:
     SplitKernelSynthesizer(uint32_t num_channels,
+                       uint32_t spmspv_num_channels,
                        uint32_t spmv_out_buf_len,
                        uint32_t spmspv_out_buf_len,
                        uint32_t spmv_vec_buf_len_) : BaseSynthesizer("") {
         this->kernel_name_ = "overlay";
         this->num_channels_ = num_channels;
+        this->spmspv_num_channels_ = spmspv_num_channels;
         this->spmv_out_buf_len_ = spmv_out_buf_len;
         this->spmspv_out_buf_len_ = spmspv_out_buf_len;
         this->spmv_vec_buf_len_ = spmv_vec_buf_len_;
@@ -101,6 +105,7 @@ void SplitKernelSynthesizer::generate_kernel_header() {
     header << "const unsigned SPMSPV_OUT_BUF_LEN = " << this->spmspv_out_buf_len_ << ";" << std::endl;
     header << "const unsigned SPMV_VEC_BUF_LEN = " << this->spmv_vec_buf_len_ << ";" << std::endl;
     header << "#define NUM_HBM_CHANNEL " << this->num_channels_ << std::endl;
+    header << "#define SPMSPV_NUM_HBM_CHANNEL " << this->spmspv_num_channels_ << std::endl;
     header << std::endl;
     header << "#endif  // GRAPHLILY_HW_CONFIG_H_" << std::endl;
     header.close();
@@ -170,12 +175,13 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "sp=spmspv_apply_1.spmv_out:HBM[22]" << std::endl;
 
     ini << "sp=spmspv_apply_1.spmspv_matrix_0:HBM[23]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_indptr_0:HBM[23]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_partptr_0:HBM[23]" << std::endl;
-
     ini << "sp=spmspv_apply_1.spmspv_matrix_1:HBM[24]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_indptr_1:HBM[24]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_partptr_1:HBM[24]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_2:HBM[25]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_3:HBM[26]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_4:HBM[27]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_5:HBM[28]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_6:HBM[29]" << std::endl;
+    ini << "sp=spmspv_apply_1.spmspv_matrix_7:HBM[30]" << std::endl;
 
     ini << "sp=spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;

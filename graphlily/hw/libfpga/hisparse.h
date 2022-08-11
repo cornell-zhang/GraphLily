@@ -4,7 +4,6 @@
 #include <ap_fixed.h>
 #include <ap_int.h>
 #include <ap_axi_sdata.h>
-#include "ap_fixed.h"
 #include "./math_constants.h"
 
 #ifndef __SYNTHESIS__
@@ -23,7 +22,6 @@ const unsigned NUM_BANK_PER_HBM_CHANNEL = PACK_SIZE / NUM_PORT_PER_BANK;
 const unsigned BANK_ID_NBITS = 3;
 const unsigned BANK_ID_MASK = 7;
 
-#define SPMSPV_NUM_HBM_CHANNEL 2
 
 //-------------------------------------------------------------------------
 // basic data types
@@ -106,7 +104,7 @@ struct VEC_PLD_T{
 #define VEC_PLD_EOS ((VEC_PLD_T){0,0,EOS})
 
 #ifndef __SYNTHESIS__
-namespace { // anonymous namspace to prevent multiple definitions
+namespace { // anonymous namespace to prevent multiple definitions
 std::string inst2str(INST_T inst) {
     switch (inst) {
         case SOD: return std::string("SOD");
@@ -159,7 +157,7 @@ typedef ap_axiu<32 * (PACK_SIZE + 1), 2, 0, 0> VEC_AXIS_T;
 #define VEC_AXIS_VAL(p, i) (p.data(63 + 32 * i,32 + 32 * i))
 
 #ifndef __SYNTHESIS__
-namespace { // anonymous namspace to prevent multiple definitions
+namespace { // anonymous namespace to prevent multiple definitions
 std::ostream& operator<<(std::ostream& os, const VEC_AXIS_T &p) {
     os << '{' << "pktidx: " << VEC_AXIS_PKT_IDX(p) << '|';
     for (unsigned i = 0; i < PACK_SIZE; i++) {
