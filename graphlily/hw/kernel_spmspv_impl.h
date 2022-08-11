@@ -574,9 +574,11 @@ static void kernel_spmspv(
     SPMSPV_MAT_ARGS(2),             // in,  HBM[25]
     SPMSPV_MAT_ARGS(3),             // in,  HBM[26]
 #endif
-#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+#if (SPMSPV_NUM_HBM_CHANNEL >= 6)
     SPMSPV_MAT_ARGS(4),             // in,  HBM[27]
     SPMSPV_MAT_ARGS(5),             // in,  HBM[28]
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
     SPMSPV_MAT_ARGS(6),             // in,  HBM[29]
     SPMSPV_MAT_ARGS(7),             // in,  HBM[30]
 #endif
@@ -647,9 +649,11 @@ static void kernel_spmspv(
             SPMSPV_MAT_ON_HBM(2),
             SPMSPV_MAT_ON_HBM(3),
 #endif
-#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+#if (SPMSPV_NUM_HBM_CHANNEL >= 6)
             SPMSPV_MAT_ON_HBM(4),
             SPMSPV_MAT_ON_HBM(5),
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
             SPMSPV_MAT_ON_HBM(6),
             SPMSPV_MAT_ON_HBM(7),
 #endif

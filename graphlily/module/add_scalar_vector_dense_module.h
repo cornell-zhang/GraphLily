@@ -41,37 +41,37 @@ public:
     * 2           mask for spmv (write port)            n
     * 3           output for spmv                       y
     *
-    * 4~6         matrix for spmspv                     n
-    * 7           vector for spmspv                     n
-    * 8           mask for spmspv                       n
-    * 9           output for spmspv                     n
+    * 4~9         matrix for spmspv                     n
+    * 10           vector for spmspv                    n
+    * 11           mask for spmspv                      n
+    * 12           output for spmspv                    n
     *
-    * 10          number of rows                        n
-    * 11          number of columns                     n
-    * 12          semiring operation type               n
+    * 13          number of rows                        n
+    * 14          number of columns                     n
+    * 15          semiring operation type               n
     *
-    * 13          mask type                             n
-    * 14          overlay mode select                   y
-    * 15          apply vector length                   y
-    * 16          apply input value or semiring zero    y
+    * 16          mask type                             n
+    * 17          overlay mode select                   y
+    * 18          apply vector length                   y
+    * 19          apply input value or semiring zero    y
     */
     void set_unused_args() override {
         // Set unused arguments for SpMV
         this->spmspv_apply_.setArg(1, cl::Buffer(this->context_, 0, 4));
         this->spmspv_apply_.setArg(2, cl::Buffer(this->context_, 0, 4));
         // Set unused arguments for SpMSpV
-        for (size_t i = 4; i <= 9; ++i) {
+        for (size_t i = 4; i <= 12; ++i) {
             this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         // Set unused scalar arguments
-        this->spmspv_apply_.setArg(10, (unsigned)NULL);
-        this->spmspv_apply_.setArg(11, (unsigned)NULL);
-        this->spmspv_apply_.setArg(12, (char)NULL);
-        this->spmspv_apply_.setArg(13, (char)NULL);
+        this->spmspv_apply_.setArg(13, (unsigned)NULL);
+        this->spmspv_apply_.setArg(14, (unsigned)NULL);
+        this->spmspv_apply_.setArg(15, (char)NULL);
+        this->spmspv_apply_.setArg(16, (char)NULL);
     }
 
     void set_mode() override {
-        this->spmspv_apply_.setArg(14, 3);  // 3 is kernel_add_scalar_vector_dense
+        this->spmspv_apply_.setArg(17, 3);  // 3 is kernel_add_scalar_vector_dense
     }
 
     /*!
@@ -173,8 +173,8 @@ template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
     // TODO: is the overhead of setArg and enqueueTask large at run time?
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(15, len));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(16, graphlily::pack_raw_bits_to_uint(val)));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(18, len));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(19, graphlily::pack_raw_bits_to_uint(val)));
 
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmspv_apply_));
     this->command_queue_.finish();

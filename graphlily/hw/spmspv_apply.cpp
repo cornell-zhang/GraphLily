@@ -27,9 +27,11 @@ void spmspv_apply(
     SPMSPV_MAT_ARGS(2),                     // in,    HBM[25]
     SPMSPV_MAT_ARGS(3),                     // in,    HBM[26]
 #endif
-#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+#if (SPMSPV_NUM_HBM_CHANNEL >= 6)
     SPMSPV_MAT_ARGS(4),                     // in,    HBM[27]
     SPMSPV_MAT_ARGS(5),                     // in,    HBM[28]
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
     SPMSPV_MAT_ARGS(6),                     // in,    HBM[29]
     SPMSPV_MAT_ARGS(7),                     // in,    HBM[30]
 #endif
@@ -79,13 +81,16 @@ void spmspv_apply(
     #pragma HLS interface s_axilite port=spmspv_mat_3 bundle=control
 #endif
 
-#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+#if (SPMSPV_NUM_HBM_CHANNEL >= 6)
     #pragma HLS interface m_axi     port=spmspv_mat_4 offset=slave bundle=spmspv_gmem0_4 max_read_burst_length=128 max_write_burst_length=2 num_write_outstanding=1
     #pragma HLS interface m_axi     port=spmspv_mat_5 offset=slave bundle=spmspv_gmem0_5 max_read_burst_length=128 max_write_burst_length=2 num_write_outstanding=1
-    #pragma HLS interface m_axi     port=spmspv_mat_6 offset=slave bundle=spmspv_gmem0_6 max_read_burst_length=128 max_write_burst_length=2 num_write_outstanding=1
-    #pragma HLS interface m_axi     port=spmspv_mat_7 offset=slave bundle=spmspv_gmem0_7 max_read_burst_length=128 max_write_burst_length=2 num_write_outstanding=1
     #pragma HLS interface s_axilite port=spmspv_mat_4 bundle=control
     #pragma HLS interface s_axilite port=spmspv_mat_5 bundle=control
+#endif
+
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+    #pragma HLS interface m_axi     port=spmspv_mat_6 offset=slave bundle=spmspv_gmem0_6 max_read_burst_length=128 max_write_burst_length=2 num_write_outstanding=1
+    #pragma HLS interface m_axi     port=spmspv_mat_7 offset=slave bundle=spmspv_gmem0_7 max_read_burst_length=128 max_write_burst_length=2 num_write_outstanding=1
     #pragma HLS interface s_axilite port=spmspv_mat_6 bundle=control
     #pragma HLS interface s_axilite port=spmspv_mat_7 bundle=control
 #endif
@@ -156,9 +161,11 @@ LOAD_RAW_BITS_FROM_UINT(val, val_ufixed);
                 spmspv_mat_2,
                 spmspv_mat_3,
 #endif
-#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
+#if (SPMSPV_NUM_HBM_CHANNEL >= 6)
                 spmspv_mat_4,
                 spmspv_mat_5,
+#endif
+#if (SPMSPV_NUM_HBM_CHANNEL >= 8)
                 spmspv_mat_6,
                 spmspv_mat_7,
 #endif

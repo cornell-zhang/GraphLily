@@ -48,46 +48,46 @@ public:
     * 2           mask for spmv (write port)            n
     * 3           output for spmv                       n
     *
-    * 4~6         matrix for spmspv                     n
-    * 7           vector for spmspv                     y
-    * 8           mask for spmspv                       y
-    * 9           output for spmspv                     y
+    * 4~9         matrix for spmspv                     n
+    * 10           vector for spmspv                    y
+    * 11           mask for spmspv                      y
+    * 12           output for spmspv                    y
     *
-    * 10          number of rows                        n
-    * 11          number of columns                     n
-    * 12          semiring operation type               n
+    * 13          number of rows                        n
+    * 14          number of columns                     n
+    * 15          semiring operation type               n
     *
-    * 13          mask type                             n
-    * 14          overlay mode select                   y
-    * 15          apply vector length                   n
-    * 16          apply input value or semiring zero    y
+    * 16          mask type                             n
+    * 17          overlay mode select                   y
+    * 18          apply vector length                   n
+    * 19          apply input value or semiring zero    y
     */
     void set_unused_args() override {
         // Set unused arguments for SpMV and SpMSpV
-        for (size_t i = 0; i <= 6; ++i) {
+        for (size_t i = 0; i <= 9; ++i) {
             this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         // Set unused scalar arguments
-        this->spmspv_apply_.setArg(10, (unsigned)NULL);
-        this->spmspv_apply_.setArg(11, (unsigned)NULL);
-        this->spmspv_apply_.setArg(12, (char)NULL);
-        this->spmspv_apply_.setArg(13, (char)NULL);
-        this->spmspv_apply_.setArg(15, (unsigned)NULL);
+        this->spmspv_apply_.setArg(13, (unsigned)NULL);
+        this->spmspv_apply_.setArg(14, (unsigned)NULL);
+        this->spmspv_apply_.setArg(15, (char)NULL);
+        this->spmspv_apply_.setArg(16, (char)NULL);
+        this->spmspv_apply_.setArg(18, (unsigned)NULL);
         // Set unused arguments depending on `generate_new_frontier`
         if (!this->generate_new_frontier_) {
             // no new frontier, and no need for spmspv output
-            this->spmspv_apply_.setArg(9, cl::Buffer(this->context_, 0, 4));
+            this->spmspv_apply_.setArg(12, cl::Buffer(this->context_, 0, 4));
         } else {
             // generate new frontier, and no need for input value
-            this->spmspv_apply_.setArg(16, (unsigned)NULL);
+            this->spmspv_apply_.setArg(19, (unsigned)NULL);
         }
     }
 
     void set_mode() override {
         if (this->generate_new_frontier_) {
-            this->spmspv_apply_.setArg(14, 6);
+            this->spmspv_apply_.setArg(17, 6);
         } else {
-            this->spmspv_apply_.setArg(14, 5);
+            this->spmspv_apply_.setArg(17, 5);
         }
     }
 
@@ -107,9 +107,9 @@ public:
     void bind_mask_buf(cl::Buffer src_buf) {
         this->mask_buf = src_buf;
         if (this->generate_new_frontier_) {
-            this->spmspv_apply_.setArg(9, this->mask_buf);
+            this->spmspv_apply_.setArg(12, this->mask_buf);
         } else {
-            this->spmspv_apply_.setArg(7, this->mask_buf);
+            this->spmspv_apply_.setArg(10, this->mask_buf);
         }
     }
 
@@ -118,7 +118,7 @@ public:
      */
     void bind_inout_buf(cl::Buffer src_buf) {
         this->inout_buf = src_buf;
-        this->spmspv_apply_.setArg(8, this->inout_buf);
+        this->spmspv_apply_.setArg(11, this->inout_buf);
     }
 
     /*!
@@ -130,7 +130,7 @@ public:
             exit(EXIT_FAILURE);
         }
         this->new_frontier_buf = src_buf;
-        this->spmspv_apply_.setArg(7, this->new_frontier_buf);
+        this->spmspv_apply_.setArg(10, this->new_frontier_buf);
     }
 
     /*!
@@ -221,9 +221,9 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
                 &mask_ext,
                 &err));
     if (this->generate_new_frontier_) {
-        this->spmspv_apply_.setArg(9, this->mask_buf);
+        this->spmspv_apply_.setArg(12, this->mask_buf);
     } else {
-        this->spmspv_apply_.setArg(7, this->mask_buf);
+        this->spmspv_apply_.setArg(10, this->mask_buf);
     }
     if (this->generate_new_frontier_) {
         // allocate memory for new_frontier
@@ -237,7 +237,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_mask_ho
                     sizeof(sparse_vector_data_t) * this->new_frontier_.size(),
                     &new_frontier_ext,
                     &err));
-        OCL_CHECK(err, err = this->spmspv_apply_.setArg(7, this->new_frontier_buf));
+        OCL_CHECK(err, err = this->spmspv_apply_.setArg(10, this->new_frontier_buf));
         OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->new_frontier_buf}, 0));
         this->command_queue_.finish();
     }
@@ -259,7 +259,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::send_inout_h
                 sizeof(vector_data_t) * this->inout_.size(),
                 &inout_ext,
                 &err));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(8, this->inout_buf));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(11, this->inout_buf));
     OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, 0));
     this->command_queue_.finish();
 }
@@ -272,7 +272,7 @@ void AssignVectorSparseModule<vector_data_t, sparse_vector_data_t>::run(vector_d
         exit(EXIT_FAILURE);
     }
     cl_int err;
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(16, graphlily::pack_raw_bits_to_uint(val)));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(19, graphlily::pack_raw_bits_to_uint(val)));
 
     this->command_queue_.enqueueTask(this->spmspv_apply_);
     this->command_queue_.finish();

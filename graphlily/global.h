@@ -57,7 +57,7 @@ const int DDR[2] = {CHANNEL_NAME(32), CHANNEL_NAME(33)};
 const uint32_t pack_size = 8;
 const uint32_t spmv_row_interleave_factor = 1;
 const uint32_t num_hbm_channels = 16;
-const uint32_t spmspv_num_hbm_channels = 8;
+const uint32_t spmspv_num_hbm_channels = 6;
 
 // Data types (please change this according to the kernel!)
 // using val_t = unsigned;

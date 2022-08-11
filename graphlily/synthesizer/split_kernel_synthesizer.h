@@ -173,16 +173,10 @@ void SplitKernelSynthesizer::generate_kernel_ini() {
     ini << "sp=spmspv_apply_1.spmv_mask:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmv_mask_w:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmv_out:HBM[22]" << std::endl;
-
-    ini << "sp=spmspv_apply_1.spmspv_matrix_0:HBM[23]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_1:HBM[24]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_2:HBM[25]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_3:HBM[26]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_4:HBM[27]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_5:HBM[28]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_6:HBM[29]" << std::endl;
-    ini << "sp=spmspv_apply_1.spmspv_matrix_7:HBM[30]" << std::endl;
-
+    for (size_t hbm_idx = 0; hbm_idx < this->spmspv_num_channels_; hbm_idx++) {
+        ini << "sp=spmv_vl_rd_spmspv_apply_1.spmspv_mat_" << hbm_idx
+            << ":HBM[" << hbm_idx + 23 << "]" << std::endl;
+    }
     ini << "sp=spmspv_apply_1.spmspv_vector:HBM[20]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_mask:HBM[21]" << std::endl;
     ini << "sp=spmspv_apply_1.spmspv_out:HBM[22]" << std::endl;

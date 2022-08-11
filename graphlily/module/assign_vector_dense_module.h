@@ -43,35 +43,35 @@ public:
     * 2           mask for spmv (write port)            y
     * 3           output for spmv                       n
     *
-    * 4~6         matrix for spmspv                     n
-    * 7           vector for spmspv                     n
-    * 8           mask for spmspv                       n
-    * 9           output for spmspv                     n
+    * 4~9         matrix for spmspv                     n
+    * 10           vector for spmspv                    n
+    * 11           mask for spmspv                      n
+    * 12           output for spmspv                    n
     *
-    * 10          number of rows                        n
-    * 11          number of columns                     n
-    * 12          semiring operation type               n
+    * 13          number of rows                        n
+    * 14          number of columns                     n
+    * 15          semiring operation type               n
     *
-    * 13          mask type                             y
-    * 14          overlay mode select                   y
-    * 15          apply vector length                   y
-    * 16          apply input value or semiring zero    y
+    * 16          mask type                             y
+    * 17          overlay mode select                   y
+    * 18          apply vector length                   y
+    * 19          apply input value or semiring zero    y
     */
     void set_unused_args() override {
         // Set unused arguments for SpMV
         this->spmspv_apply_.setArg(3, cl::Buffer(this->context_, 0, 4));
         // Set unused arguments for SpMSpV
-        for (size_t i = 4; i <= 9; ++i) {
+        for (size_t i = 4; i <= 12; ++i) {
             this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
         }
         // Set unused scalar arguments
-        this->spmspv_apply_.setArg(10, (unsigned)NULL);
-        this->spmspv_apply_.setArg(11, (unsigned)NULL);
-        this->spmspv_apply_.setArg(12, (char)NULL);
+        this->spmspv_apply_.setArg(13, (unsigned)NULL);
+        this->spmspv_apply_.setArg(14, (unsigned)NULL);
+        this->spmspv_apply_.setArg(15, (char)NULL);
     }
 
     void set_mode() override {
-        this->spmspv_apply_.setArg(14, 4);;  // 4 is kernel_assign_vector_dense
+        this->spmspv_apply_.setArg(17, 4);;  // 4 is kernel_assign_vector_dense
     }
 
     /*!
@@ -101,7 +101,7 @@ public:
      * \brief Bind the mask buffer to an existing buffer.
      */
     void bind_mask_buf(cl::Buffer src_buf) {
-        this->spmspv_apply_.setArg(13, (char)this->mask_type_);
+        this->spmspv_apply_.setArg(16, (char)this->mask_type_);
         this->mask_buf = src_buf;
         this->spmspv_apply_.setArg(0, this->mask_buf);
     }
@@ -159,7 +159,7 @@ public:
 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
-    this->spmspv_apply_.setArg(13, (char)this->mask_type_);
+    this->spmspv_apply_.setArg(16, (char)this->mask_type_);
     this->mask_.assign(mask.begin(), mask.end());
     cl_mem_ext_ptr_t mask_ext;
     mask_ext.obj = this->mask_.data();
@@ -201,8 +201,8 @@ void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_d
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
     cl_int err;
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(15, len));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(16, graphlily::pack_raw_bits_to_uint(val)));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(18, len));
+    OCL_CHECK(err, err = this->spmspv_apply_.setArg(19, graphlily::pack_raw_bits_to_uint(val)));
 
     OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmspv_apply_));
     this->command_queue_.finish();
