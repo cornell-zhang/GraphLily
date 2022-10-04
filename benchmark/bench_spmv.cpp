@@ -109,7 +109,7 @@ void bench_spmv(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_le
     throughput /= 1000;
     throughput /= 1000;
     throughput /= average_time_in_sec;
-    std::cout << "Compute THROUGHPUT = " << throughput << " GOPS" << std::endl;
+    std::cout << "Compute THROUGHPUT = " << throughput << " GTEPS" << std::endl;
 }
 
 
