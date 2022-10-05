@@ -76,7 +76,11 @@ static void load_matrix_from_gmem(
 
         loop_get_column_len_ML:
         for (unsigned int i = 0; i < 2; i++) {
-            #pragma HLS pipeline II=1
+            #pragma HLS unroll
+            // Use `unroll` here instead of `pipeline`, since the latter would
+            // cause a weird issue in HLS synthesis stage with only log saying
+            // `Encountered problem during source synthesis, Pre-synthesis
+            // failed` and no more details provided. It emerges in Vitis 2022.1.
             col_slice[i] = mat_indptr[current_colid + mat_indptr_base + i];
         }
 
@@ -115,7 +119,6 @@ static void write_back_results (
     const VAL_T *mask,
     IDX_T mat_row_id_base,
     IDX_T &Nnz,
-    VAL_T Zero,
     MASK_T mask_type
 ) {
     IDX_T res_idx = Nnz;
@@ -312,7 +315,6 @@ static void spmspv_core(
         mask,
         mat_row_id_base,
         Nnz,
-        Zero,
         mask_type
     );
 
