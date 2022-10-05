@@ -24,7 +24,7 @@ namespace graphlily {
 const std::string root_path = get_root_path();
 
 // The device
-const std::string device_name = "xilinx_u280_xdma_201920_3";
+const std::string device_name = "xilinx_u280_gen3x16_xdma_1_202211_1";
 
 // Find the device
 cl::Device find_device() {
@@ -202,6 +202,12 @@ inline val_t pack_uint_to_raw_bits(unsigned val) {
     val_t temp;
     temp(31,0) = ap_uint<32>(val)(31,0);
     return temp;
+}
+
+// explict specialization for `float` data type
+template<>
+inline float pack_uint_to_raw_bits(unsigned val) {
+    return (float)val;
 }
 
 }  // namespace graphlily

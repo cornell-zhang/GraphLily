@@ -29,7 +29,7 @@ void _synthesize_impl(T* t) {
     t->generate_kernel_ini();
     t->generate_makefile();
     command = "cd " + graphlily::proj_folder_name + "; " + "make build";
-    command += " -j5";
+    command += " -j";
     std::cout << command << std::endl;
     system(command.c_str());
     if (t->target_ == "sw_emu" || t->target_ == "hw_emu") {

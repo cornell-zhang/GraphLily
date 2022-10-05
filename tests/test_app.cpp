@@ -4,7 +4,8 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 
-#include "graphlily/synthesizer/overlay_synthesizer.h"
+#include "graphlily/synthesizer/split_kernel_synthesizer.h"
+
 #include "graphlily/app/bfs.h"
 #include "graphlily/app/pagerank.h"
 #include "graphlily/app/sssp.h"
@@ -15,9 +16,9 @@
 
 
 std::string target = "sw_emu";
-uint32_t spmv_out_buf_len = 1024;
-uint32_t spmspv_out_buf_len = 512;
-uint32_t vec_buf_len = 256;
+uint32_t spmv_out_buf_len = 1048576;
+uint32_t spmspv_out_buf_len = 262144;
+uint32_t vec_buf_len = 32768;
 
 
 void clean_proj_folder() {
@@ -39,7 +40,7 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 
 
 TEST(Synthesize, NULL) {
-    graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
+    graphlily::synthesizer::SplitKernelSynthesizer synthesizer(graphlily::num_hbm_channels,
                                                            spmv_out_buf_len,
                                                            spmspv_out_buf_len,
                                                            vec_buf_len);

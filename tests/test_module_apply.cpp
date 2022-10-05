@@ -17,14 +17,14 @@
 #include "graphlily/io/data_formatter.h"
 
 
-std::string target = "hw";
+std::string target = "sw_emu";
 uint32_t spmv_out_buf_bank_size = 1024 * 8;
 uint32_t spmv_vec_buf_bank_size = 1024 * 4;
 uint32_t spmv_pe_num = graphlily::pack_size * graphlily::num_hbm_channels;
 uint32_t spmv_out_buf_len = spmv_out_buf_bank_size * spmv_pe_num;
 uint32_t spmv_vec_buf_len = spmv_vec_buf_bank_size * graphlily::pack_size;
-uint32_t spmspv_out_buf_bank_size = 1024 * 2;
-uint32_t spmspv_out_buf_len = spmspv_out_buf_bank_size * graphlily::pack_size;
+
+uint32_t spmspv_out_buf_len = 256 * 1024;
 
 
 void clean_proj_folder() {

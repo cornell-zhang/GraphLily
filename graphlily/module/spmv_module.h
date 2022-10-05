@@ -523,10 +523,13 @@ void SpMVModule<matrix_data_t, vector_data_t>::send_mask_host_to_device(aligned_
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::bind_mask_buf(cl::Buffer src_buf) {
-    // TODO: support mask for split-kernel spmv
-    // this->mask_buf = src_buf;
-    // this->kernel_.setArg(this->num_channels_ + 1, this->mask_buf);
-    // this->kernel_.setArg(this->num_channels_ + 2, this->mask_buf);
+    this->mask_buf = src_buf;
+    this->spmspv_apply_.setArg(1, this->mask_buf);
+    this->spmspv_apply_.setArg(2, this->mask_buf);
+    // Note: this statement is needed to support BFS pull_push method when using
+    // Vitis 2022.1. But in old environment, sw_emu/hw works fine without it.
+    // TODO: to apply this patch in other branches which uses Vitis 2022.1.
+    this->spmv_result_drain_.setArg(1, this->mask_buf);
 }
 
 

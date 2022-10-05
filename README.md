@@ -16,11 +16,17 @@ For more information, refer to our [ICCAD'21 paper](https://www.csl.cornell.edu/
 }
 ```
 
-## Prerequisites
-- Platform: Xilinx Alveo U280
-- Tool: Xilinx Vitis 2019.2
+And in this branch, we integrated 16-HBM HiSparse SpMV into GraphLily, and rewrote 1-DDR SpMSpV with HiSparse modules (e.g., PE, Shuffle). For the related work of HiSparse, please see https://github.com/cornell-zhang/HiSparse.
 
-## Run Benchmarking
+## Prerequisites
+- FPGA Card: Xilinx Alveo U280
+- Hardware Platform: [xilinx_u280_gen3x16_xdma_base_1](https://docs.xilinx.com/r/en-US/ug1120-alveo-platforms/U280-Gen3x16-XDMA-base_1-Platform)
+- Vendor Tool: Xilinx Vitis 2022.1.1
+- XRT: 2022.1
+
+Note: the compatibility of the tools can be found in [this document](https://docs.xilinx.com/r/en-US/ug1120-alveo-platforms/Alveo-Platforms).
+
+## Setup
 
 ### Clone the repo
 ```
@@ -29,9 +35,8 @@ export GRAPHLILY_ROOT_PATH=/path/to/GraphLily
 ```
 
 ### Get the bitstream
-- A pre-compiled bitstream (166 MHz) is provided [here](https://drive.google.com/file/d/1OGry0OtbvmGiSirhJy3tCPz51VMeV1HM/view?usp=sharing).
-- To generate a new bitstream:
-```
+To generate a new bitstream:
+```bash
 cd GraphLily/generate_bitstream
 make synthesize
 ```
@@ -48,8 +53,16 @@ Our ICCAD'21 paper evaluated the following six graph datasets:
 - [ogbn-products](https://drive.google.com/file/d/1yBJjW5aRpJt2if32gOWSmaYcI10KDQj0/view?usp=sharing)
 - [orkut](https://drive.google.com/file/d/1Am0hPLhGNAwjYWt5nd_-XsIaKBiWcwqt/view?usp=sharing)
 
-### Run
-Go to the GraphLily/benchmark folder, modify the cnpy path in Makefile, modify the bitstream path and the datasets path in run_bfs.sh, then:
-```
+## Benchmark
+Go to the GraphLily/benchmark folder, modify the cnpy path in Makefile, modify the bitstream path and the datasets path in run_bfs.sh, then run the script:
+```bash
+cd GraphLily/benchmark
 bash run_bfs.sh
+```
+
+## Test
+To do quick debug or test after tweaking the designs in GraphLily/graphlily, just go to the GraphLily/tests, build and run test programs (HW synthesis is included in those programs):
+```bash
+cd GraphLily/tests
+make test_module_spmv_spmspv # generate bitstream and run module test by one command
 ```

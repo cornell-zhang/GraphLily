@@ -12,7 +12,7 @@
 
 #include "graphlily/io/data_loader.h"
 #include "graphlily/module/spmspv_module.h"
-#include "graphlily/synthesizer/overlay_synthesizer.h"
+#include "graphlily/synthesizer/split_kernel_synthesizer.h"
 
 std::string line(int len) {
     std::string l;
@@ -295,7 +295,7 @@ int main(int argc, char *argv[]) {
         std::string command = "rm -rf ./" + graphlily::proj_folder_name;
         std::cout << command << std::endl;
         system(command.c_str());
-        graphlily::synthesizer::OverlaySynthesizer synthesizer(graphlily::num_hbm_channels,
+        graphlily::synthesizer::SplitKernelSynthesizer synthesizer(graphlily::num_hbm_channels,
                                                                spmv_out_buf_len,
                                                                spmspv_out_buf_len,
                                                                vec_buf_len);

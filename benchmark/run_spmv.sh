@@ -1,8 +1,8 @@
 make bench_spmv
 
 num_channels=16
-spmv_out_buf_len=1024000
-vec_buf_len=30720
+spmv_out_buf_len=1048576
+vec_buf_len=32768
 
 bitstream=/work/shared/common/project_build/graphblas/bitstreams/
 bitstream+=open_source_166MHz/overlay.xclbin

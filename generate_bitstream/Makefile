@@ -1,6 +1,6 @@
 HOST_ARCH = x86
 
-CXXFLAGS += -Wall -O3 -g -std=c++11
+CXXFLAGS += -Wall -O3 -g -std=c++14
 CXXFLAGS += -I$(GRAPHLILY_ROOT_PATH)
 
 LDFLAGS += -lrt -lstdc++

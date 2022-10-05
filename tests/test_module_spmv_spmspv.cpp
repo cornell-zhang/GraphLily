@@ -3,7 +3,6 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-// #include "graphlily/synthesizer/overlay_synthesizer.h"
 #include "graphlily/synthesizer/split_kernel_synthesizer.h"
 
 #include "graphlily/module/spmv_module.h"
@@ -30,7 +29,7 @@ const graphlily::MaskType test_mask_type[] = {
     graphlily::kMaskWriteToZero
 };
 
-std::string target = "hw";
+std::string target = "sw_emu";
 std::string dataset_folder = "/work/shared/common/project_build/graphblas/"
                              "data/sparse_matrix_graph";
 // std::string dataset_folder= "/path/to/data";
@@ -39,8 +38,8 @@ uint32_t spmv_vec_buf_bank_size = 1024 * 4;
 uint32_t spmv_pe_num = graphlily::pack_size * graphlily::num_hbm_channels;
 uint32_t spmv_out_buf_len = spmv_out_buf_bank_size * spmv_pe_num;
 uint32_t spmv_vec_buf_len = spmv_vec_buf_bank_size * graphlily::pack_size;
-uint32_t spmspv_out_buf_bank_size = 1024 * 2;
-uint32_t spmspv_out_buf_len = spmspv_out_buf_bank_size * graphlily::pack_size;
+
+uint32_t spmspv_out_buf_len = 256 * 1024;
 
 void clean_proj_folder() {
     std::string command = "rm -rf ./" + graphlily::proj_folder_name;
@@ -214,7 +213,7 @@ TEST(SpMV, MultipleCases) {
     std::map<std::string, CSRMatrix<float>> test_cases = {
         { "dense32", dense_32_matrix },
         { "uniform10K10", uniform_10K_matrix },
-        // { "google+", gplus_108K_matrix },
+        { "google+", gplus_108K_matrix },
     };
 
     for (const auto &x : test_cases ) {
@@ -337,7 +336,7 @@ TEST(SpMSpV, MultipleCases) {
     std::map<std::string, CSCMatrix<float>> test_cases = {
         { "dense1K", csc_matrix_dense1K },
         { "uniform10K10", csc_matrix_uniform10K10 },
-        // { "google+", csc_matrix_gpuls },
+        { "google+", csc_matrix_gpuls },
     };
 
     for (const auto &x : test_cases ) {
