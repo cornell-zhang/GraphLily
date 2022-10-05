@@ -1,9 +1,3 @@
-//
-// Note: this version of shuffle is integrated with register patch to address
-//       the II = 7 violation in the pipeline of `loop_shuffle_pipeline` loop,
-//       which emerges in Vitis 2022.1. For Vitis 2020.2, no need to use this
-//       shuffle since it utilizes more resources (~1.7X as large as before).
-//
 #ifndef SPMV_SHUFFLE_H_
 #define SPMV_SHUFFLE_H_
 
@@ -31,7 +25,7 @@ static void arbiter_1p(
     const EDGE_PLD_T in_pld[num_lanes],
     EDGE_PLD_T resend_pld[num_lanes],
     const ap_uint<num_lanes> in_valid,
-    ap_uint<num_lanes> &in_resend,
+    ap_uint<1> in_resend[num_lanes],
     unsigned xbar_sel[num_lanes],
     ap_uint<num_lanes> &out_valid,
     const unsigned rotate_priority
@@ -39,7 +33,7 @@ static void arbiter_1p(
     #pragma HLS pipeline II=1 enable_flush
     #pragma HLS latency min=ARBITER_LATENCY max=ARBITER_LATENCY
 
-    // #pragma HLS array_partition variable=in_resend complete
+    #pragma HLS array_partition variable=in_resend complete
     #pragma HLS array_partition variable=xbar_sel complete
 
     // prioritized valid and addr
@@ -109,7 +103,7 @@ static void arbiter_1p(
     const UPDATE_PLD_T in_pld[num_lanes],
     UPDATE_PLD_T resend_pld[num_lanes],
     const ap_uint<num_lanes> in_valid,
-    ap_uint<num_lanes> &in_resend,
+    ap_uint<1> in_resend[num_lanes],
     unsigned xbar_sel[num_lanes],
     ap_uint<num_lanes> &out_valid,
     const unsigned rotate_priority
@@ -117,7 +111,7 @@ static void arbiter_1p(
     #pragma HLS pipeline II=1 enable_flush
     #pragma HLS latency min=ARBITER_LATENCY max=ARBITER_LATENCY
 
-    // #pragma HLS array_partition variable=in_resend complete
+    #pragma HLS array_partition variable=in_resend complete
     #pragma HLS array_partition variable=xbar_sel complete
 
     // prioritized valid and addr
@@ -192,7 +186,7 @@ static void shuffler_core(
     hls::stream<PayloadT> input_lanes[num_lanes],
     hls::stream<PayloadT> output_lanes[num_lanes]
 ) {
-    const unsigned shuffler_extra_iters = (ARBITER_LATENCY + 1) * 2 * num_lanes;
+    const unsigned shuffler_extra_iters = (ARBITER_LATENCY + 1) * num_lanes;
     // pipeline control variables
     ap_uint<num_lanes> fetch_complete = 0;
     unsigned loop_extra_iters = shuffler_extra_iters;
@@ -207,24 +201,13 @@ static void shuffler_core(
     ap_uint<num_lanes> valid = 0;
 
     // resend control
-#define SF_REG (ARBITER_LATENCY+2)
-    PayloadT payload_resend[SF_REG][num_lanes];
-    #pragma HLS array_partition variable=payload_resend type=complete dim=0
-    ap_uint<num_lanes> resend[SF_REG];
-    #pragma HLS array_partition variable=resend type=complete dim=0
-
-    for (unsigned k = 0; k < SF_REG; k++) {
-        #pragma HLS unroll
-        resend[k] = 0;
-    }
-
-    shuffler_resend_payload_resend_reset_unroll:
+    PayloadT payload_resend[num_lanes];
+    #pragma HLS array_partition variable=payload_resend complete
+    ap_uint<1> resend[num_lanes];
+    #pragma HLS array_partition variable=resend complete
     for (unsigned i = 0; i < num_lanes; i++) {
         #pragma HLS unroll
-        for (unsigned k = 0; k < SF_REG; k++) {
-            #pragma HLS unroll
-            payload_resend[k][i] = (PayloadT){0,0,0,0};
-        }
+        resend[i] = 0;
     }
 
     // arbiter outputs
@@ -242,10 +225,8 @@ static void shuffler_core(
     loop_shuffle_pipeline:
     while (!loop_exit) {
         #pragma HLS pipeline II=1
-        #pragma HLS dependence variable=resend intra true
-        #pragma HLS dependence variable=payload_resend intra true
-        // #pragma HLS dependence variable=resend inter RAW true distance=6
-        // #pragma HLS dependence variable=payload_resend inter RAW true distance=6
+        #pragma HLS dependence variable=resend inter RAW true distance=6
+        #pragma HLS dependence variable=payload_resend inter RAW true distance=6
         // #pragma HLS dependence variable=in_addr inter RAW true distance=6
 
         // Fetch stage (F)
@@ -266,9 +247,9 @@ static void shuffler_core(
 // #endif
         for (unsigned ILid = 0; ILid < num_lanes; ILid++) {
             #pragma HLS unroll
-            if (resend[0][ILid]) {
+            if (resend[ILid]) {
                 valid[ILid] = 1;
-                payload[ILid] = payload_resend[0][ILid];
+                payload[ILid] = payload_resend[ILid];
             } else if (fetch_complete[ILid]) {
                 valid[ILid] = 0;
                 payload[ILid] = (PayloadT){0,0,0,0};
@@ -313,26 +294,13 @@ static void shuffler_core(
         }
         // ------- end of F stage
 
-        for (unsigned k = 0; k < SF_REG - 1; ++k) {
-            #pragma HLS unroll
-            resend[k] = resend[k + 1];
-        }
-
-        for (unsigned k = 0; k < SF_REG - 1; ++k) {
-            #pragma HLS unroll
-            for (unsigned i = 0; i < num_lanes; i++) {
-                #pragma HLS unroll
-                payload_resend[k][i] = payload_resend[k + 1][i];
-            }
-        }
-
         // Arbiter stage (A) pipeline arbiter, depth = 6
         rotate_priority = next_rotate_priority;
         arbiter_1p<num_lanes>(
             payload,
-            payload_resend[SF_REG - 1], // as return value
+            payload_resend,
             valid,
-            resend[SF_REG - 1], // as return value
+            resend,
             xbar_sel,
             xbar_valid,
             rotate_priority

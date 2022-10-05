@@ -61,8 +61,12 @@ bash run_bfs.sh
 ```
 
 ## Test
-To do quick debug or test after tweaking the designs in GraphLily/graphlily, just go to the GraphLily/tests, build and run test programs (HW synthesis is included in those programs):
+To do quick debug or test after tweaking the designs in GraphLily/graphlily, just go to the GraphLily/tests, build and run test programs (HW synthesis is included in those programs). Please install [googletest](https://github.com/google/googletest) first to build the test programs.
 ```bash
 cd GraphLily/tests
 make test_module_spmv_spmspv # generate bitstream and run module test by one command
 ```
+
+## Troubleshooting
+
+If you meet `undefined reference to cnpy::npz_load(std::string)` in link stage or `error while loading shared libraries: libcnpy.so: cannot open shared object file: No such file or directory` for execution, then check if cnpy is successfully installed and ensure the shared library can be found by dynamic linker/loader (e.g., adding the lib path to `LD_LIBRARY_PATH`). This also applies to the troubles related to googletest used in GraphLily.
