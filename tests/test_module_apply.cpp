@@ -3,10 +3,7 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include "graphlily/synthesizer/split_kernel_synthesizer.h"
-
 #include "graphlily/module/assign_vector_dense_module.h"
-#include "graphlily/module/assign_vector_sparse_module.h"
 #include "graphlily/module/add_scalar_vector_dense_module.h"
 
 #include <ap_fixed.h>
@@ -18,20 +15,6 @@
 
 
 std::string target = "sw_emu";
-uint32_t spmv_out_buf_bank_size = 1024 * 8;
-uint32_t spmv_vec_buf_bank_size = 1024 * 4;
-uint32_t spmv_pe_num = graphlily::pack_size * graphlily::num_hbm_channels;
-uint32_t spmv_out_buf_len = spmv_out_buf_bank_size * spmv_pe_num;
-uint32_t spmv_vec_buf_len = spmv_vec_buf_bank_size * graphlily::pack_size;
-
-uint32_t spmspv_out_buf_len = 256 * 1024;
-
-
-void clean_proj_folder() {
-    std::string command = "rm -rf ./" + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-}
 
 
 template<typename data_t>
@@ -40,25 +23,24 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
     ASSERT_EQ(reference_results.size(), kernel_results.size());
     float epsilon = 0.0001;
     for (size_t i = 0; i < reference_results.size(); i++) {
-        ASSERT_TRUE(abs(float(kernel_results[i]) - reference_results[i]) < epsilon);
+        bool match = abs(float(kernel_results[i]) - reference_results[i]) < epsilon;
+        if (!match) {
+            std::cout << "Error: Result mismatch"
+                      << std::endl;
+            std::cout << "  i = " << i
+                      << "  Reference result = " << reference_results[i]
+                      << "  Kernel result = " << kernel_results[i]
+                      << std::endl;
+        }
+        ASSERT_TRUE(match);
     }
-}
-
-
-TEST(Synthesize, NULL) {
-    graphlily::synthesizer::SplitKernelSynthesizer synthesizer(graphlily::num_hbm_channels,
-                                                           spmv_out_buf_len,
-                                                           spmspv_out_buf_len,
-                                                           spmv_vec_buf_len);
-    synthesizer.set_target(target);
-    synthesizer.synthesize();
 }
 
 
 TEST(AddScalarVectorDense, Basic) {
     graphlily::module::eWiseAddModule<graphlily::val_t> module;
     module.set_target(target);
-    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_runtime(std::getenv("BITSTREAM"));
 
     uint32_t length = 128;
     graphlily::val_t val = 1;
@@ -82,7 +64,7 @@ TEST(AddScalarVectorDense, Basic) {
 TEST(AssignVectorDense, Basic) {
     graphlily::module::AssignVectorDenseModule<graphlily::val_t> module;
     module.set_target(target);
-    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
+    module.set_up_runtime(std::getenv("BITSTREAM"));
 
     uint32_t length = 128;
     graphlily::val_t val = 23;
@@ -106,7 +88,7 @@ TEST(AssignVectorDense, Basic) {
     verify<graphlily::val_t>(reference_inout, kernel_inout);
 }
 
-
+/*
 TEST(AssignVectorSparseNoNewFrontier, Basic) {
     bool generate_new_frontier = false;
     graphlily::module::AssignVectorSparseModule<graphlily::val_t,
@@ -227,7 +209,7 @@ TEST(CopyBufferBindBuffer, Basic) {
 
     module.set_mask_type(graphlily::kMaskWriteToOne);
 
-    /*----------------------------- Copy buffer -------------------------------*/
+    //----------------------------- Copy buffer -------------------------------
     {
     module.send_mask_host_to_device(mask);
     module.send_inout_host_to_device(inout);
@@ -236,7 +218,7 @@ TEST(CopyBufferBindBuffer, Basic) {
     verify<graphlily::val_t>(mask_float, inout);
     }
 
-    /*----------------------------- Bind buffer -------------------------------*/
+    //----------------------------- Bind buffer -------------------------------
     {
     std::vector<float, aligned_allocator<float>> x_float(length);
     std::fill(x_float.begin(), x_float.end(), 0);
@@ -263,7 +245,7 @@ TEST(CopyBufferBindBuffer, Basic) {
     verify<graphlily::val_t>(inout_float, x);
     }
 }
-
+*/
 
 TEST(Clean, NULL) {
     clean_proj_folder();

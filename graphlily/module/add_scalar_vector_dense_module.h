@@ -1,13 +1,14 @@
 #ifndef GRAPHLILY_EWISE_ADD_MODULE_H_
 #define GRAPHLILY_EWISE_ADD_MODULE_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 #include <fstream>
 #include <chrono>
 
-#include "xcl2.hpp"
-
+#include "frt.h"
 #include "graphlily/global.h"
 #include "graphlily/module/base_module.h"
 
@@ -18,60 +19,69 @@ namespace module {
 template<typename vector_data_t>
 class eWiseAddModule : public BaseModule {
 private:
-    using packed_val_t = struct {vector_data_t data[graphlily::pack_size];};
     using aligned_dense_vec_t = std::vector<vector_data_t, aligned_allocator<vector_data_t>>;
 
+    const int ARG_OUT = 25, ARG_IN = 28;
+public:
     /*! \brief Internal copy of the input vector */
     aligned_dense_vec_t in_;
     /*! \brief Internal copy of the output vector */
     aligned_dense_vec_t out_;
 
 public:
-    // Device buffers
-    cl::Buffer in_buf;
-    cl::Buffer out_buf;
-
-public:
     eWiseAddModule() : BaseModule() {}
 
-    /* SpMSpV apply overlay argument list:
+    /* Overlay argument list:
     * Index       Argument                              Used in this module?
-    * 0           vector for spmv                       y
-    * 1           mask for spmv (read port)             n
-    * 2           mask for spmv (write port)            n
-    * 3           output for spmv                       y
+    * 0           Serpens edge list ptr                 n
+    * 1-24        Serpens edge list channel             n
+    * 25          Serpens vec X                         y
+    * 26          Serpens vec Y                         n
+    * 27          Serpens extended vec MK               n
+    * 28          Serpens vec Y_out                     y
     *
-    * 4~6         matrix for spmspv                     n
-    * 7           vector for spmspv                     n
-    * 8           mask for spmspv                       n
-    * 9           output for spmspv                     n
-    *
-    * 10          number of rows                        n
-    * 11          number of columns                     n
-    * 12          semiring operation type               n
-    *
-    * 13          mask type                             n
-    * 14          overlay mode select                   y
-    * 15          apply vector length                   y
-    * 16          apply input value or semiring zero    y
+    * 29          Serpens num iteration                 n
+    * 30          Serpens num A mat length              n
+    * 31          Serpens num rows (M)                  y
+    * 32          Serpens num cols (K)                  n
+    * 33          Serpens alpha (int cast)              n
+    * 34          Serpens beta (int cast)               n
+    * 35          value to add scalar                   y
+    * 36          value to assign vector                n
+    * 37          semiring zero                         n
+    * 38          semiring operator                     n
+    * 39          mask type                             n
+    * 40          overlay kernel mode                   y
     */
     void set_unused_args() override {
-        // Set unused arguments for SpMV
-        this->spmspv_apply_.setArg(1, cl::Buffer(this->context_, 0, 4));
-        this->spmspv_apply_.setArg(2, cl::Buffer(this->context_, 0, 4));
-        // Set unused arguments for SpMSpV
-        for (size_t i = 4; i <= 9; ++i) {
-            this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        // TODO: suspend buffer transfer, but how to deal with the existed on-device memory
+        // for (int i = 0; i <= 28; ++i) {
+        //     if (i != 25 && i != 28) {
+        //         this->instance->SuspendBuffer();
+        //     }
+        // }
+        for (int i = 29; i <= 37; ++i) {
+            if (i != 31 && i != 35) {
+                this->instance->SetArg(i, 0);
+            }
         }
-        // Set unused scalar arguments
-        this->spmspv_apply_.setArg(10, (unsigned)NULL);
-        this->spmspv_apply_.setArg(11, (unsigned)NULL);
-        this->spmspv_apply_.setArg(12, (char)NULL);
-        this->spmspv_apply_.setArg(13, (char)NULL);
+        this->instance->SetArg(38, (char)0);
+        this->instance->SetArg(39, (char)0);
+        if (standalone_instance) {
+            aligned_vector<int> tmp_i(1);
+            aligned_vector<float> tmp_f(1);
+            aligned_vector<unsigned long> tmp_ul(1);
+            this->instance->SetArg(0, frtPlaceholder(tmp_i));
+            for (int i = 1; i <= 24; ++i) {
+                this->instance->SetArg(i, frtPlaceholder(tmp_ul));
+            }
+            this->instance->SetArg(26, frtPlaceholder(tmp_f));
+            this->instance->SetArg(27, frtPlaceholder(tmp_f));
+        }
     }
 
     void set_mode() override {
-        this->spmspv_apply_.setArg(14, 3);  // 3 is kernel_add_scalar_vector_dense
+        this->instance->SetArg(40, (char)MODE_EWISE_ADD);
     }
 
     /*!
@@ -87,17 +97,15 @@ public:
     /*!
      * \brief Bind the input buffer to an existing buffer.
      */
-    void bind_in_buf(cl::Buffer src_buf) {
-        this->in_buf = src_buf;
-        this->spmspv_apply_.setArg(3, this->in_buf);
+    void bind_in_buf(aligned_dense_vec_t &src_buf) {
+        // this->in_ = src_buf;
     }
 
     /*!
      * \brief Bind the output buffer to an existing buffer.
      */
-    void bind_out_buf(cl::Buffer src_buf) {
-        this->out_buf = src_buf;
-        this->spmspv_apply_.setArg(0, this->out_buf);
+    void bind_out_buf(aligned_dense_vec_t &src_buf) {
+        // this->out_ = src_buf;
     }
 
     /*!
@@ -112,8 +120,12 @@ public:
      * \return The output vector.
      */
     aligned_dense_vec_t send_out_device_to_host() {
-        this->command_queue_.enqueueMigrateMemObjects({this->out_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
-        this->command_queue_.finish();
+        // TODO: re-enter this function
+        for (int i = 0; i <= 28; ++i) {
+            if (i != ARG_OUT) this->instance->SuspendBuf(i);
+        }
+        this->instance->ReadFromDevice();
+        this->instance->Finish();
         return this->out_;
     }
 
@@ -133,51 +145,45 @@ public:
 
 template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::send_in_host_to_device(aligned_dense_vec_t &in) {
+    assert(this->standalone_instance);
+
+    for (int i = 0; i <= 28; ++i) {
+        if (i != ARG_IN) this->instance->SuspendBuf(i);
+    }
+    this->in_.resize(in.size());
     this->in_.assign(in.begin(), in.end());
-    cl_mem_ext_ptr_t in_ext;
-    in_ext.obj = this->in_.data();
-    in_ext.param = 0;
-    in_ext.flags = graphlily::HBM[22];
-    cl_int err;
-    OCL_CHECK(err, this->in_buf = cl::Buffer(this->context_,
-                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->in_.size(),
-                &in_ext,
-                &err));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(3, this->in_buf));
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->in_buf}, 0));
-    this->command_queue_.finish();
+    this->instance->SetArg(ARG_IN, frtReadWrite(this->in_));
+    this->instance->WriteToDevice();
+    // this->instance->Finish();
 }
 
 
 template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
+    assert(this->standalone_instance);
+
+    // for (int i = 0; i <= 28; ++i) {
+    //     if (i != ARG_OUT) this->instance->SuspendBuf(i);
+    // }
     this->out_.resize(len);
-    cl_mem_ext_ptr_t out_ext;
-    out_ext.obj = this->out_.data();
-    out_ext.param = 0;
-    out_ext.flags = graphlily::HBM[20];
-    cl_int err;
-    OCL_CHECK(err, this->out_buf = cl::Buffer(this->context_,
-                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->out_.size(),
-                &out_ext,
-                &err));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(0, this->out_buf));
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->out_buf}, 0));
-    this->command_queue_.finish();
+    this->instance->SetArg(ARG_OUT, frtReadWrite(this->out_));
+    // this->instance->Finish();
 }
 
 
 template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
-    cl_int err;
-    // TODO: is the overhead of setArg and enqueueTask large at run time?
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(15, len));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(16, graphlily::pack_raw_bits_to_uint(val)));
+    this->set_mode();
+    this->set_unused_args();
 
-    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmspv_apply_));
-    this->command_queue_.finish();
+    int *val_ptr_int = (int*)(&val);
+    int val_int = *val_ptr_int;
+
+    this->instance->SetArg(31, len);
+    this->instance->SetArg(35, val_int);
+
+    this->instance->Exec();
+    this->instance->Finish();
 }
 
 

@@ -30,7 +30,6 @@ private:
     graphlily::SemiringType semiring_ = graphlily::ArithmeticSemiring;
     // Data types
     using aligned_dense_vec_t = graphlily::aligned_dense_vec_t;
-    using aligned_sparse_vec_t = graphlily::aligned_sparse_vec_t;
     using aligned_dense_float_vec_t = graphlily::aligned_dense_float_vec_t;
 
 public:
@@ -61,8 +60,8 @@ public:
         CSRMatrix<float> csr_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
         graphlily::io::util_round_csr_matrix_dim(
             csr_matrix,
-            this->num_channels_ * graphlily::pack_size,
-            this->num_channels_ * graphlily::pack_size);
+            graphlily::matrix_round_size,
+            graphlily::matrix_round_size);
         graphlily::io::util_normalize_csr_matrix_by_outdegree(csr_matrix);
         for (auto &x : csr_matrix.adj_data) x = x * damping;
         this->SpMV_->load_and_format_matrix(csr_matrix, skip_empty_rows);
@@ -80,8 +79,8 @@ public:
     aligned_dense_vec_t pull(graphlily::val_t damping, uint32_t num_iterations) {
         aligned_dense_vec_t rank(this->matrix_num_rows_, 1.0 / this->matrix_num_rows_);
         this->SpMV_->send_vector_host_to_device(rank);
-        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
-        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);
+        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_);
+        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_);
         for (size_t iter = 1; iter <= num_iterations; iter++) {
             this->SpMV_->run();
             this->eWiseAdd_->run(this->matrix_num_rows_, (1 - damping) / this->matrix_num_rows_);
@@ -108,8 +107,8 @@ public:
         data_transfer_time_start = std::chrono::high_resolution_clock::now();
         aligned_dense_vec_t rank(this->matrix_num_rows_, 1.0 / this->matrix_num_rows_);
         this->SpMV_->send_vector_host_to_device(rank);
-        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
-        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);
+        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_);
+        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_);
         data_transfer_time_end = std::chrono::high_resolution_clock::now();
         data_transfer_time_ms += float(std::chrono::duration_cast<std::chrono::microseconds>(
             data_transfer_time_end - data_transfer_time_start).count()) / 1000;

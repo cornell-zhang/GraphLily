@@ -2,8 +2,8 @@ BUILD_DIR = ./build
 
 HOST_ARCH = x86
 
-CXXFLAGS += -Wall -g -std=c++14
-# CXXFLAGS += -O3
+CXXFLAGS += -Wall -g -std=c++17
+CXXFLAGS += -O3
 CXXFLAGS += -I$(GRAPHLILY_ROOT_PATH)
 
 LDFLAGS += -lrt -lstdc++
@@ -19,8 +19,8 @@ LDFLAGS += $(opencl_LDFLAGS)
 CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/cnpy
 LDFLAGS += -L/work/shared/common/project_build/graphblas/software/cnpy/build -lcnpy
 
-CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/googletest/googletest/include
-LDFLAGS += -L/work/shared/common/project_build/graphblas/software/googletest/build/lib -lgtest
+# TAPA workflow
+LDFLAGS += -lgtest -ltapa -lfrt -lglog -lgflags -lOpenCL
 
 test_io: test_io.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) test_io.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
@@ -32,13 +32,13 @@ test_module_spmv_spmspv: test_module_spmv_spmspv.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) test_module_spmv_spmspv.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)
 	mv test_module_spmv_spmspv $(BUILD_DIR)/
-	cd $(BUILD_DIR); ./test_module_spmv_spmspv
+	echo "Please run ./test_module_spmv_spmspv manually currently"
 
 test_module_apply: test_module_apply.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) test_module_apply.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)
 	mv test_module_apply $(BUILD_DIR)/
-	cd $(BUILD_DIR); ./test_module_apply
+	echo "Please run ./test_module_apply manually currently"
 
 test_app: test_app.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) test_app.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)

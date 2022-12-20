@@ -1,6 +1,8 @@
+BUILD_DIR = ./build
+
 HOST_ARCH = x86
 
-CXXFLAGS += -Wall -O3 -g -std=c++14
+CXXFLAGS += -Wall -O3 -g -std=c++17
 CXXFLAGS += -I$(GRAPHLILY_ROOT_PATH)
 
 LDFLAGS += -lrt -lstdc++
@@ -16,7 +18,8 @@ LDFLAGS += $(opencl_LDFLAGS)
 CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/cnpy
 LDFLAGS += -L/work/shared/common/project_build/graphblas/software/cnpy/build -lcnpy
 
-BUILD_DIR = ./build
+# TAPA workflow
+LDFLAGS += -lgtest -ltapa -lfrt -lglog -lgflags -lOpenCL
 
 bench_spmv: bench_spmv.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) bench_spmv.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
@@ -42,6 +45,8 @@ bench_pagerank: bench_pagerank.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) bench_pagerank.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)
 	mv bench_pagerank $(BUILD_DIR)/
+
+apps: bench_bfs bench_sssp bench_pagerank
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -13,8 +13,8 @@ template<typename data_t>
 void verify(std::vector<float, aligned_allocator<float>> &reference_results,
             std::vector<data_t, aligned_allocator<data_t>> &kernel_results) {
     if (!(reference_results.size() == kernel_results.size())) {
-        std::cout << "Size mismatch!" << std::endl;
-        exit(EXIT_FAILURE);
+        std::cout << "Error: Size mismatch!" << std::endl;
+        return;
     }
     float epsilon = 0.0001;
     for (size_t i = 0; i < reference_results.size(); i++) {
@@ -25,7 +25,7 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
                       << " Reference result = " << reference_results[i]
                       << " Kernel result = " << kernel_results[i]
                       << std::endl;
-            exit(EXIT_FAILURE);
+            return;
         }
     }
 }
@@ -48,10 +48,9 @@ void bench_sssp(uint32_t num_channels, uint32_t spmv_out_buf_len,
 
     // Pull
     auto kernel_results = sssp.pull(source, num_iterations);
-    // verify<graphlily::val_t>(reference_results, kernel_results);
-    // std::cout << "SSSP pull passed" << std::endl;
+    verify<graphlily::val_t>(reference_results, kernel_results);
 
-    uint32_t num_runs = 1;
+    uint32_t num_runs = 1024;
     auto t1 = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < num_runs; i++) {
         kernel_results = sssp.pull(source, num_iterations);
@@ -65,6 +64,7 @@ void bench_sssp(uint32_t num_channels, uint32_t spmv_out_buf_len,
     double throughput = op_count / 1000 / 1000 / 1000 / average_time_in_sec;
     std::cout << "Pull Compute THROUGHPUT = " << throughput << " GTEPS" << std::endl;
 
+    /*
     // Pull-Push
     float threshold = 0.001;
     kernel_results = sssp.pull_push(source, num_iterations, threshold);
@@ -82,6 +82,7 @@ void bench_sssp(uint32_t num_channels, uint32_t spmv_out_buf_len,
     std::cout << "Pull-Push average_time: " << average_time_in_sec * 1000 << " ms" << std::endl;
     throughput = op_count / 1000 / 1000 / 1000 / average_time_in_sec;
     std::cout << "Pull-Push Compute THROUGHPUT = " << throughput << " GTEPS" << std::endl;
+    */
 }
 
 

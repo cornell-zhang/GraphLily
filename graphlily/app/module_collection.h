@@ -1,6 +1,7 @@
 #ifndef GRAPHLILY_MODULE_COLLECTION_H_
 #define GRAPHLILY_MODULE_COLLECTION_H_
 
+#include "frt.h"
 #include "graphlily/global.h"
 #include "graphlily/module/base_module.h"
 
@@ -19,11 +20,7 @@ protected:
     /*! \brief The target; can be sw_emu, hw_emu, hw */
     std::string target_;
 
-    // OpenCL runtime
-    cl::Device device_;
-    cl::Context context_;
-    std::vector<unsigned char> xclbin_buf_;
-    cl::Program program_;
+    fpga::Instance *instance = nullptr;
 
 public:
     ModuleCollection() {}
@@ -35,6 +32,7 @@ public:
         for (size_t i = 0; i < this->num_modules_; i++) {
             delete this->modules_[i];
         }
+        if (this->instance != nullptr) delete this->instance;
     }
 
     /*!
@@ -58,44 +56,14 @@ public:
      * \brief Load the xclbin file and set up runtime.
      * \param xclbin_file_path The xclbin file path.
      */
-    void set_up_runtime(std::string xclbin_file_path);
+    void set_up_runtime(std::string xclbin_file_path) {
+        this->instance = new fpga::Instance(xclbin_file_path);
+        // Set up runtime for each module
+        for (size_t i = 0; i < this->num_modules_; i++) {
+            this->modules_[i]->set_up_runtime(this->instance);
+        }
+    }
 };
-
-
-void ModuleCollection::set_up_runtime(std::string xclbin_file_path) {
-    // Set this->device_ and this->context_
-    if (this->target_ == "sw_emu" || this->target_ == "hw_emu") {
-        setenv("XCL_EMULATION_MODE", this->target_.c_str(), true);
-    }
-    this->device_ = graphlily::find_device();
-    this->context_ = cl::Context(this->device_, NULL, NULL, NULL);
-
-    // Load bitstream
-    cl_int err;
-    // ! maintain the binary content in `this->xclbin_buf_` to avoid destruction of xclbin buffer
-    // when this function returns. Note that `cl::Program` only uses a shallow copy of binary buffer.
-    this->xclbin_buf_ = xcl::read_binary_file(xclbin_file_path);
-    cl::Program::Binaries binaries{{this->xclbin_buf_.data(), this->xclbin_buf_.size()}};
-    this->program_ = cl::Program(this->context_, {this->device_}, binaries, NULL, &err);
-    if (err != CL_SUCCESS) {
-        std::cout << "Failed to program device with xclbin file\n";
-    } else {
-        std::cout << "Successfully programmed device with xclbin file\n";
-    }
-
-    // Set up runtime for each module
-    for (size_t i = 0; i < this->num_modules_; i++) {
-        this->modules_[i]->set_device(this->device_);
-        this->modules_[i]->set_context(this->context_);
-        this->modules_[i]->set_program(this->program_);
-
-        this->modules_[i]->set_up_command_queue();
-        this->modules_[i]->set_up_kernels();
-
-        this->modules_[i]->set_unused_args();
-        this->modules_[i]->set_mode();
-    }
-}
 
 }  // namespace app
 }  // namespace graphlily

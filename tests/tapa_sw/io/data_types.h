@@ -1,27 +1,21 @@
-#ifndef HISPARSE_H_
-#define HISPARSE_H_
+#ifndef SPMV_COMMON_H_
+#define SPMV_COMMON_H_
 
 #include <ap_fixed.h>
 #include <ap_int.h>
 #include <ap_axi_sdata.h>
-#include "ap_fixed.h"
-#include "./math_constants.h"
+
+#define IDX_MARKER 0xffffffff
 
 #ifndef __SYNTHESIS__
 #include <iostream>
 #include <iomanip>
 #endif
 
-#define IDX_MARKER 0xffffffff
-
 //-------------------------------------------------------------------------
 // overlay configurations
 //-------------------------------------------------------------------------
 const unsigned PACK_SIZE = 8;
-const unsigned NUM_PORT_PER_BANK = 1;
-const unsigned NUM_BANK_PER_HBM_CHANNEL = PACK_SIZE / NUM_PORT_PER_BANK;
-const unsigned BANK_ID_NBITS = 3;
-const unsigned BANK_ID_MASK = 7;
 
 //-------------------------------------------------------------------------
 // basic data types
@@ -30,17 +24,13 @@ const unsigned IBITS = 8;
 const unsigned FBITS = 32 - IBITS;
 typedef unsigned IDX_T;
 typedef ap_ufixed<32, IBITS, AP_RND, AP_SAT> VAL_T;
-
 #define VAL_T_BITCAST(v) (v(31,0))
-#define LOAD_RAW_BITS_FROM_UINT(v_ap, v_u) ((v_ap)(31,0) = ap_uint<32>(v_u)(31,0))
 
 //-------------------------------------------------------------------------
 // kernel-memory interface packet types
 //-------------------------------------------------------------------------
 typedef struct {IDX_T data[PACK_SIZE];} PACKED_IDX_T;
-// typedef unsigned VAL_T;
 typedef struct {VAL_T data[PACK_SIZE];} PACKED_VAL_T;
-// typedef float VAL_T;
 
 typedef struct {
    PACKED_IDX_T indices;
@@ -48,6 +38,9 @@ typedef struct {
 } SPMV_MAT_PKT_T;
 
 typedef SPMV_MAT_PKT_T SPMSPV_MAT_PKT_T;
+
+typedef ap_uint<PACK_SIZE * 32 * 2> _SPMV_MAT_PKT_T;
+typedef ap_uint<PACK_SIZE * 32> _PACKED_VAL_T;
 
 typedef struct {IDX_T index; VAL_T val;} IDX_VAL_T;
 
@@ -94,7 +87,7 @@ struct VEC_PLD_T{
 #define VEC_PLD_EOS ((VEC_PLD_T){0,0,EOS})
 
 #ifndef __SYNTHESIS__
-namespace { // anonymous namspace to prevent multiple definitions
+namespace {
 std::string inst2str(INST_T inst) {
     switch (inst) {
         case SOD: return std::string("SOD");
@@ -129,106 +122,43 @@ std::ostream& operator<<(std::ostream& os, const VEC_PLD_T &p) {
         << "inst: "  << inst2str(p.inst) << '}';
     return os;
 }
-} // namespace anonymous
+}
 #endif
 
 //-------------------------------------------------------------------------
 // kernel-to-kernel streaming payload types
 //-------------------------------------------------------------------------
 
+// only works on Vitis 2020.2
 typedef struct {
     ap_uint<32 * (PACK_SIZE + 1)> data;
     ap_uint<2> user; // same as INST_T
-} VEC_AXIS_INTERNAL_T;
-
-typedef ap_axiu<32 * (PACK_SIZE + 1), 2, 0, 0> VEC_AXIS_T;
+} VEC_AXIS_T; // only used for stream FIFOs
+typedef ap_axiu<32 * (PACK_SIZE + 1), 2, 0, 0> VEC_AXIS_IF_T; // AXI4-Stream interface of split kernels
 
 #define VEC_AXIS_PKT_IDX(p) (p.data(31,0))
 #define VEC_AXIS_VAL(p, i) (p.data(63 + 32 * i,32 + 32 * i))
 
 #ifndef __SYNTHESIS__
-namespace { // anonymous namspace to prevent multiple definitions
+namespace {
 std::ostream& operator<<(std::ostream& os, const VEC_AXIS_T &p) {
     os << '{' << "pktidx: " << VEC_AXIS_PKT_IDX(p) << '|';
     for (unsigned i = 0; i < PACK_SIZE; i++) {
-        os << "val: " << float(VEC_AXIS_VAL(p, i)) / (1 << 24) << '|';
+        os << "val: " << float(VEC_AXIS_VAL(p, i)) / (1 << FBITS) << '|';
     }
     os << "user: "  << inst2str(p.user) << '}';
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const VEC_AXIS_INTERNAL_T &p) {
+std::ostream& operator<<(std::ostream& os, const VEC_AXIS_IF_T &p) {
     os << '{' << "pktidx: " << VEC_AXIS_PKT_IDX(p) << '|';
     for (unsigned i = 0; i < PACK_SIZE; i++) {
-        os << "val: " << float(VEC_AXIS_VAL(p, i)) / (1 << 24) << '|';
+        os << "val: " << float(VEC_AXIS_VAL(p, i)) / (1 << FBITS) << '|';
     }
     os << "user: "  << inst2str(p.user) << '}';
     return os;
 }
-} // namespace anonymous
+}
 #endif
 
-//-------------------------------------------------------------------------
-// Kernel configurations
-//-------------------------------------------------------------------------
-
-#include "./config.h"
-/* use configurations in config.h
-const unsigned SPMV_OUT_BUF_LEN =;
-const unsigned SPMSPV_OUT_BUF_LEN =;
-const unsigned SPMV_VEC_BUF_LEN =;
-#define NUM_HBM_CHANNEL
-*/
-
-// const unsigned OB_BANK_SIZE = 1024 * 8;
-// const unsigned VB_BANK_SIZE = 1024 * 4;
-
-const unsigned INTERLEAVE_FACTOR = 1;
-
-const unsigned LOGICAL_OB_SIZE = SPMV_OUT_BUF_LEN;
-const unsigned LOGICAL_VB_SIZE = SPMV_VEC_BUF_LEN;
-
-const unsigned NUM_HBM_CHANNELS = NUM_HBM_CHANNEL;
-const unsigned OB_PER_CLUSTER = SPMV_OUT_BUF_LEN / NUM_HBM_CHANNELS;
-/* Input vector across different clusters remains replicated, thus the variables
-   VB_PER_CLUSTER, SPMV_VEC_BUF_LEN, and LOGICAL_VB_SIZE are all equal. And note
-   that PHYSICAL_VB_SIZE = LOGICAL_VB_SIZE x NUM_HBM_CHANNELS(i.e. NUM_CLUSTERS)
-   while PHYSICAL_OB_SIZE = LOGICAL_OB_SIZE. */
-const unsigned VB_PER_CLUSTER = SPMV_VEC_BUF_LEN;
-const unsigned OB_BANK_SIZE = OB_PER_CLUSTER / PACK_SIZE;
-const unsigned VB_BANK_SIZE = VB_PER_CLUSTER / PACK_SIZE;
-const unsigned SK0_CLUSTER = 4;
-const unsigned SK1_CLUSTER = 6;
-const unsigned SK2_CLUSTER = 6;
-
-
-const unsigned FIFO_DEPTH = 64;
-const unsigned BATCH_SIZE = 128;
-
-//-------------------------------------------------------------------------
-// Semiring and mask types
-//-------------------------------------------------------------------------
-
-// semiring
-typedef char OP_T;
-#define MULADD 0
-#define ANDOR  1
-#define ADDMIN 2
-
-const VAL_T MulAddZero = 0;
-const VAL_T AndOrZero  = 0;
-// const VAL_T AddMinZero = UINT_INF;
-const VAL_T AddMinZero = UFIXED_INF;
-// const VAL_T AddMinZero = FLOAT_INF;
-
-const VAL_T MulAddOne = 1;
-const VAL_T AndOrOne  = 1;
-const VAL_T AddMinOne = 0;
-
-// mask type
-typedef char MASK_T;
-#define NOMASK      0
-#define WRITETOZERO 1
-#define WRITETOONE  2
-
-#endif  // HISPARSE_H_
+#endif  // SPMV_COMMON_H_

@@ -13,8 +13,8 @@ template<typename data_t>
 void verify(std::vector<float, aligned_allocator<float>> &reference_results,
             std::vector<data_t, aligned_allocator<data_t>> &kernel_results) {
     if (!(reference_results.size() == kernel_results.size())) {
-        std::cout << "Size mismatch!" << std::endl;
-        exit(EXIT_FAILURE);
+        std::cout << "Error: Size mismatch!" << std::endl;
+        return;
     }
     float epsilon = 0.0001;
     for (size_t i = 0; i < reference_results.size(); i++) {
@@ -25,7 +25,7 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
                       << " Reference result = " << reference_results[i]
                       << " Kernel result = " << kernel_results[i]
                       << std::endl;
-            exit(EXIT_FAILURE);
+            return;
         }
     }
 }
@@ -47,10 +47,9 @@ void bench_pagerank(uint32_t num_channels, uint32_t spmv_out_buf_len,
     auto reference_results = pagerank.compute_reference_results(damping, num_iterations);
 
     auto kernel_results = pagerank.pull(damping, num_iterations);
-    // verify<graphlily::val_t>(reference_results, kernel_results);
-    // std::cout << "PageRank passed" << std::endl;
+    verify<graphlily::val_t>(reference_results, kernel_results);
 
-    uint32_t num_runs = 1;
+    uint32_t num_runs = 1024;
     auto t1 = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < num_runs; i++) {
         kernel_results = pagerank.pull(damping, num_iterations);

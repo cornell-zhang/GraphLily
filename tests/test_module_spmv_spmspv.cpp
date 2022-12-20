@@ -3,10 +3,7 @@
 #pragma GCC diagnostic ignored "-Wuninitialized"
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
-#include "graphlily/synthesizer/split_kernel_synthesizer.h"
-
 #include "graphlily/module/spmv_module.h"
-#include "graphlily/module/spmspv_module.h"
 
 #include <ap_fixed.h>
 #include <gtest/gtest.h>
@@ -32,20 +29,6 @@ const graphlily::MaskType test_mask_type[] = {
 std::string target = "sw_emu";
 std::string dataset_folder = "/work/shared/common/project_build/graphblas/"
                              "data/sparse_matrix_graph";
-// std::string dataset_folder= "/path/to/data";
-uint32_t spmv_out_buf_bank_size = 1024 * 8;
-uint32_t spmv_vec_buf_bank_size = 1024 * 4;
-uint32_t spmv_pe_num = graphlily::pack_size * graphlily::num_hbm_channels;
-uint32_t spmv_out_buf_len = spmv_out_buf_bank_size * spmv_pe_num;
-uint32_t spmv_vec_buf_len = spmv_vec_buf_bank_size * graphlily::pack_size;
-
-uint32_t spmspv_out_buf_len = 256 * 1024;
-
-void clean_proj_folder() {
-    std::string command = "rm -rf ./" + graphlily::proj_folder_name;
-    std::cout << command << std::endl;
-    system(command.c_str());
-}
 
 
 template<typename data_t>
@@ -55,8 +38,8 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
     ASSERT_EQ(reference_results.size(), kernel_results.size());
     float epsilon = 0.0001;
     for (size_t i = 0; i < reference_results.size(); i++) {
-        ASSERT_TRUE(abs(kernel_results[i].to_float() - reference_results[i]) < epsilon)
-            << kernel_results[i].to_float() << " output while "
+        ASSERT_TRUE(abs(kernel_results[i] - reference_results[i]) < epsilon)
+            << kernel_results[i] << " output while "
             << reference_results[i] << " expected with "
             << mask_vals[i] << " for mask" << std::endl;
     }
@@ -99,43 +82,20 @@ std::string gen_test_case_name(graphlily::SemiringType semiring,
     return name;
 }
 
-// for SpMV tests
-std::string gen_test_case_name(graphlily::SemiringType semiring,
-                                      graphlily::MaskType mask_type,
-                                      std::string matrix_name,
-                                      bool skip_empty_rows) {
-    std::string suffix = skip_empty_rows ? "SkipEmptyRows" : "NotSkipRows";
-    return gen_test_case_name(semiring, mask_type, matrix_name) + "_" + suffix;
-}
-
-// for SpMSpV tests
-std::string gen_test_case_name(graphlily::SemiringType semiring,
-                                      graphlily::MaskType mask_type,
-                                      std::string matrix_name,
-                                      float vector_sparsity) {
-    float spv = vector_sparsity * 100;
-    char c[20];
-    sprintf(c, "%3.4f%%", spv);
-    return gen_test_case_name(semiring, mask_type, matrix_name) + "_" + c;
-}
-
-
-TEST(Synthesize, NULL) {
-    graphlily::synthesizer::SplitKernelSynthesizer synthesizer(graphlily::num_hbm_channels,
-                                                           spmv_out_buf_len,
-                                                           spmspv_out_buf_len,
-                                                           spmv_vec_buf_len);
-    synthesizer.set_target(target);
-    synthesizer.synthesize();
-}
-
-void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> &module,
-                       graphlily::SemiringType semiring,
+void _test_spmv_module(graphlily::SemiringType semiring,
                        graphlily::MaskType mask_type,
                        std::string matrix_id,
-                       CSRMatrix<float> const &csr_matrix,
-                       bool skip_empty_rows) {
-    std::cout << gen_test_case_name(semiring, mask_type, matrix_id, skip_empty_rows) << std::endl;
+                       CSRMatrix<float> const &csr_matrix) {
+    graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> module(graphlily::num_hbm_channels,
+                                                                             0,
+                                                                             0);
+    module.set_target(target);
+    // Tried only instantiating fpga::instance once, but encounter weird segmentation fault when
+    // running multiple tests. Checked memory management in graphlily modules, but hard to debug.
+    // Simple workaround is to instantiating each time for each test.
+    module.set_up_runtime(std::getenv("BITSTREAM"));
+
+    std::cout << gen_test_case_name(semiring, mask_type, matrix_id) << std::endl;
     using aligned_dense_vec_t = graphlily::aligned_dense_vec_t;
     using aligned_dense_float_vec_t = graphlily::aligned_dense_float_vec_t;
 
@@ -152,7 +112,7 @@ void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily
     std::generate(mask_float.begin(), mask_float.end(), []{return (float)(rand() % 2);});
     aligned_dense_vec_t mask(mask_float.begin(), mask_float.end());
 
-    module.load_and_format_matrix(csr_matrix, skip_empty_rows);
+    module.load_and_format_matrix(csr_matrix, false/*skip_empty_rows not used*/);
 
     aligned_dense_vec_t kernel_results;
     std::thread device_compute([&]{
@@ -176,20 +136,13 @@ void _test_spmv_module(graphlily::module::SpMVModule<graphlily::val_t, graphlily
 
 
 TEST(SpMV, MultipleCases) {
-    graphlily::module::SpMVModule<graphlily::val_t, graphlily::val_t> module(graphlily::num_hbm_channels,
-                                                                             spmv_out_buf_len,
-                                                                             spmv_vec_buf_len);
-    module.set_target(target);
-    // module.set_up_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-    module.set_up_split_kernel_runtime("./" + graphlily::proj_folder_name + "/build_dir." + target + "/fused.xclbin");
-
     // dense 32 x 32
     std::string csr_float_npz_path = dataset_folder + "/dense_32_csr_float32.npz";
     CSRMatrix<float> dense_32_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         dense_32_matrix,
-        graphlily::num_hbm_channels * graphlily::pack_size,
-        graphlily::pack_size);
+        graphlily::matrix_round_size,
+        graphlily::matrix_round_size);
     for (auto &x : dense_32_matrix.adj_data) x = 1.0 / dense_32_matrix.num_rows;
 
     // uniform (10K x 10K avg. degree 10)
@@ -197,8 +150,8 @@ TEST(SpMV, MultipleCases) {
     CSRMatrix<float> uniform_10K_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         uniform_10K_matrix,
-        graphlily::num_hbm_channels * graphlily::pack_size,
-        graphlily::pack_size);
+        graphlily::matrix_round_size,
+        graphlily::matrix_round_size);
     for (auto &x : uniform_10K_matrix.adj_data) x = 1.0 / uniform_10K_matrix.num_rows;
 
     // google plus (108K x 108K, 13M Nnz)
@@ -206,8 +159,8 @@ TEST(SpMV, MultipleCases) {
     CSRMatrix<float> gplus_108K_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
     graphlily::io::util_round_csr_matrix_dim(
         gplus_108K_matrix,
-        graphlily::num_hbm_channels * graphlily::pack_size,
-        graphlily::pack_size);
+        graphlily::matrix_round_size,
+        graphlily::matrix_round_size);
     for (auto &x : gplus_108K_matrix.adj_data) x = 1.0 / gplus_108K_matrix.num_rows;
 
     std::map<std::string, CSRMatrix<float>> test_cases = {
@@ -219,14 +172,13 @@ TEST(SpMV, MultipleCases) {
     for (const auto &x : test_cases ) {
         for (const auto sr : test_semiring) {
             for (const auto msk_t : test_mask_type) {
-                _test_spmv_module(module, sr, msk_t, x.first, x.second, false);
-                _test_spmv_module(module, sr, msk_t, x.first, x.second, true);
+                _test_spmv_module(sr, msk_t, x.first, x.second);
             }
         }
     }
 }
 
-
+/*
 void _test_spmspv_module(graphlily::module::SpMSpVModule<graphlily::val_t,
                                                          graphlily::val_t,
                                                          graphlily::idx_val_t> &module,
@@ -348,12 +300,7 @@ TEST(SpMSpV, MultipleCases) {
         }
     }
 }
-
-
-TEST(Clean, NULL) {
-    clean_proj_folder();
-}
-
+*/
 
 int main(int argc, char ** argv) {
     testing::InitGoogleTest(&argc, argv);

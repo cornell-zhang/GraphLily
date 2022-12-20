@@ -6,8 +6,6 @@
 #include <fstream>
 #include <chrono>
 
-#include "xcl2.hpp"
-
 #include "graphlily/global.h"
 #include "graphlily/module/base_module.h"
 
@@ -23,55 +21,68 @@ private:
 
     /*! \brief The mask type */
     graphlily::MaskType mask_type_;
+
+    const int ARG_MASK = 25, ARG_INOUT = 27;
+
+public:
     /*! \brief Internal copy of mask */
     aligned_dense_vec_t mask_;
     /*! \brief Internal copy of inout */
     aligned_dense_vec_t inout_;
 
 public:
-    // Device buffers
-    cl::Buffer mask_buf;
-    cl::Buffer inout_buf;
-
-public:
     AssignVectorDenseModule() : BaseModule() {}
 
-    /* SpMSpV apply overlay argument list:
+    /* Overlay argument list:
     * Index       Argument                              Used in this module?
-    * 0           vector for spmv                       y
-    * 1           mask for spmv (read port)             y
-    * 2           mask for spmv (write port)            y
-    * 3           output for spmv                       n
+    * 0           Serpens edge list ptr                 n
+    * 1-24        Serpens edge list channel             n
+    * 25          Serpens vec X                         y
+    * 26          Serpens vec Y                         n
+    * 27          Serpens extended vec MK               y
+    * 28          Serpens vec Y_out                     n
     *
-    * 4~6         matrix for spmspv                     n
-    * 7           vector for spmspv                     n
-    * 8           mask for spmspv                       n
-    * 9           output for spmspv                     n
-    *
-    * 10          number of rows                        n
-    * 11          number of columns                     n
-    * 12          semiring operation type               n
-    *
-    * 13          mask type                             y
-    * 14          overlay mode select                   y
-    * 15          apply vector length                   y
-    * 16          apply input value or semiring zero    y
+    * 29          Serpens num iteration                 n
+    * 30          Serpens num A mat length              n
+    * 31          Serpens num rows (M)                  y
+    * 32          Serpens num cols (K)                  y
+    * 33          Serpens alpha (int cast)              n
+    * 34          Serpens beta (int cast)               n
+    * 35          value to add scalar                   n
+    * 36          value to assign vector                y
+    * 37          semiring zero                         n
+    * 38          semiring operator                     n
+    * 39          mask type                             y
+    * 40          overlay kernel mode                   y
     */
     void set_unused_args() override {
-        // Set unused arguments for SpMV
-        this->spmspv_apply_.setArg(3, cl::Buffer(this->context_, 0, 4));
-        // Set unused arguments for SpMSpV
-        for (size_t i = 4; i <= 9; ++i) {
-            this->spmspv_apply_.setArg(i, cl::Buffer(this->context_, 0, 4));
+        // TODO: suspend buffer transfer, but how to deal with the existed on-device memory
+        // for (int i = 0; i <= 28; ++i) {
+        //     if (i != 25 && i != 27) {
+        //         this->instance->SuspendBuffer();
+        //     }
+        // }
+        for (int i = 29; i <= 37; ++i) {
+            if (i != 31 && i != 32 && i != 36) {
+                this->instance->SetArg(i, 0);
+            }
         }
-        // Set unused scalar arguments
-        this->spmspv_apply_.setArg(10, (unsigned)NULL);
-        this->spmspv_apply_.setArg(11, (unsigned)NULL);
-        this->spmspv_apply_.setArg(12, (char)NULL);
+        this->instance->SetArg(38, (char)0);
+        if (standalone_instance) {
+            aligned_vector<int> tmp_i(1);
+            aligned_vector<float> tmp_f(1);
+            aligned_vector<unsigned long> tmp_ul(1);
+            this->instance->SetArg(0, frtPlaceholder(tmp_i));
+            for (int i = 1; i <= 24; ++i) {
+                this->instance->SetArg(i, frtPlaceholder(tmp_ul));
+            }
+            this->instance->SetArg(26, frtPlaceholder(tmp_f));
+            this->instance->SetArg(28, frtPlaceholder(tmp_f));
+        }
     }
 
     void set_mode() override {
-        this->spmspv_apply_.setArg(14, 4);;  // 4 is kernel_assign_vector_dense
+        this->instance->SetArg(40, (char)MODE_DENSE_ASSIGN);
     }
 
     /*!
@@ -100,20 +111,15 @@ public:
     /*!
      * \brief Bind the mask buffer to an existing buffer.
      */
-    void bind_mask_buf(cl::Buffer src_buf) {
-        this->spmspv_apply_.setArg(13, (char)this->mask_type_);
-        this->mask_buf = src_buf;
-        this->spmspv_apply_.setArg(0, this->mask_buf);
+    void bind_mask_buf(aligned_dense_vec_t &src_buf) {
+        // this->mask_ = src_buf;
     }
 
     /*!
      * \brief Bind the inout buffer to an existing buffer.
      */
-    void bind_inout_buf(cl::Buffer src_buf) {
-        this->inout_buf = src_buf;
-        // set both read and write ports
-        this->spmspv_apply_.setArg(1, this->inout_buf);
-        this->spmspv_apply_.setArg(2, this->inout_buf);
+    void bind_inout_buf(aligned_dense_vec_t &src_buf) {
+        // this->inout_ = src_buf;
     }
 
     /*!
@@ -128,8 +134,6 @@ public:
      * \return The mask.
      */
     aligned_dense_vec_t send_mask_device_to_host() {
-        this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
-        this->command_queue_.finish();
         return this->mask_;
     }
 
@@ -138,8 +142,12 @@ public:
      * \return The inout.
      */
     aligned_dense_vec_t send_inout_device_to_host() {
-        this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
-        this->command_queue_.finish();
+        // TODO: re-enter this function
+        for (int i = 0; i <= 28; ++i) {
+            if (i != ARG_INOUT) this->instance->SuspendBuf(i);
+        }
+        this->instance->ReadFromDevice();
+        this->instance->Finish();
         return this->inout_;
     }
 
@@ -159,53 +167,47 @@ public:
 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::send_mask_host_to_device(aligned_dense_vec_t &mask) {
-    this->spmspv_apply_.setArg(13, (char)this->mask_type_);
+    assert(this->standalone_instance);
+
+    for (int i = 0; i <= 28; ++i) {
+        if (i != ARG_MASK) this->instance->SuspendBuf(i);
+    }
     this->mask_.assign(mask.begin(), mask.end());
-    cl_mem_ext_ptr_t mask_ext;
-    mask_ext.obj = this->mask_.data();
-    mask_ext.param = 0;
-    mask_ext.flags = graphlily::HBM[20];
-    cl_int err;
-    OCL_CHECK(err, this->mask_buf = cl::Buffer(this->context_,
-                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->mask_.size(),
-                &mask_ext,
-                &err));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(0, this->mask_buf));
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->mask_buf}, 0));
-    this->command_queue_.finish();
+    this->instance->SetArg(ARG_MASK, frtReadWrite(this->mask_));
+    this->instance->WriteToDevice();
+    // this->instance->Finish();
 }
 
 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::send_inout_host_to_device(aligned_dense_vec_t &inout) {
+    assert(this->standalone_instance);
+
+    for (int i = 0; i <= 28; ++i) {
+        if (i != ARG_INOUT) this->instance->SuspendBuf(i);
+    }
     this->inout_.assign(inout.begin(), inout.end());
-    cl_mem_ext_ptr_t inout_ext;
-    inout_ext.obj = this->inout_.data();
-    inout_ext.param = 0;
-    inout_ext.flags = graphlily::HBM[21];
-    cl_int err;
-    OCL_CHECK(err, this->inout_buf = cl::Buffer(this->context_,
-                CL_MEM_EXT_PTR_XILINX | CL_MEM_USE_HOST_PTR,
-                sizeof(vector_data_t) * this->inout_.size(),
-                &inout_ext,
-                &err));
-    // set both read and write ports
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(1, this->inout_buf));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(2, this->inout_buf));
-    OCL_CHECK(err, err = this->command_queue_.enqueueMigrateMemObjects({this->inout_buf}, 0));
-    this->command_queue_.finish();
+    this->instance->SetArg(ARG_INOUT, frtReadWrite(this->inout_));
+    this->instance->WriteToDevice();
+    // this->instance->Finish();
 }
 
 
 template<typename vector_data_t>
 void AssignVectorDenseModule<vector_data_t>::run(uint32_t len, vector_data_t val) {
-    cl_int err;
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(15, len));
-    OCL_CHECK(err, err = this->spmspv_apply_.setArg(16, graphlily::pack_raw_bits_to_uint(val)));
+    this->set_mode();
+    this->set_unused_args();
 
-    OCL_CHECK(err, err = this->command_queue_.enqueueTask(this->spmspv_apply_));
-    this->command_queue_.finish();
+    int *val_ptr_int = (int*)(&val);
+    int val_int = *val_ptr_int;
+
+    this->instance->SetArg(31, len);
+    this->instance->SetArg(32, len); // read num of len from vec_X
+    this->instance->SetArg(36, val_int);
+    this->instance->SetArg(39, (char)this->mask_type_);
+
+    this->instance->Exec();
+    this->instance->Finish();
 }
 
 

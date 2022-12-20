@@ -3,9 +3,7 @@
 
 #include "graphlily/app/module_collection.h"
 #include "graphlily/module/spmv_module.h"
-#include "graphlily/module/spmspv_module.h"
 #include "graphlily/module/assign_vector_dense_module.h"
-#include "graphlily/module/assign_vector_sparse_module.h"
 #include "graphlily/module/add_scalar_vector_dense_module.h"
 #include "graphlily/io/data_loader.h"
 #include "graphlily/io/data_formatter.h"
@@ -22,8 +20,6 @@ private:
     // modules
     module::SpMVModule<graphlily::val_t, graphlily::val_t> *SpMV_;
     module::AssignVectorDenseModule<graphlily::val_t> *DenseAssign_;
-    module::SpMSpVModule<graphlily::val_t, graphlily::val_t, graphlily::idx_val_t> *SpMSpV_;
-    module::AssignVectorSparseModule<graphlily::val_t, graphlily::idx_val_t> *SparseAssign_;
     module::eWiseAddModule<graphlily::val_t> *eWiseAdd_;  // for on-device data transfer
     // Sparse matrix size
     uint32_t matrix_num_rows_;
@@ -31,13 +27,11 @@ private:
     // SpMV kernel configuration
     uint32_t num_channels_;
     uint32_t spmv_out_buf_len_;
-    uint32_t spmspv_out_buf_len_;
     uint32_t vec_buf_len_;
     // Semiring
     graphlily::SemiringType semiring_ = graphlily::LogicalSemiring;
     // Data types
     using aligned_dense_vec_t = graphlily::aligned_dense_vec_t;
-    using aligned_sparse_vec_t = graphlily::aligned_sparse_vec_t;
     using aligned_dense_float_vec_t = graphlily::aligned_dense_float_vec_t;
 
 public:
@@ -45,7 +39,6 @@ public:
             uint32_t spmspv_out_buf_len, uint32_t vec_buf_len) {
         this->num_channels_ = num_channels;
         this->spmv_out_buf_len_ = spmv_out_buf_len;
-        this->spmspv_out_buf_len_ = spmspv_out_buf_len;
         this->vec_buf_len_ = vec_buf_len;
 
         this->SpMV_ = new module::SpMVModule<graphlily::val_t, graphlily::val_t>(
@@ -59,17 +52,6 @@ public:
         this->DenseAssign_ = new module::AssignVectorDenseModule<graphlily::val_t>();
         this->DenseAssign_->set_mask_type(graphlily::kMaskWriteToOne);
         this->add_module(this->DenseAssign_);
-
-        this->SpMSpV_ = new module::SpMSpVModule<graphlily::val_t, graphlily::val_t, graphlily::idx_val_t>(
-            spmspv_out_buf_len);
-        this->SpMSpV_->set_semiring(semiring_);
-        this->SpMSpV_->set_mask_type(graphlily::kMaskWriteToZero);
-        this->add_module(this->SpMSpV_);
-
-        bool generate_new_frontier = false;
-        this->SparseAssign_ = new module::AssignVectorSparseModule<graphlily::val_t, graphlily::idx_val_t>(
-            generate_new_frontier);
-        this->add_module(this->SparseAssign_);
 
         this->eWiseAdd_ = new module::eWiseAddModule<graphlily::val_t>();
         this->add_module(this->eWiseAdd_);
@@ -85,12 +67,10 @@ public:
         CSRMatrix<float> csr_matrix = graphlily::io::load_csr_matrix_from_float_npz(csr_float_npz_path);
         graphlily::io::util_round_csr_matrix_dim(
             csr_matrix,
-            this->num_channels_ * graphlily::pack_size,
-            this->num_channels_ * graphlily::pack_size);
+            graphlily::matrix_round_size,
+            graphlily::matrix_round_size);
         for (auto &x : csr_matrix.adj_data) x = 1;
-        CSCMatrix<float> csc_matrix = graphlily::io::csr2csc(csr_matrix);
         this->SpMV_->load_and_format_matrix(csr_matrix, skip_empty_rows);
-        this->SpMSpV_->load_and_format_matrix(csc_matrix);
         this->matrix_num_rows_ = this->SpMV_->get_num_rows();
         this->matrix_num_cols_ = this->SpMV_->get_num_cols();
         assert(this->matrix_num_rows_ == this->matrix_num_cols_);
@@ -99,7 +79,6 @@ public:
 
     void send_matrix_host_to_device() {
         this->SpMV_->send_matrix_host_to_device();
-        this->SpMSpV_->send_matrix_host_to_device();
     }
 
 
@@ -110,10 +89,10 @@ public:
         distance[source] = 1;
         this->SpMV_->send_vector_host_to_device(input);
         this->SpMV_->send_mask_host_to_device(distance);
-        this->DenseAssign_->bind_mask_buf(this->SpMV_->vector_buf);
-        this->DenseAssign_->bind_inout_buf(this->SpMV_->mask_buf);
-        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_buf);
-        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_buf);
+        this->DenseAssign_->bind_mask_buf(this->SpMV_->vector_);
+        this->DenseAssign_->bind_inout_buf(this->SpMV_->mask_);
+        this->eWiseAdd_->bind_in_buf(this->SpMV_->results_);
+        this->eWiseAdd_->bind_out_buf(this->SpMV_->vector_);
         for (size_t iter = 1; iter <= num_iterations; iter++) {
             this->SpMV_->run();
             // this->SpMV_->copy_buffer_device_to_device(this->SpMV_->results_buf,
@@ -125,7 +104,7 @@ public:
         return this->SpMV_->send_mask_device_to_host();
     }
 
-
+    /*
     aligned_dense_vec_t push(uint32_t source, uint32_t num_iterations) {
         // The sparse input vector
         aligned_sparse_vec_t spmspv_input(2);
@@ -345,7 +324,7 @@ public:
 
         return result;
     }
-
+    */
 
     aligned_dense_float_vec_t compute_reference_results(uint32_t source, uint32_t num_iterations) {
         aligned_dense_float_vec_t input(this->matrix_num_rows_, semiring_.zero);
