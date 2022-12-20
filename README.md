@@ -1,9 +1,12 @@
 GraphLily: A Graph Linear Algebra Overlay on HBM-Equipped FPGAs
 ===============================================================
 
-GraphLily is the first FPGA overlay for graph processing.
-GraphLily supports a rich set of graph algorithms by adopting the GraphBLAS programming interface, which formulates graph algorithms as sparse linear algebra kernels.
+GraphLily is the **first** FPGA overlay for graph processing.
+
+GraphLily supports a rich set of graph algorithms by adopting the [GraphBLAS](https://graphblas.org/) programming interface, which formulates graph algorithms as sparse linear algebra kernels.
+
 GraphLily effectively utilizes the high bandwidth of HBM to accelerate SpMV and SpMSpV, the two widely-used kernels in GraphBLAS, by co-designing the data layout and the accelerator architecture.
+
 GraphLily further builds a middleware to provide runtime support, enabling users to easily port existing GraphBLAS programs from CPUs/GPUs to FPGAs.
 
 For more information, refer to our [ICCAD'21 paper](https://www.csl.cornell.edu/~zhiruz/pdfs/graphlily-iccad2021.pdf).
@@ -16,7 +19,14 @@ For more information, refer to our [ICCAD'21 paper](https://www.csl.cornell.edu/
 }
 ```
 
-And in this branch, we integrated 16-HBM HiSparse SpMV into GraphLily, and rewrote 1-DDR SpMSpV with HiSparse modules (e.g., PE, Shuffle). For the related work of HiSparse, please see https://github.com/cornell-zhang/HiSparse.
+Moreover, we made 3 new contributions as the follow-up works of ICCAD'21 GraphLily:
+
+| Design | Mode | Description | Link |
+|---|---|---|---|
+| 16-HBM HiSparse SpMV + 1-DDR HiSparse SpMSpV | Pull/Pull-Push | First integration w/ the multi-HBM SpMV from FPGA'22 HiSparse work and the rewritten single-DDR SpMSpV. For more information about HiSparse, please see https://github.com/cornell-zhang/HiSparse | [hang_integration](https://github.com/cornell-zhang/GraphLily/tree/hang_integration) |
+| 16-HBM HiSparse SpMV + 8-HBM HiSparse SpMSpV | Pull/Pull-Push | Second integration w/ the newly developed multi-HBM HiSparse SpMSpV | [hang_spmspv_hbm](https://github.com/cornell-zhang/GraphLily/tree/hang_spmspv_hbm) |
+| 24-HBM Serpens SpMV | Pull | Third integration w/ [UCLA-VAST Serpens SpMV](https://github.com/UCLA-VAST/Serpens) (Note: this design is based on TAPA workflow) | [hang_serpens_spmv](https://github.com/cornell-zhang/GraphLily/tree/hang_serpens_spmv) |
+
 
 ## Prerequisites
 - FPGA Card: Xilinx Alveo U280
