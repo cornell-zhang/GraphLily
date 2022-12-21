@@ -40,6 +40,7 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
 TEST(AddScalarVectorDense, Basic) {
     graphlily::module::eWiseAddModule<graphlily::val_t> module;
     module.set_target(target);
+    assert(std::getenv("BITSTREAM"));
     module.set_up_runtime(std::getenv("BITSTREAM"));
 
     uint32_t length = 128;
@@ -64,6 +65,7 @@ TEST(AddScalarVectorDense, Basic) {
 TEST(AssignVectorDense, Basic) {
     graphlily::module::AssignVectorDenseModule<graphlily::val_t> module;
     module.set_target(target);
+    assert(std::getenv("BITSTREAM"));
     module.set_up_runtime(std::getenv("BITSTREAM"));
 
     uint32_t length = 128;
@@ -246,11 +248,6 @@ TEST(CopyBufferBindBuffer, Basic) {
     }
 }
 */
-
-TEST(Clean, NULL) {
-    clean_proj_folder();
-}
-
 
 int main(int argc, char ** argv) {
     testing::InitGoogleTest(&argc, argv);

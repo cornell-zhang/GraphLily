@@ -143,6 +143,8 @@ public:
      */
     aligned_dense_vec_t send_inout_device_to_host() {
         // TODO: re-enter this function
+        // Note: the order of send_h2d is very crucial, since we need to ensure
+        //       ARG_INOUT is not suspended before calling this d2h function.
         for (int i = 0; i <= 28; ++i) {
             if (i != ARG_INOUT) this->instance->SuspendBuf(i);
         }

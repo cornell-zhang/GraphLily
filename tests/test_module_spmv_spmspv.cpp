@@ -93,6 +93,7 @@ void _test_spmv_module(graphlily::SemiringType semiring,
     // Tried only instantiating fpga::instance once, but encounter weird segmentation fault when
     // running multiple tests. Checked memory management in graphlily modules, but hard to debug.
     // Simple workaround is to instantiating each time for each test.
+    assert(std::getenv("BITSTREAM"));
     module.set_up_runtime(std::getenv("BITSTREAM"));
 
     std::cout << gen_test_case_name(semiring, mask_type, matrix_id) << std::endl;

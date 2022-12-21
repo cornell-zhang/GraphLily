@@ -39,6 +39,8 @@ private:
     using aligned_idx_t = std::vector<graphlily::idx_t, aligned_allocator<graphlily::idx_t>>;
     using aligned_dense_vec_t = std::vector<val_t, aligned_allocator<val_t>>;
 
+    bool first_run = true;
+
     const int ARG_VEC_X = 25, ARG_VEC_Y = 26, ARG_VEC_MK = 27, ARG_VEC_Y_OUT = 28;
 
     const int WINDOW_SIZE = 8192;
@@ -188,6 +190,8 @@ public:
      */
     aligned_dense_vec_t send_vector_device_to_host() {
         // TODO: re-enter this function
+        // Note: the order of send_h2d is very crucial, since we need to ensure
+        //       ARG_VEC_X is not suspended before calling this d2h function.
         for (int i = 0; i <= 28; ++i) {
             if (i != ARG_VEC_X) this->instance->SuspendBuf(i);
         }
@@ -201,6 +205,8 @@ public:
      * \return The mask.
      */
     aligned_dense_vec_t send_mask_device_to_host() {
+        // Note: the order of send_h2d is very crucial, since we need to ensure
+        //       ARG_VEC_MK is not suspended before calling this d2h function.
         for (int i = 0; i <= 28; ++i) {
             if (i != ARG_VEC_MK) this->instance->SuspendBuf(i);
         }
@@ -214,6 +220,8 @@ public:
      * \return The results.
      */
     aligned_dense_vec_t send_results_device_to_host() {
+        // Note: we need to ensure ARG_VEC_Y_OUT is not suspended before calling
+        //       this d2h function, and that is why we added `first_run` logic.
         for (int i = 0; i <= 28; ++i) {
             if (i != ARG_VEC_Y_OUT) this->instance->SuspendBuf(i);
         }
@@ -307,9 +315,6 @@ void SpMVModule<matrix_data_t, vector_data_t>::load_and_format_matrix(
 
     // Allocate result out buf
     this->results_.resize(M, 0.0);
-    this->instance->SetArg(ARG_VEC_Y_OUT, frtReadWrite(this->results_));
-    this->instance->WriteToDevice();
-    // this->instance->Finish();
 
     if (this->mask_type_ == graphlily::kNoMask) {
         aligned_vector<float> tmp_f(1);
@@ -371,6 +376,12 @@ void SpMVModule<matrix_data_t, vector_data_t>::bind_mask_buf(aligned_dense_vec_t
 
 template<typename matrix_data_t, typename vector_data_t>
 void SpMVModule<matrix_data_t, vector_data_t>::run() {
+    if (this->first_run) {
+        this->instance->SetArg(ARG_VEC_Y_OUT, frtReadWrite(this->results_));
+        this->instance->WriteToDevice();
+        // this->instance->Finish();
+        this->first_run = false;
+    }
     this->set_mode();
     this->set_unused_args();
 

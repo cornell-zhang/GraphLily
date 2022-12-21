@@ -121,6 +121,8 @@ public:
      */
     aligned_dense_vec_t send_out_device_to_host() {
         // TODO: re-enter this function
+        // Note: the order of send_h2d is very crucial, since we need to ensure
+        //       ARG_OUT is not suspended before calling this d2h function.
         for (int i = 0; i <= 28; ++i) {
             if (i != ARG_OUT) this->instance->SuspendBuf(i);
         }
@@ -162,9 +164,9 @@ template<typename vector_data_t>
 void eWiseAddModule<vector_data_t>::allocate_out_buf(uint32_t len) {
     assert(this->standalone_instance);
 
-    // for (int i = 0; i <= 28; ++i) {
-    //     if (i != ARG_OUT) this->instance->SuspendBuf(i);
-    // }
+    for (int i = 0; i <= 28; ++i) {
+        if (i != ARG_OUT) this->instance->SuspendBuf(i);
+    }
     this->out_.resize(len);
     this->instance->SetArg(ARG_OUT, frtReadWrite(this->out_));
     // this->instance->Finish();

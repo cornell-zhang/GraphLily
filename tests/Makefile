@@ -4,23 +4,14 @@ HOST_ARCH = x86
 
 CXXFLAGS += -Wall -g -std=c++17
 CXXFLAGS += -O3
-CXXFLAGS += -I$(GRAPHLILY_ROOT_PATH)
+CXXFLAGS += -I..
 
 LDFLAGS += -lrt -lstdc++
 
-include $(GRAPHLILY_ROOT_PATH)/xrt/includes/xcl2/xcl2.mk
-CXXFLAGS += $(xcl2_CXXFLAGS)
-LDFLAGS += $(xcl2_LDFLAGS)
-
-include $(GRAPHLILY_ROOT_PATH)/xrt/includes/opencl/opencl.mk
-CXXFLAGS += $(opencl_CXXFLAGS)
-LDFLAGS += $(opencl_LDFLAGS)
-
 CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/cnpy
 LDFLAGS += -L/work/shared/common/project_build/graphblas/software/cnpy/build -lcnpy
-
-CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/googletest/googletest/include
-LDFLAGS += -L/work/shared/common/project_build/graphblas/software/googletest/build/lib -lgtest
+LDFLAGS += -lgtest # use pkg in TAPA environment
+LDFLAGS += -pthread
 
 # TAPA workflow
 LDFLAGS += -ltapa -lfrt -lglog -lgflags -lOpenCL
