@@ -1,4 +1,4 @@
-make bench_bfs
+# make bench_bfs
 
 # these configs are not used in the current Serpens GraphLily
 num_channels=16

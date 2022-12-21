@@ -19,19 +19,27 @@ CXXFLAGS += -Wno-sign-compare
 
 GRAPHLILY_HW := $(PROJ_ROOT)/graphlily/hw/graphlily.cpp
 
+BUILD_DIR = ./build
+
 .PHONY: serpens_spmv assign_dense ewise_add all
 serpens_spmv: serpens_spmv.cpp $(GRAPHLILY_HW)
 	$(CXX) $(CXXFLAGS) -g $^ -o serpens_spmv $(LDFLAGS)
+	mkdir -p $(BUILD_DIR)
+	mv serpens_spmv $(BUILD_DIR)
 
 assign_dense: assign_dense.cpp $(GRAPHLILY_HW)
 	$(CXX) $(CXXFLAGS) -g $^ -o assign_dense $(LDFLAGS)
+	mkdir -p $(BUILD_DIR)
+	mv assign_dense $(BUILD_DIR)
 
 ewise_add: ewise_add.cpp $(GRAPHLILY_HW)
 	$(CXX) $(CXXFLAGS) -g $^ -o ewise_add $(LDFLAGS)
+	mkdir -p $(BUILD_DIR)
+	mv ewise_add $(BUILD_DIR)
 
 all: ewise_add assign_dense serpens_spmv
 
 .PHONY: clean
 clean:
 	rm -rf .run *.log *.csv
-	rm -rf serpens_spmv assign_dense ewise_add
+	rm -rf $(BUILD_DIR)

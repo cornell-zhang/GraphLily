@@ -19,8 +19,11 @@ LDFLAGS += $(opencl_LDFLAGS)
 CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/cnpy
 LDFLAGS += -L/work/shared/common/project_build/graphblas/software/cnpy/build -lcnpy
 
+CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/googletest/googletest/include
+LDFLAGS += -L/work/shared/common/project_build/graphblas/software/googletest/build/lib -lgtest
+
 # TAPA workflow
-LDFLAGS += -lgtest -ltapa -lfrt -lglog -lgflags -lOpenCL
+LDFLAGS += -ltapa -lfrt -lglog -lgflags -lOpenCL
 
 test_io: test_io.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) test_io.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)

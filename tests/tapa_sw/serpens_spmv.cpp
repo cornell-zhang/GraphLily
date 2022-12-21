@@ -315,6 +315,7 @@ bool spmv_test_harness (
     printf(">>> Data Transfer time is %f ms\n", transfer_time_ms);
     */
 
+    time_taken *= 1e-9; // total time in second
     printf(">>> Kernel time: %f \n", time_taken*1000);
 
     float gflops =
@@ -338,15 +339,15 @@ bool spmv_test_harness (
 // test cases
 //---------------------------------------------------------------
 
-std::string graph_dataset_dir() { return std::getenv("DATASETS") + "/graph/"; }
-std::string nn_dataset_dir() { return std::getenv("DATASETS") + "/pruned_nn/"; }
+std::string graph_dataset_dir() { return std::string(std::getenv("DATASETS")) + "/graph/"; }
+std::string nn_dataset_dir() { return std::string(std::getenv("DATASETS")) + "/pruned_nn/"; }
 
 //---------------------------------------------------------------
 // main
 //---------------------------------------------------------------
 
 int main(int argc, char **argv) {
-    std::string FLAGS_bitstream = std::getenv("BITSTREAM") ? "" : std::getenv("BITSTREAM");
+    std::string FLAGS_bitstream = std::getenv("BITSTREAM") ? std::getenv("BITSTREAM") : "";
     assert(std::getenv("DATASETS"));
     bool passed = true;
 

@@ -1,4 +1,4 @@
-make bench_sssp
+# make bench_sssp
 
 # these configs are not used in the current Serpens GraphLily
 num_channels=16

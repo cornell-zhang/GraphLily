@@ -1,6 +1,6 @@
 #include <vector>
 #include <iostream>
-#include "graphlily.h"
+#include "graphlily/global.h"
 
 using std::cout;
 using std::vector;
@@ -9,6 +9,8 @@ using std::max;
 
 #ifndef SPARSE_HELPER
 #define SPARSE_HELPER
+
+namespace graphlily {
 
 //----------------------------------------------------------------
 // GraphLily ALUs
@@ -64,7 +66,7 @@ struct edge{
     }
 };
 
-void cpu_spmv_CSR(const int M,
+inline void cpu_spmv_CSR(const int M,
                   const int K,
                   const int NNZ,
                   const float ALPHA,
@@ -107,7 +109,7 @@ void cpu_spmv_CSR(const int M,
     }
 }
 
-void generate_edge_list_for_one_PE(const vector<edge> & tmp_edge_list,
+inline void generate_edge_list_for_one_PE(const vector<edge> & tmp_edge_list,
                                    vector<edge> & edge_list,
                                    const int base_col_index,
                                    const int i_start,
@@ -159,7 +161,7 @@ void generate_edge_list_for_one_PE(const vector<edge> & tmp_edge_list,
 }
 
 
-void generate_edge_list_for_all_PEs(const vector<uint32_t> & CSCColPtr,
+inline void generate_edge_list_for_all_PEs(const vector<uint32_t> & CSCColPtr,
                                     const vector<uint32_t> & CSCRowIndex,
                                     const vector<float> & CSCVal,
                                     const int NUM_PE,
@@ -216,7 +218,7 @@ void generate_edge_list_for_all_PEs(const vector<uint32_t> & CSCColPtr,
 
 }
 
-void edge_list_64bit(const vector<vector<edge> > & edge_list_pes,
+inline void edge_list_64bit(const vector<vector<edge> > & edge_list_pes,
                      const vector<int> & edge_list_ptr,
                      vector<vector<unsigned long, tapa::aligned_allocator<unsigned long> > > & sparse_A_fpga_vec,
                      const int NUM_CH_SPARSE = 8) {
@@ -312,5 +314,6 @@ void edge_list_64bit(const vector<vector<edge> > & edge_list_pes,
     }
 }
 
+}
 
 #endif

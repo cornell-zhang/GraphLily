@@ -1,4 +1,4 @@
-make bench_pagerank
+# make bench_pagerank
 
 # these configs are not used in the current Serpens GraphLily
 num_channels=16

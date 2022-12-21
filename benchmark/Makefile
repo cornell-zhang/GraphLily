@@ -3,23 +3,15 @@ BUILD_DIR = ./build
 HOST_ARCH = x86
 
 CXXFLAGS += -Wall -O3 -g -std=c++17
-CXXFLAGS += -I$(GRAPHLILY_ROOT_PATH)
+CXXFLAGS += -I..
 
 LDFLAGS += -lrt -lstdc++
-
-include $(GRAPHLILY_ROOT_PATH)/xrt/includes/xcl2/xcl2.mk
-CXXFLAGS += $(xcl2_CXXFLAGS)
-LDFLAGS += $(xcl2_LDFLAGS)
-
-include $(GRAPHLILY_ROOT_PATH)/xrt/includes/opencl/opencl.mk
-CXXFLAGS += $(opencl_CXXFLAGS)
-LDFLAGS += $(opencl_LDFLAGS)
 
 CXXFLAGS += -I/work/shared/common/project_build/graphblas/software/cnpy
 LDFLAGS += -L/work/shared/common/project_build/graphblas/software/cnpy/build -lcnpy
 
 # TAPA workflow
-LDFLAGS += -lgtest -ltapa -lfrt -lglog -lgflags -lOpenCL
+LDFLAGS += -ltapa -lfrt -lglog -lgflags -lOpenCL
 
 bench_spmv: bench_spmv.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) bench_spmv.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
