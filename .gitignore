@@ -30,3 +30,4 @@ build*
 spmspv
 compile_flags.txt
 *.xclbin
+**/run

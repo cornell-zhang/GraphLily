@@ -33,6 +33,7 @@ Moreover, we made 3 new contributions as the follow-up works of ICCAD'21 GraphLi
 - Hardware Platform: [xilinx_u280_gen3x16_xdma_base_1](https://docs.xilinx.com/r/en-US/ug1120-alveo-platforms/U280-Gen3x16-XDMA-base_1-Platform)
 - Vendor Tool: Xilinx Vitis 2022.1.1
 - XRT: 2022.1
+- TAPA framework: 0.0.20220807.1 or later
 
 Note: the compatibility of the tools can be found in [this document](https://docs.xilinx.com/r/en-US/ug1120-alveo-platforms/Alveo-Platforms).
 
@@ -45,10 +46,16 @@ export GRAPHLILY_ROOT_PATH=/path/to/GraphLily
 ```
 
 ### Get the bitstream
+This version of GraphLily is totally based on [TAPA HLS framework](https://github.com/UCLA-VAST/tapa), please install TAPA first.
+
 To generate a new bitstream:
 ```bash
-cd GraphLily/generate_bitstream
-make synthesize
+cd GraphLily/graphlily/hw
+bash run_tapa.sh
+cd run/run-<N>
+# Workaround for TAPA AutoBridge to support 2022 Xilinx U280 HW platform
+sed -i 's/pfm_top_i\/dynamic_region/level0_i\/ulp/g' Serpens_floorplan.tcl
+bash Serpens_generate_bitstream.sh
 ```
 
 ### Prepare datasets
@@ -64,18 +71,20 @@ Our ICCAD'21 paper evaluated the following six graph datasets:
 - [orkut](https://drive.google.com/file/d/1Am0hPLhGNAwjYWt5nd_-XsIaKBiWcwqt/view?usp=sharing)
 
 ## Benchmark
-Go to the GraphLily/benchmark folder, modify the cnpy path in Makefile, modify the bitstream path and the datasets path in run_bfs.sh, then run the script:
+Go to the `GraphLily/benchmark` folder, modify the cnpy path in Makefile, modify the bitstream path and the datasets path in run_bfs.sh, then run the script:
 ```bash
 cd GraphLily/benchmark
 bash run_bfs.sh
 ```
 
 ## Test
-To do quick debug or test after tweaking the designs in GraphLily/graphlily, just go to the GraphLily/tests, build and run test programs (HW synthesis is included in those programs). Please install [googletest](https://github.com/google/googletest) first to build the test programs.
+To do quick debug or test after tweaking the designs in `GraphLily/graphlily`, just go to the `GraphLily/tests`, build and run test programs (HW synthesis is included in those programs). Please install [googletest](https://github.com/google/googletest) first to build the test programs.
 ```bash
 cd GraphLily/tests
 make test_module_spmv_spmspv # generate bitstream and run module test by one command
 ```
+
+Moreover, we support TAPA-style standalone tests in `GraphLily/tests/tapa_sw`, please refer to the directory to see more details.
 
 ## Troubleshooting
 
