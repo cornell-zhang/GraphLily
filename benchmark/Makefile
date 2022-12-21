@@ -18,11 +18,6 @@ bench_spmv: bench_spmv.cpp $(xcl2_SRCS)
 	mkdir -p $(BUILD_DIR)
 	mv bench_spmv $(BUILD_DIR)/
 
-bench_spmspv: bench_spmspv.cpp $(xcl2_SRCS)
-	g++ $(CXXFLAGS) bench_spmspv.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
-	mkdir -p $(BUILD_DIR)
-	mv bench_spmspv $(BUILD_DIR)/
-
 bench_bfs: bench_bfs.cpp $(xcl2_SRCS)
 	g++ $(CXXFLAGS) bench_bfs.cpp $(xcl2_SRCS) -o $@ $(LDFLAGS)
 	mkdir -p $(BUILD_DIR)
@@ -39,6 +34,8 @@ bench_pagerank: bench_pagerank.cpp $(xcl2_SRCS)
 	mv bench_pagerank $(BUILD_DIR)/
 
 apps: bench_bfs bench_sssp bench_pagerank
+
+all: apps bench_spmv
 
 clean:
 	rm -rf $(BUILD_DIR)

@@ -6,8 +6,6 @@
 #include <iostream>
 #include <chrono>
 
-#include "xcl2.hpp"
-
 #include "graphlily/io/data_loader.h"
 #include "graphlily/module/spmv_module.h"
 
@@ -16,8 +14,8 @@ template<typename data_t>
 void verify(std::vector<float, aligned_allocator<float>> &reference_results,
             std::vector<data_t, aligned_allocator<data_t>> &kernel_results) {
     if (!(reference_results.size() == kernel_results.size())) {
-        std::cout << "Size mismatch!" << std::endl;
-        exit(EXIT_FAILURE);
+        std::cout << "Error: Size mismatch!" << std::endl;
+        return;
     }
     float epsilon = 0.0001;
     for (size_t i = 0; i < reference_results.size(); i++) {
@@ -28,7 +26,7 @@ void verify(std::vector<float, aligned_allocator<float>> &reference_results,
                       << " Reference result = " << reference_results[i]
                       << " Kernel result = " << kernel_results[i]
                       << std::endl;
-            exit(EXIT_FAILURE);
+            return;
         }
     }
 }
@@ -51,8 +49,8 @@ void bench_spmv(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_le
 
     graphlily::io::util_round_csr_matrix_dim(
         csr_matrix,
-        num_channels * graphlily::pack_size,
-        graphlily::pack_size);
+        graphlily::matrix_round_size,
+        graphlily::matrix_round_size);
 
     std::vector<float, aligned_allocator<float>> vector_float(csr_matrix.num_cols);
     std::generate(vector_float.begin(), vector_float.end(), [&]{return float(rand() % 2);});
@@ -90,10 +88,9 @@ void bench_spmv(uint32_t num_channels, uint32_t out_buf_len, uint32_t vec_buf_le
     //     std::cout << reference_results[i] << " " << kernel_results[i] <<std::endl;
     // }
 
-    // verify<graphlily::val_t>(reference_results, kernel_results);
-    // std::cout << "SpMV passed" << std::endl;
+    verify<graphlily::val_t>(reference_results, kernel_results);
 
-    uint32_t num_runs = 100;
+    uint32_t num_runs = 1024;
     auto t1 = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < num_runs; i++) {
         spmv.run();
