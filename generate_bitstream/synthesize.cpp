@@ -1,4 +1,4 @@
-#include "graphlily/synthesizer/overlay_synthesizer.h"
+#include "graphlily/synthesizer/split_kernel_synthesizer.h"
 
 
 int main(int argc, char *argv[]) {
