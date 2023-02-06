@@ -33,26 +33,28 @@ Moreover, we made 3 new contributions as the follow-up works of ICCAD'21 GraphLi
 - Hardware Platform: [xilinx_u280_gen3x16_xdma_base_1](https://docs.xilinx.com/r/en-US/ug1120-alveo-platforms/U280-Gen3x16-XDMA-base_1-Platform)
 - Vendor Tool: Xilinx Vitis 2022.1.1
 - XRT: 2022.1
+- [googletest](https://github.com/google/googletest)
+- [cnpy](https://github.com/rogersce/cnpy)
 
 Note: the compatibility of the tools can be found in [this document](https://docs.xilinx.com/r/en-US/ug1120-alveo-platforms/Alveo-Platforms).
 
 ## Setup
+__For internal developers__:
+you can directly setup the environment by `source setupGraphLily.sh`, and jump to setp 3.
 
-### Clone the repo
+### 0. Install Google test and cnpy
+We rely on Google test to manage our test cases.
+Please install [googletest](https://github.com/google/googletest).
+Please also install [cnpy](https://github.com/rogersce/cnpy), which is required for loading Numpy data from C++.
+After installing these libiaries, please modify the corresponding paths in the Makefiles.
+
+### 1. Clone the repo and setup the environment
 ```
 git clone git@github.com:cornell-zhang/GraphLily.git
 export GRAPHLILY_ROOT_PATH=/path/to/GraphLily
 ```
-
-### Get the bitstream
-To generate a new bitstream:
-```bash
-cd GraphLily/generate_bitstream
-make synthesize
-```
-
-### Prepare datasets
-The input is an adjacency matrix in csr format stored as a scipy npz file. Please install [cnpy](https://github.com/rogersce/cnpy), which is required for data loading.
+### 2. Prepare datasets
+The input is an adjacency matrix in csr format stored as a scipy npz file.
 
 Our ICCAD'21 paper evaluated the following six graph datasets:
 
@@ -63,20 +65,27 @@ Our ICCAD'21 paper evaluated the following six graph datasets:
 - [ogbn-products](https://drive.google.com/file/d/1yBJjW5aRpJt2if32gOWSmaYcI10KDQj0/view?usp=sharing)
 - [orkut](https://drive.google.com/file/d/1Am0hPLhGNAwjYWt5nd_-XsIaKBiWcwqt/view?usp=sharing)
 
-## Benchmark
+### 3. Test
+To do quick debug or test after tweaking the designs in GraphLily/graphlily, just go to the GraphLily/tests, build and run test programs (HW synthesis is included in those programs).
+```bash
+cd GraphLily/tests
+make test_module_spmv_spmspv # generate bitstream for testing and run module test by one command
+```
+
+### 4. Get the bitstream for benchmarking
+To generate a new bitstream:
+```bash
+cd GraphLily/generate_bitstream
+make synthesize
+```
+
+### 5. Benchmark
 Go to the GraphLily/benchmark folder, modify the cnpy path in Makefile, modify the bitstream path and the datasets path in run_bfs.sh, then run the script:
 ```bash
 cd GraphLily/benchmark
 bash run_bfs.sh
 ```
 
-## Test
-To do quick debug or test after tweaking the designs in GraphLily/graphlily, just go to the GraphLily/tests, build and run test programs (HW synthesis is included in those programs). Please install [googletest](https://github.com/google/googletest) first to build the test programs.
-```bash
-cd GraphLily/tests
-make test_module_spmv_spmspv # generate bitstream and run module test by one command
-```
-
-## Troubleshooting
+### Troubleshooting
 
 If you meet `undefined reference to cnpy::npz_load(std::string)` in link stage or `error while loading shared libraries: libcnpy.so: cannot open shared object file: No such file or directory` for execution, then check if cnpy is successfully installed and ensure the shared library can be found by dynamic linker/loader (e.g., adding the lib path to `LD_LIBRARY_PATH`). This also applies to the troubles related to googletest used in GraphLily.
