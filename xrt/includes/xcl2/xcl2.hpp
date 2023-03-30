@@ -45,7 +45,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
       exit(EXIT_FAILURE);                                           \
     }                                       
 
-#include <CL/cl2.hpp>
+#include <CL/opencl.hpp>
 #include <iostream>
 #include <fstream>
 #include <CL/cl_ext_xilinx.h>
