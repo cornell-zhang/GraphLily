@@ -70,6 +70,59 @@ CSRMatrix<float> load_csr_matrix_from_float_npz(std::string csr_float_npz_path) 
 }
 
 
+CSRMatrix<float> combine_csr_matrices(const CSRMatrix<float>& matrix_1, const CSRMatrix<float>& matrix_2) {
+    CSRMatrix<float> combined_matrix;
+    combined_matrix.num_rows = matrix_1.num_rows + matrix_2.num_rows;
+    combined_matrix.num_cols = matrix_1.num_cols + matrix_2.num_cols;
+
+    combined_matrix.adj_indptr.reserve(combined_matrix.num_rows + 1);
+    combined_matrix.adj_indptr.push_back(0);
+
+    // Copy matrix_1's adj_indptr values to the combined matrix's adj_indptr
+    for (size_t i = 1; i <= matrix_1.num_rows; i++) {
+        combined_matrix.adj_indptr.push_back(matrix_1.adj_indptr[i]);
+    }
+
+    // Add matrix_2's adj_indptr values to the combined matrix's adj_indptr,
+    // starting from the last value of matrix_1's adj_indptr and adding the number of non-zero elements in matrix_1
+    size_t matrix_1_nnz = matrix_1.adj_indptr.back();
+    for (size_t i = 1; i <= matrix_2.num_rows; i++) {
+        combined_matrix.adj_indptr.push_back(matrix_1_nnz + matrix_2.adj_indptr[i]);
+    }
+
+    // Reserve space for the combined matrix's adj_indices and adj_data
+    combined_matrix.adj_indices.reserve(matrix_1.adj_indices.size() + matrix_2.adj_indices.size());
+    combined_matrix.adj_data.reserve(matrix_1.adj_data.size() + matrix_2.adj_data.size());
+
+    // Copy matrix_1's adj_indices and adj_data to the combined matrix's adj_indices and adj_data
+    combined_matrix.adj_indices.insert(combined_matrix.adj_indices.end(), matrix_1.adj_indices.begin(), matrix_1.adj_indices.end());
+    combined_matrix.adj_data.insert(combined_matrix.adj_data.end(), matrix_1.adj_data.begin(), matrix_1.adj_data.end());
+
+    // Add matrix_2's adj_indices and adj_data to the combined matrix's adj_indices and adj_data,
+    // shifting the row indices by matrix_1's number of rows and column indices by matrix_1's number of columns
+    for (size_t i = 0; i < matrix_2.adj_indices.size(); i++) {
+        combined_matrix.adj_indices.push_back(matrix_2.adj_indices[i] + matrix_1.num_cols);
+    }
+    combined_matrix.adj_data.insert(combined_matrix.adj_data.end(), matrix_2.adj_data.begin(), matrix_2.adj_data.end());
+
+    return combined_matrix;
+}
+
+
+
+
+
+
+CSRMatrix<float> load_and_combine_csr_matrices_from_float_npz(const CSRMatrix<float>& matrix_1, const CSRMatrix<float>& matrix_2) {
+
+    CSRMatrix<float> combined_matrix = combine_csr_matrices(matrix_1, matrix_2);
+
+    return combined_matrix;
+}
+
+
+
+
 // Convert a float csr matrix to another data type.
 // TODO: does ap_int make formatting slower than float?
 template<typename data_type>
